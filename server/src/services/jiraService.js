@@ -30,9 +30,22 @@ class JiraService {
   async getBoards() {
     try {
       const response = await this.agileApi.get('/board', {
-        params: { type: 'scrum' }
+        params: {
+          type: 'scrum',
+          maxResults: 1000
+        }
       });
-      return response.data.values;
+
+      // Filter boards to only show IIA and AISDR projects
+      const allowedProjects = ['IIA', 'AISDR'];
+      const filteredBoards = response.data.values.filter(board => {
+        if (board.location && board.location.projectKey) {
+          return allowedProjects.includes(board.location.projectKey);
+        }
+        return false;
+      });
+
+      return filteredBoards;
     } catch (error) {
       throw new Error(`Failed to fetch boards: ${error.message}`);
     }

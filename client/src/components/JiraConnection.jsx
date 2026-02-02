@@ -1,0 +1,121 @@
+import { useState } from 'react';
+import api from '../services/api';
+
+export default function JiraConnection({ onConnectionSuccess }) {
+  const [formData, setFormData] = useState({
+    jiraUrl: '',
+    email: '',
+    apiToken: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await api.testConnection(
+        formData.jiraUrl,
+        formData.email,
+        formData.apiToken
+      );
+
+      if (result.success) {
+        onConnectionSuccess(formData);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to connect to Jira');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto card">
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">Connect to Jira Cloud</h2>
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Jira URL
+          </label>
+          <input
+            type="url"
+            className="input-field"
+            placeholder="https://your-domain.atlassian.net"
+            value={formData.jiraUrl}
+            onChange={(e) => setFormData({ ...formData, jiraUrl: e.target.value })}
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Your Jira Cloud instance URL
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Email
+          </label>
+          <input
+            type="email"
+            className="input-field"
+            placeholder="your-email@company.com"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            API Token
+          </label>
+          <input
+            type="password"
+            className="input-field"
+            placeholder="Your Jira API token"
+            value={formData.apiToken}
+            onChange={(e) => setFormData({ ...formData, apiToken: e.target.value })}
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            <a 
+              href="https://id.atlassian.com/manage-profile/security/api-tokens" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary-600 hover:underline"
+            >
+              Create an API token here
+            </a>
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? 'Connecting...' : 'Connect to Jira'}
+        </button>
+      </form>
+
+      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+        <h3 className="font-semibold text-sm text-blue-900 mb-2">How to get your API token:</h3>
+        <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+          <li>Go to Atlassian account settings</li>
+          <li>Click "Security" → "Create and manage API tokens"</li>
+          <li>Click "Create API token"</li>
+          <li>Copy the token and paste it above</li>
+        </ol>
+      </div>
+    </div>
+  );
+}

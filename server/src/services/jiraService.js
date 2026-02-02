@@ -113,10 +113,11 @@ class JiraService {
   async getSprintIssues(sprintId) {
     try {
       // Use Agile API endpoint for sprint issues
+      // Request ALL fields using '*all' to include all custom fields
       const response = await this.agileApi.get(`/sprint/${sprintId}/issue`, {
         params: {
           maxResults: 1000,
-          fields: 'summary,status,issuetype,created,resolutiondate,customfield_10016,assignee,priority,parent,fixVersions'
+          fields: '*all'
         }
       });
       return response.data.issues;

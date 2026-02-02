@@ -151,8 +151,6 @@ class DashboardController {
       }
       
       // Get current backlog health
-      // NOTE: board JQL function is deprecated and returns 410
-      // Using project-based query instead for backlog health
       const boardConfig = await jiraService.getBoardConfiguration(boardId);
       const projectKey = boardConfig.location?.projectKey || null;
 
@@ -161,9 +159,19 @@ class DashboardController {
 
       let backlogHealth = { score: 0, details: {} };
 
+      // Try to get backlog using project key first, then fall back to board filter
+      let backlogJQL = null;
+
       if (projectKey) {
+        backlogJQL = `project = "${projectKey}" AND status != CLOSED AND sprint is EMPTY`;
+      } else if (boardConfig.filter?.id) {
+        // Use board filter as fallback
+        console.log(`  Using board filter ID: ${boardConfig.filter.id}`);
+        backlogJQL = `filter = ${boardConfig.filter.id} AND status != CLOSED AND sprint is EMPTY`;
+      }
+
+      if (backlogJQL) {
         try {
-          const backlogJQL = `project = "${projectKey}" AND status != CLOSED AND sprint is EMPTY`;
           console.log(`  JQL Query: ${backlogJQL}`);
 
           const backlogIssues = await jiraService.searchIssues(
@@ -178,7 +186,7 @@ class DashboardController {
           console.warn('  ❌ Could not fetch backlog health:', err.message);
         }
       } else {
-        console.warn('  ⚠️  No project key found for board!');
+        console.warn('  ⚠️  Could not determine how to query backlog (no project key or filter)');
       }
       
       // Aggregate metrics

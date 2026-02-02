@@ -9,52 +9,52 @@ const STORAGE_KEY_TOKEN = 'scrum-dashboard-api-token';
 const STORAGE_KEY_BOARDS = 'scrum-dashboard-selected-boards';
 
 function App() {
-  const [step, setStep] = useState('loading'); // loading | connection | teamSelection | dashboard
-  const [credentials, setCredentials] = useState(null);
-  const [selectedBoards, setSelectedBoards] = useState([]);
-
-  // Auto-load saved credentials and boards on mount
-  useEffect(() => {
+  // Initialize state by checking localStorage immediately (no loading state)
+  const initializeState = () => {
     try {
       const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
       const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
       const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
       const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
 
-      // If we have all required data, auto-load dashboard
+      // If we have all required data, start with dashboard
       if (savedUrl && savedEmail && savedToken && savedBoards) {
         const boards = JSON.parse(savedBoards);
         if (boards.length > 0) {
-          setCredentials({
-            jiraUrl: savedUrl,
-            email: savedEmail,
-            apiToken: savedToken
-          });
-
-          // Check if boards are in old format (array of numbers) or new format (array of objects)
+          // Check if boards are in old format
           const isOldFormat = typeof boards[0] === 'number';
 
           if (isOldFormat) {
-            // Old format detected - need to re-select teams to get names
+            // Old format - need to re-select teams
             console.log('Old board format detected, please re-select your teams');
             localStorage.removeItem(STORAGE_KEY_BOARDS);
-            setStep('teamSelection');
-            return;
+            return {
+              step: 'teamSelection',
+              credentials: { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken },
+              boards: []
+            };
           }
 
-          // New format - proceed to dashboard
-          setSelectedBoards(boards);
-          setStep('dashboard');
-          return;
+          // New format - go directly to dashboard!
+          return {
+            step: 'dashboard',
+            credentials: { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken },
+            boards: boards
+          };
         }
       }
     } catch (err) {
       console.error('Failed to load saved session:', err);
     }
 
-    // If we don't have saved data, show connection screen
-    setStep('connection');
-  }, []);
+    // No saved data - show connection screen
+    return { step: 'connection', credentials: null, boards: [] };
+  };
+
+  const initial = initializeState();
+  const [step, setStep] = useState(initial.step);
+  const [credentials, setCredentials] = useState(initial.credentials);
+  const [selectedBoards, setSelectedBoards] = useState(initial.boards);
 
   const handleConnectionSuccess = (creds) => {
     // Save credentials to localStorage for auto-login
@@ -127,13 +127,6 @@ function App() {
 
       {/* Main Content */}
       <main className="py-8">
-        {step === 'loading' && (
-          <div className="max-w-2xl mx-auto card text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading saved session...</p>
-          </div>
-        )}
-
         {step === 'connection' && (
           <JiraConnection onConnectionSuccess={handleConnectionSuccess} />
         )}

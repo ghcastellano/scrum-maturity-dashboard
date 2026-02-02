@@ -79,12 +79,29 @@ class JiraService {
 
       const sprints = response.data.values;
 
+      console.log(`\n🔍 Board ${boardId} - Raw Sprints from API (total: ${sprints.length}):`);
+      console.log(`First 3 sprints (before sorting):`);
+      sprints.slice(0, 3).forEach(s => {
+        console.log(`  - ${s.name} (ID: ${s.id}) - End: ${s.endDate || 'NO END DATE'} - State: ${s.state}`);
+      });
+
       // Sort sprints by end date, most recent first
       sprints.sort((a, b) => {
         const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
         const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
         return dateB - dateA; // Descending order (newest first)
       });
+
+      console.log(`\nFirst 3 sprints (after sorting by endDate DESC):`);
+      sprints.slice(0, 3).forEach(s => {
+        console.log(`  - ${s.name} (ID: ${s.id}) - End: ${s.endDate || 'NO END DATE'}`);
+      });
+
+      // Check for sprints without endDate
+      const sprintsWithoutEndDate = sprints.filter(s => !s.endDate);
+      if (sprintsWithoutEndDate.length > 0) {
+        console.log(`⚠️  WARNING: ${sprintsWithoutEndDate.length} sprints without endDate!`);
+      }
 
       return sprints;
     } catch (error) {

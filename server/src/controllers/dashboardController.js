@@ -277,6 +277,50 @@ class DashboardController {
       });
     }
   }
+
+  // Diagnostic endpoint to find story points field
+  async diagnostics(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardId } = req.body;
+
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      // Find story points field candidates
+      const storyPointsCandidates = await jiraService.findStoryPointsField();
+
+      // Get a sample sprint and issue
+      const sprints = await jiraService.getSprints(boardId, 'closed');
+      let sampleIssue = null;
+
+      if (sprints.length > 0) {
+        sampleIssue = await jiraService.getSampleIssue(sprints[0].id);
+      }
+
+      res.json({
+        success: true,
+        diagnostics: {
+          storyPointsCandidates: storyPointsCandidates.map(f => ({
+            id: f.id,
+            name: f.name,
+            type: f.schema?.type
+          })),
+          sampleIssueKey: sampleIssue?.key,
+          sampleIssueCustomFields: sampleIssue ? Object.keys(sampleIssue.fields)
+            .filter(k => k.startsWith('customfield_'))
+            .reduce((acc, k) => {
+              acc[k] = sampleIssue.fields[k];
+              return acc;
+            }, {}) : {}
+        }
+      });
+    } catch (error) {
+      console.error('Error running diagnostics:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
 }
 
 export default DashboardController;

@@ -39,8 +39,12 @@ app.post('/api/metrics/team', (req, res) =>
   dashboardController.getTeamMetrics(req, res)
 );
 
-app.post('/api/metrics/flow', (req, res) => 
+app.post('/api/metrics/flow', (req, res) =>
   dashboardController.getFlowMetrics(req, res)
+);
+
+app.post('/api/diagnostics', (req, res) =>
+  dashboardController.diagnostics(req, res)
 );
 
 // Health check

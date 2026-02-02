@@ -162,7 +162,7 @@ class JiraService {
         ['assignee'],
         1000
       );
-      
+
       const uniqueUsers = new Map();
       issues.forEach(issue => {
         if (issue.fields.assignee) {
@@ -174,10 +174,64 @@ class JiraService {
           });
         }
       });
-      
+
       return Array.from(uniqueUsers.values());
     } catch (error) {
       throw new Error(`Failed to fetch team members: ${error.message}`);
+    }
+  }
+
+  // Diagnostic: Find Story Points field
+  async findStoryPointsField() {
+    try {
+      const fields = await this.getFields();
+
+      // Common story points field names
+      const storyPointsKeywords = ['story points', 'storypoints', 'points', 'estimate'];
+
+      const candidates = fields.filter(field => {
+        const name = (field.name || '').toLowerCase();
+        return storyPointsKeywords.some(keyword => name.includes(keyword));
+      });
+
+      console.log('\n📊 Story Points Field Candidates:');
+      candidates.forEach(field => {
+        console.log(`  - ${field.id}: ${field.name} (${field.schema?.type || 'unknown type'})`);
+      });
+
+      return candidates;
+    } catch (error) {
+      throw new Error(`Failed to find story points field: ${error.message}`);
+    }
+  }
+
+  // Diagnostic: Get sample issue with all fields
+  async getSampleIssue(sprintId) {
+    try {
+      const issues = await this.getSprintIssues(sprintId);
+
+      if (issues.length === 0) {
+        return null;
+      }
+
+      const sampleIssue = issues[0];
+
+      console.log('\n📝 Sample Issue Fields:');
+      console.log(`Issue Key: ${sampleIssue.key}`);
+      console.log('Available custom fields:');
+
+      Object.keys(sampleIssue.fields).forEach(fieldKey => {
+        if (fieldKey.startsWith('customfield_')) {
+          const value = sampleIssue.fields[fieldKey];
+          if (value !== null && value !== undefined) {
+            console.log(`  - ${fieldKey}: ${JSON.stringify(value).substring(0, 100)}`);
+          }
+        }
+      });
+
+      return sampleIssue;
+    } catch (error) {
+      throw new Error(`Failed to get sample issue: ${error.message}`);
     }
   }
 }

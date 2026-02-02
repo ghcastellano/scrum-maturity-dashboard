@@ -150,43 +150,18 @@ class DashboardController {
         });
       }
       
-      // Get current backlog health
-      const boardConfig = await jiraService.getBoardConfiguration(boardId);
-      const projectKey = boardConfig.location?.projectKey || null;
-
+      // Get current backlog health using Agile API backlog endpoint
       console.log(`\n🔍 Fetching Backlog Health for board ${boardId}:`);
-      console.log(`  Project Key: ${projectKey}`);
 
       let backlogHealth = { score: 0, details: {} };
 
-      // Try to get backlog using project key first, then fall back to board filter
-      let backlogJQL = null;
-
-      if (projectKey) {
-        backlogJQL = `project = "${projectKey}" AND status != CLOSED AND sprint is EMPTY`;
-      } else if (boardConfig.filter?.id) {
-        // Use board filter as fallback
-        console.log(`  Using board filter ID: ${boardConfig.filter.id}`);
-        backlogJQL = `filter = ${boardConfig.filter.id} AND status != CLOSED AND sprint is EMPTY`;
-      }
-
-      if (backlogJQL) {
-        try {
-          console.log(`  JQL Query: ${backlogJQL}`);
-
-          const backlogIssues = await jiraService.searchIssues(
-            backlogJQL,
-            ['summary', 'description', 'customfield_10061', 'fixVersions'],
-            500
-          );
-
-          console.log(`  Found ${backlogIssues.length} backlog issues`);
-          backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);
-        } catch (err) {
-          console.warn('  ❌ Could not fetch backlog health:', err.message);
-        }
-      } else {
-        console.warn('  ⚠️  Could not determine how to query backlog (no project key or filter)');
+      try {
+        console.log(`  Using Agile API /board/${boardId}/backlog endpoint`);
+        const backlogIssues = await jiraService.getBacklogIssues(boardId);
+        console.log(`  Found ${backlogIssues.length} backlog issues`);
+        backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);
+      } catch (err) {
+        console.warn('  ❌ Could not fetch backlog health:', err.message);
       }
       
       // Aggregate metrics

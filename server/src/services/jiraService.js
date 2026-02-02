@@ -36,11 +36,19 @@ class JiraService {
         }
       });
 
-      // Filter boards to only show IIA and AISDR projects
-      const allowedProjects = ['IIA', 'AISDR'];
+      // Filter boards to only show specified projects
+      // IIA, AISDR, AISRCSCI (AI Sourcing Science)
+      const allowedProjects = ['IIA', 'AISDR', 'AISRCSCI'];
       const filteredBoards = response.data.values.filter(board => {
         if (board.location && board.location.projectKey) {
           return allowedProjects.includes(board.location.projectKey);
+        }
+        // Also include boards with matching names (case insensitive)
+        if (board.name) {
+          const nameLower = board.name.toLowerCase();
+          return nameLower.includes('intelligence assistant') ||
+                 nameLower.includes('sourcing') ||
+                 nameLower.includes('aisdr');
         }
         return false;
       });

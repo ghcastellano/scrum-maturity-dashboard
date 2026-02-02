@@ -4,6 +4,18 @@ class JiraService {
   constructor(baseUrl, email, apiToken) {
     this.baseUrl = baseUrl;
     this.auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
+
+    // Agile API for boards and sprints
+    this.agileApi = axios.create({
+      baseURL: `${baseUrl}/rest/agile/1.0`,
+      headers: {
+        'Authorization': `Basic ${this.auth}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    // Standard API for issues and fields
     this.api = axios.create({
       baseURL: `${baseUrl}/rest/api/3`,
       headers: {
@@ -17,7 +29,7 @@ class JiraService {
   // Get all boards
   async getBoards() {
     try {
-      const response = await this.api.get('/board', {
+      const response = await this.agileApi.get('/board', {
         params: { type: 'scrum' }
       });
       return response.data.values;
@@ -29,7 +41,7 @@ class JiraService {
   // Get sprints for a board
   async getSprints(boardId, state = 'closed') {
     try {
-      const response = await this.api.get(`/board/${boardId}/sprint`, {
+      const response = await this.agileApi.get(`/board/${boardId}/sprint`, {
         params: { state, maxResults: 50 }
       });
       return response.data.values;
@@ -67,7 +79,7 @@ class JiraService {
   // Get board configuration
   async getBoardConfiguration(boardId) {
     try {
-      const response = await this.api.get(`/board/${boardId}/configuration`);
+      const response = await this.agileApi.get(`/board/${boardId}/configuration`);
       return response.data;
     } catch (error) {
       throw new Error(`Failed to fetch board configuration: ${error.message}`);

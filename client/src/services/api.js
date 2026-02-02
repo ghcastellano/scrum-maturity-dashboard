@@ -30,24 +30,26 @@ class ApiService {
     return response.data;
   }
 
-  async getTeamMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6) {
+  async getTeamMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false) {
     const response = await this.client.post('/metrics/team', {
       jiraUrl,
       email,
       apiToken,
       boardId,
-      sprintCount
+      sprintCount,
+      forceRefresh
     });
     return response.data;
   }
 
-  async getFlowMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 3) {
+  async getFlowMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 3, forceRefresh = false) {
     const response = await this.client.post('/metrics/flow', {
       jiraUrl,
       email,
       apiToken,
       boardId,
-      sprintCount
+      sprintCount,
+      forceRefresh
     });
     return response.data;
   }

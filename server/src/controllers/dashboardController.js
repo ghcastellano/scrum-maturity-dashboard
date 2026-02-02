@@ -103,17 +103,21 @@ class DashboardController {
           console.log(`\n📝 Sample Issues from first sprint (${sprint.name}):`);
           issues.slice(0, 3).forEach((issue, idx) => {
             console.log(`\n${idx + 1}. ${issue.key} - ${issue.fields.summary}`);
-            const numericFields = [];
+            const customFields = [];
             Object.keys(issue.fields).forEach(fieldKey => {
               if (fieldKey.startsWith('customfield_')) {
                 const value = issue.fields[fieldKey];
-                if (typeof value === 'number' && value > 0) {
-                  numericFields.push(`${fieldKey}=${value}`);
+                if (value !== null && value !== undefined) {
+                  // Show type and value
+                  const valueStr = typeof value === 'object' ? JSON.stringify(value).substring(0, 50) : value;
+                  customFields.push(`${fieldKey}=${valueStr}(${typeof value})`);
                 }
               }
             });
-            if (numericFields.length > 0) {
-              console.log(`   Numeric: ${numericFields.join(', ')}`);
+            if (customFields.length > 0) {
+              console.log(`   Fields: ${customFields.slice(0, 10).join(', ')}`);
+            } else {
+              console.log(`   No custom fields found!`);
             }
           });
         }

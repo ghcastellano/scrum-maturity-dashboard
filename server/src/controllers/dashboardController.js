@@ -162,7 +162,7 @@ class DashboardController {
         try {
           const backlogIssues = await jiraService.searchIssues(
             `project = "${projectKey}" AND status != Done AND sprint is EMPTY`,
-            ['summary', 'description', 'customfield_10016', 'fixVersions'],
+            ['summary', 'description', 'customfield_10061', 'fixVersions'],
             500
           );
           backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);

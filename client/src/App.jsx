@@ -13,6 +13,12 @@ const DEFAULT_JIRA_URL = import.meta.env.VITE_JIRA_URL || '';
 const DEFAULT_EMAIL = import.meta.env.VITE_JIRA_EMAIL || '';
 const DEFAULT_API_TOKEN = import.meta.env.VITE_JIRA_API_TOKEN || '';
 
+// Debug: Log environment variables on app load
+console.log('🔧 Environment Variables:');
+console.log('  VITE_JIRA_URL:', DEFAULT_JIRA_URL ? '✓ Set' : '✗ Not set');
+console.log('  VITE_JIRA_EMAIL:', DEFAULT_EMAIL ? '✓ Set' : '✗ Not set');
+console.log('  VITE_JIRA_API_TOKEN:', DEFAULT_API_TOKEN ? '✓ Set' : '✗ Not set');
+
 function App() {
   // Initialize state by checking localStorage immediately (no loading state)
   const initializeState = () => {
@@ -49,8 +55,17 @@ function App() {
         }
       }
 
+      // If we have saved credentials, go to team selection
+      if (savedUrl && savedEmail && savedToken) {
+        return {
+          step: 'teamSelection',
+          credentials: { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken },
+          boards: []
+        };
+      }
+
       // If no saved data but we have default credentials, use them automatically
-      if (!savedUrl && DEFAULT_JIRA_URL && DEFAULT_EMAIL && DEFAULT_API_TOKEN) {
+      if (DEFAULT_JIRA_URL && DEFAULT_EMAIL && DEFAULT_API_TOKEN) {
         console.log('Using default credentials from environment');
         const defaultCredentials = {
           jiraUrl: DEFAULT_JIRA_URL,

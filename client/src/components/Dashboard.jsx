@@ -40,6 +40,12 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
   const [isCached, setIsCached] = useState(false);
 
+  // Log selected boards on mount
+  useEffect(() => {
+    console.log('📋 Dashboard mounted with selectedBoards:', selectedBoards);
+    console.log('📋 Initial selectedBoard:', selectedBoards[0]);
+  }, []);
+
   // Helper function to safely format numbers
   const formatNumber = (value, decimals = 1) => {
     if (value === null || value === undefined || isNaN(value)) return '0.0';
@@ -57,6 +63,12 @@ export default function Dashboard({ credentials, selectedBoards }) {
 
       // selectedBoard can be either an object {id, name} or just an id (for backward compatibility)
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+
+      console.log('🎯 Dashboard loadMetrics:');
+      console.log('  selectedBoard:', selectedBoard);
+      console.log('  Extracted boardId:', boardId);
+      console.log('  boardId type:', typeof boardId);
+      console.log('  forceRefresh:', forceRefresh);
 
       const [teamData, flowData] = await Promise.all([
         api.getTeamMetrics(

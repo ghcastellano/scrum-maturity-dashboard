@@ -36,6 +36,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [metrics, setMetrics] = useState(null);
   const [flowMetrics, setFlowMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
 
   useEffect(() => {
@@ -45,7 +46,8 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const loadMetrics = async () => {
     try {
       setLoading(true);
-      
+      setError('');
+
       const [teamData, flowData] = await Promise.all([
         api.getTeamMetrics(
           credentials.jiraUrl,
@@ -67,17 +69,53 @@ export default function Dashboard({ credentials, selectedBoards }) {
       setFlowMetrics(flowData.data);
     } catch (err) {
       console.error('Failed to load metrics:', err);
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to load metrics';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || !metrics) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto"></div>
           <p className="mt-4 text-gray-600 text-lg">Analyzing team metrics...</p>
+          <p className="mt-2 text-sm text-gray-500">This may take a minute...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-2xl card">
+          <div className="text-center">
+            <div className="text-red-600 text-5xl mb-4">⚠️</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Failed to Load Metrics</h2>
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+              <p className="font-medium mb-2">Error Details:</p>
+              <p className="text-sm">{error}</p>
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn-primary"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">No metrics data available</p>
         </div>
       </div>
     );

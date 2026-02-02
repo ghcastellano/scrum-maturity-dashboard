@@ -31,11 +31,12 @@ class JiraService {
     try {
       let allBoards = [];
       let startAt = 0;
-      const maxResults = 200; // Increased from 100 to 200
-      let hasMore = true;
+      const maxResults = 50; // Jira API standard limit per page
+      let totalBoards = 0;
+      let fetchedThisRound = 0;
 
       // Fetch all boards with pagination
-      while (hasMore) {
+      do {
         const response = await this.agileApi.get('/board', {
           params: {
             type: 'scrum',
@@ -44,17 +45,21 @@ class JiraService {
           }
         });
 
-        allBoards = allBoards.concat(response.data.values);
-        startAt += maxResults;
-        hasMore = !response.data.isLast && response.data.values.length > 0;
+        fetchedThisRound = response.data.values ? response.data.values.length : 0;
 
-        // Safety limit to prevent infinite loops (increased to 3000)
-        if (allBoards.length >= 3000) {
-          break;
+        if (fetchedThisRound > 0) {
+          allBoards = allBoards.concat(response.data.values);
         }
-      }
 
-      console.log(`Fetched ${allBoards.length} boards total`);
+        totalBoards = response.data.total || 0;
+        startAt += fetchedThisRound;
+
+        console.log(`Fetched ${allBoards.length} of ${totalBoards} boards...`);
+
+        // Continue while we have more boards to fetch
+      } while (fetchedThisRound > 0 && allBoards.length < totalBoards && allBoards.length < 3000);
+
+      console.log(`✓ Fetched ${allBoards.length} boards total`);
 
       // Sort boards alphabetically by name
       allBoards.sort((a, b) => (a.name || '').localeCompare(b.name || ''));

@@ -460,31 +460,22 @@ export default function Dashboard({ credentials, selectedBoards }) {
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
             ⚡ Pillar 2: Flow & Quality
           </h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+          {flowMetrics && (
             <div>
-              <h3 className="font-semibold mb-4">Defect Distribution</h3>
-              <div className="h-64">
-                <Doughnut data={defectDistributionData} options={{ responsive: true, maintainAspectRatio: false }} />
+              <h3 className="font-semibold mb-4">Average Cycle Time (days)</h3>
+              <div className="space-y-3">
+                {Object.entries(flowMetrics.summary.avgCycleTime).map(([type, time]) => (
+                  <div key={type} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                    <span className="font-medium">{type}</span>
+                    <span className="text-lg font-bold text-primary-600">
+                      {time > 0 ? formatNumber(time) : 'N/A'} days
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-            
-            {flowMetrics && (
-              <div>
-                <h3 className="font-semibold mb-4">Average Cycle Time (days)</h3>
-                <div className="space-y-3">
-                  {Object.entries(flowMetrics.summary.avgCycleTime).map(([type, time]) => (
-                    <div key={type} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                      <span className="font-medium">{type}</span>
-                      <span className="text-lg font-bold text-primary-600">
-                        {time > 0 ? formatNumber(time) : 'N/A'} days
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Pillar 3: Team Ownership */}

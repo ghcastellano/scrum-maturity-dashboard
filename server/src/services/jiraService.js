@@ -204,19 +204,35 @@ class JiraService {
       const fields = await this.getFields();
 
       // Common story points field names
-      const storyPointsKeywords = ['story points', 'storypoints', 'points', 'estimate'];
+      const storyPointsKeywords = ['story points', 'storypoints', 'points', 'estimate', 'sp'];
 
-      const candidates = fields.filter(field => {
+      const keywordCandidates = fields.filter(field => {
         const name = (field.name || '').toLowerCase();
         return storyPointsKeywords.some(keyword => name.includes(keyword));
       });
 
-      console.log('\n📊 Story Points Field Candidates:');
-      candidates.forEach(field => {
-        console.log(`  - ${field.id}: ${field.name} (${field.schema?.type || 'unknown type'})`);
+      // Also find all number-type custom fields as potential candidates
+      const numberFields = fields.filter(field => {
+        const isCustomField = field.id && field.id.startsWith('customfield_');
+        const isNumber = field.schema?.type === 'number';
+        return isCustomField && isNumber;
       });
 
-      return candidates;
+      console.log('\n📊 Story Points Field Candidates (by keyword):');
+      if (keywordCandidates.length > 0) {
+        keywordCandidates.forEach(field => {
+          console.log(`  - ${field.id}: ${field.name} (${field.schema?.type || 'unknown type'})`);
+        });
+      } else {
+        console.log('  No fields found with keywords: points, estimate, sp');
+      }
+
+      console.log('\n🔢 All numeric custom fields (potential candidates):');
+      numberFields.slice(0, 20).forEach(field => {
+        console.log(`  - ${field.id}: ${field.name}`);
+      });
+
+      return keywordCandidates.length > 0 ? keywordCandidates : numberFields;
     } catch (error) {
       throw new Error(`Failed to find story points field: ${error.message}`);
     }
@@ -231,22 +247,31 @@ class JiraService {
         return null;
       }
 
-      const sampleIssue = issues[0];
+      console.log(`\n📝 Sample Issues from Sprint ${sprintId} (showing first 3):`);
 
-      console.log('\n📝 Sample Issue Fields:');
-      console.log(`Issue Key: ${sampleIssue.key}`);
-      console.log('Available custom fields:');
+      issues.slice(0, 3).forEach((issue, idx) => {
+        console.log(`\n${idx + 1}. Issue: ${issue.key} - ${issue.fields.summary}`);
+        console.log(`   Status: ${issue.fields.status.name}`);
 
-      Object.keys(sampleIssue.fields).forEach(fieldKey => {
-        if (fieldKey.startsWith('customfield_')) {
-          const value = sampleIssue.fields[fieldKey];
-          if (value !== null && value !== undefined) {
-            console.log(`  - ${fieldKey}: ${JSON.stringify(value).substring(0, 100)}`);
+        // Show only numeric custom fields
+        const numericFields = [];
+        Object.keys(issue.fields).forEach(fieldKey => {
+          if (fieldKey.startsWith('customfield_')) {
+            const value = issue.fields[fieldKey];
+            if (typeof value === 'number' && value > 0) {
+              numericFields.push(`${fieldKey}=${value}`);
+            }
           }
+        });
+
+        if (numericFields.length > 0) {
+          console.log(`   Numeric fields: ${numericFields.join(', ')}`);
+        } else {
+          console.log(`   No numeric custom fields found`);
         }
       });
 
-      return sampleIssue;
+      return issues[0];
     } catch (error) {
       throw new Error(`Failed to get sample issue: ${error.message}`);
     }

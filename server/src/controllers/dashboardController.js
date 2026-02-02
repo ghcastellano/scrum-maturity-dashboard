@@ -1,5 +1,6 @@
 import JiraService from '../services/jiraService.js';
 import MetricsService from '../services/metricsService.js';
+import cacheService from '../services/cacheService.js';
 
 class DashboardController {
   constructor() {
@@ -54,8 +55,23 @@ class DashboardController {
   // Get team metrics
   async getTeamMetrics(req, res) {
     try {
-      const { jiraUrl, email, apiToken, boardId, sprintCount = 6 } = req.body;
-      
+      const { jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false } = req.body;
+
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cacheKey = cacheService.generateKey(boardId, 'team-metrics');
+        const cachedData = cacheService.get(cacheKey);
+
+        if (cachedData) {
+          return res.json({
+            success: true,
+            data: cachedData,
+            cached: true,
+            message: 'Data loaded from cache'
+          });
+        }
+      }
+
       const jiraService = new JiraService(jiraUrl, email, apiToken);
       
       // Get sprints
@@ -136,17 +152,26 @@ class DashboardController {
         backlogHealth,
         midSprintAdditions: aggregated.avgMidSprintAdditions || 0
       });
-      
+
+      // Prepare response data
+      const responseData = {
+        sprintMetrics,
+        aggregated,
+        backlogHealth,
+        maturityLevel,
+        boardId,
+        sprintsAnalyzed: sprintMetrics.length
+      };
+
+      // Cache the data
+      const cacheKey = cacheService.generateKey(boardId, 'team-metrics');
+      cacheService.set(cacheKey, responseData);
+
       res.json({
         success: true,
-        data: {
-          sprintMetrics,
-          aggregated,
-          backlogHealth,
-          maturityLevel,
-          boardId,
-          sprintsAnalyzed: sprintMetrics.length
-        }
+        data: responseData,
+        cached: false,
+        message: 'Data fetched from Jira API'
       });
       
     } catch (error) {
@@ -161,8 +186,23 @@ class DashboardController {
   // Get detailed flow metrics (cycle time, lead time)
   async getFlowMetrics(req, res) {
     try {
-      const { jiraUrl, email, apiToken, boardId, sprintCount = 3 } = req.body;
-      
+      const { jiraUrl, email, apiToken, boardId, sprintCount = 3, forceRefresh = false } = req.body;
+
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cacheKey = cacheService.generateKey(boardId, 'flow-metrics');
+        const cachedData = cacheService.get(cacheKey);
+
+        if (cachedData) {
+          return res.json({
+            success: true,
+            data: cachedData,
+            cached: true,
+            message: 'Data loaded from cache'
+          });
+        }
+      }
+
       const jiraService = new JiraService(jiraUrl, email, apiToken);
       const sprints = await jiraService.getSprints(boardId, 'closed');
       const recentSprints = sprints.slice(0, sprintCount);
@@ -211,13 +251,22 @@ class DashboardController {
           Task: calculateAvg(flowMetrics.leadTimeByType.Task)
         }
       };
-      
+
+      // Prepare response data
+      const responseData = {
+        flowMetrics,
+        summary
+      };
+
+      // Cache the data
+      const cacheKey = cacheService.generateKey(boardId, 'flow-metrics');
+      cacheService.set(cacheKey, responseData);
+
       res.json({
         success: true,
-        data: {
-          flowMetrics,
-          summary
-        }
+        data: responseData,
+        cached: false,
+        message: 'Data fetched from Jira API'
       });
       
     } catch (error) {

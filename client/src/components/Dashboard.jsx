@@ -38,6 +38,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
+  const [isCached, setIsCached] = useState(false);
 
   // Helper function to safely format numbers
   const formatNumber = (value, decimals = 1) => {
@@ -49,7 +50,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
     loadMetrics();
   }, [selectedBoard]);
 
-  const loadMetrics = async () => {
+  const loadMetrics = async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError('');
@@ -63,19 +64,22 @@ export default function Dashboard({ credentials, selectedBoards }) {
           credentials.email,
           credentials.apiToken,
           boardId,
-          6
+          6,
+          forceRefresh
         ),
         api.getFlowMetrics(
           credentials.jiraUrl,
           credentials.email,
           credentials.apiToken,
           boardId,
-          3
+          3,
+          forceRefresh
         )
       ]);
 
       setMetrics(teamData.data);
       setFlowMetrics(flowData.data);
+      setIsCached(teamData.cached || false);
     } catch (err) {
       console.error('Failed to load metrics:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Failed to load metrics';
@@ -259,8 +263,25 @@ export default function Dashboard({ credentials, selectedBoards }) {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Scrum Maturity Dashboard</h1>
-          
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-4xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
+            <div className="flex items-center gap-3">
+              {isCached && (
+                <span className="text-sm text-gray-600 bg-yellow-50 border border-yellow-200 px-3 py-1 rounded-lg">
+                  📦 Cached data (30 min)
+                </span>
+              )}
+              <button
+                onClick={() => loadMetrics(true)}
+                disabled={loading}
+                className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <span>🔄</span>
+                {loading ? 'Loading...' : 'Refresh from Jira'}
+              </button>
+            </div>
+          </div>
+
           {selectedBoards.length > 1 && (
             <select
               value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}

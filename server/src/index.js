@@ -19,7 +19,7 @@ app.use(express.json());
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
-  const frontendPath = path.join(__dirname, '../../client/dist');
+  const frontendPath = path.join(__dirname, '../public');
   app.use(express.static(frontendPath));
 }
 
@@ -51,7 +51,7 @@ app.get('/health', (req, res) => {
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
+    res.sendFile(path.join(__dirname, '../public/index.html'));
   });
 }
 

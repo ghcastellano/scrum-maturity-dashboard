@@ -76,7 +76,17 @@ class JiraService {
       const response = await this.agileApi.get(`/board/${boardId}/sprint`, {
         params: { state, maxResults: 50 }
       });
-      return response.data.values;
+
+      const sprints = response.data.values;
+
+      // Sort sprints by end date, most recent first
+      sprints.sort((a, b) => {
+        const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
+        const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
+        return dateB - dateA; // Descending order (newest first)
+      });
+
+      return sprints;
     } catch (error) {
       throw new Error(`Failed to fetch sprints: ${error.message}`);
     }

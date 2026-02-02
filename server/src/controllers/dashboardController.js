@@ -156,19 +156,29 @@ class DashboardController {
       const boardConfig = await jiraService.getBoardConfiguration(boardId);
       const projectKey = boardConfig.location?.projectKey || null;
 
+      console.log(`\n🔍 Fetching Backlog Health for board ${boardId}:`);
+      console.log(`  Project Key: ${projectKey}`);
+
       let backlogHealth = { score: 0, details: {} };
 
       if (projectKey) {
         try {
+          const backlogJQL = `project = "${projectKey}" AND status != Done AND sprint is EMPTY`;
+          console.log(`  JQL Query: ${backlogJQL}`);
+
           const backlogIssues = await jiraService.searchIssues(
-            `project = "${projectKey}" AND status != Done AND sprint is EMPTY`,
+            backlogJQL,
             ['summary', 'description', 'customfield_10061', 'fixVersions'],
             500
           );
+
+          console.log(`  Found ${backlogIssues.length} backlog issues`);
           backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);
         } catch (err) {
-          console.warn('Could not fetch backlog health:', err.message);
+          console.warn('  ❌ Could not fetch backlog health:', err.message);
         }
+      } else {
+        console.warn('  ⚠️  No project key found for board!');
       }
       
       // Aggregate metrics

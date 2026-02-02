@@ -26,34 +26,38 @@ class JiraService {
     });
   }
 
-  // Get all boards
+  // Get all boards (paginated to fetch all)
   async getBoards() {
     try {
-      const response = await this.agileApi.get('/board', {
-        params: {
-          type: 'scrum',
-          maxResults: 1000
-        }
-      });
+      let allBoards = [];
+      let startAt = 0;
+      const maxResults = 100;
+      let hasMore = true;
 
-      // Filter boards to only show specified projects
-      // IIA, AISDR, AISRCSCI (AI Sourcing Science)
-      const allowedProjects = ['IIA', 'AISDR', 'AISRCSCI'];
-      const filteredBoards = response.data.values.filter(board => {
-        if (board.location && board.location.projectKey) {
-          return allowedProjects.includes(board.location.projectKey);
-        }
-        // Also include boards with matching names (case insensitive)
-        if (board.name) {
-          const nameLower = board.name.toLowerCase();
-          return nameLower.includes('intelligence assistant') ||
-                 nameLower.includes('sourcing') ||
-                 nameLower.includes('aisdr');
-        }
-        return false;
-      });
+      // Fetch all boards with pagination
+      while (hasMore) {
+        const response = await this.agileApi.get('/board', {
+          params: {
+            type: 'scrum',
+            startAt,
+            maxResults
+          }
+        });
 
-      return filteredBoards;
+        allBoards = allBoards.concat(response.data.values);
+        startAt += maxResults;
+        hasMore = !response.data.isLast;
+
+        // Safety limit to prevent infinite loops
+        if (allBoards.length >= 2000) {
+          break;
+        }
+      }
+
+      // Sort boards alphabetically by name
+      allBoards.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      return allBoards;
     } catch (error) {
       throw new Error(`Failed to fetch boards: ${error.message}`);
     }

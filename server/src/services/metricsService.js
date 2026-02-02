@@ -5,19 +5,39 @@ class MetricsService {
   // Calculate Sprint Goal Attainment
   calculateSprintGoalAttainment(sprint, issues) {
     const storyPointsField = 'customfield_10016'; // Padrão Jira, ajustar se necessário
-    
+
     let committedPoints = 0;
     let completedPoints = 0;
-    
+    let issuesWithPoints = 0;
+    let issuesWithoutPoints = 0;
+
     issues.forEach(issue => {
       const points = issue.fields[storyPointsField] || 0;
-      committedPoints += points;
-      
-      if (issue.fields.status.statusCategory.key === 'done') {
-        completedPoints += points;
+
+      if (points > 0) {
+        issuesWithPoints++;
+        committedPoints += points;
+
+        if (issue.fields.status.statusCategory.key === 'done') {
+          completedPoints += points;
+        }
+      } else {
+        issuesWithoutPoints++;
       }
     });
-    
+
+    console.log(`\n📊 Sprint Goal Attainment - ${sprint.name}:`);
+    console.log(`  Total issues: ${issues.length}`);
+    console.log(`  Issues with story points: ${issuesWithPoints}`);
+    console.log(`  Issues without story points: ${issuesWithoutPoints}`);
+    console.log(`  Committed points: ${committedPoints}`);
+    console.log(`  Completed points: ${completedPoints}`);
+    console.log(`  Attainment: ${committedPoints > 0 ? ((completedPoints / committedPoints) * 100).toFixed(1) : 0}%`);
+
+    if (issuesWithoutPoints > 0 && issues.length <= 5) {
+      console.log(`  Sample issue keys (first 5): ${issues.slice(0, 5).map(i => i.key).join(', ')}`);
+    }
+
     return committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0;
   }
 

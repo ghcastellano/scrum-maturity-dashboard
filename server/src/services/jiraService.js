@@ -172,6 +172,21 @@ class JiraService {
     }
   }
 
+  // Get backlog issues for a board (direct endpoint, no JQL)
+  async getBacklogIssues(boardId) {
+    try {
+      const response = await this.agileApi.get(`/board/${boardId}/backlog`, {
+        params: {
+          maxResults: 500,
+          fields: 'summary,description,customfield_10061,fixVersions'
+        }
+      });
+      return response.data.issues;
+    } catch (error) {
+      throw new Error(`Failed to fetch backlog issues: ${error.message}`);
+    }
+  }
+
   // Get team members (users assigned to issues in a board)
   async getBoardTeamMembers(boardId) {
     try {

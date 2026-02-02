@@ -84,14 +84,40 @@ class MetricsService {
     let startTime = null;
     let endTime = null;
 
-    // Find when issue moved to "In Progress"
+    // Log status transitions for debugging (only for first issue)
+    if (!this._loggedStatuses) {
+      console.log(`\n🔄 Status transitions for ${issue.key}:`);
+      changelog.slice(0, 5).forEach(change => {
+        change.items.forEach(item => {
+          if (item.field === 'status') {
+            console.log(`  ${item.fromString} → ${item.toString}`);
+          }
+        });
+      });
+      this._loggedStatuses = true;
+    }
+
+    // Find when issue moved to "In Progress" (or similar)
     for (const change of changelog) {
       for (const item of change.items) {
         if (item.field === 'status') {
-          if (item.toString === 'In Progress' && !startTime) {
+          // Check for work-in-progress status
+          if (!startTime && (
+            item.toString === 'In Progress' ||
+            item.toString === 'In Development' ||
+            item.toString === 'In Review' ||
+            item.toString.toLowerCase().includes('progress') ||
+            item.toString.toLowerCase().includes('development')
+          )) {
             startTime = parseISO(change.created);
           }
-          if (item.toString === 'Done' && startTime) {
+          // Check for done status
+          if (startTime && (
+            item.toString === 'Done' ||
+            item.toString === 'Closed' ||
+            item.toString === 'Resolved' ||
+            item.toString.toLowerCase().includes('done')
+          )) {
             endTime = parseISO(change.created);
             break;
           }
@@ -124,6 +150,20 @@ class MetricsService {
     let linkedToGoals = 0;
     const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
 
+    console.log(`\n📋 Backlog Health Analysis:`);
+    console.log(`  Total backlog issues: ${issues.length}`);
+
+    // Log first 3 issues for debugging
+    if (issues.length > 0) {
+      console.log(`\n  Sample backlog issues (first 3):`);
+      issues.slice(0, 3).forEach((issue, idx) => {
+        console.log(`  ${idx + 1}. ${issue.key}`);
+        console.log(`     Description length: ${issue.fields.description?.length || 0} chars`);
+        console.log(`     Story Points (${storyPointsField}): ${issue.fields[storyPointsField] || 'null'}`);
+        console.log(`     Fix Versions: ${issue.fields.fixVersions?.length || 0}`);
+      });
+    }
+
     issues.forEach(issue => {
       // Check for AC (assuming description length > 50 chars indicates AC)
       if (issue.fields.description && issue.fields.description.length > 50) {
@@ -142,7 +182,14 @@ class MetricsService {
     });
 
     const total = issues.length;
+
+    console.log(`\n  Results:`);
+    console.log(`    With Acceptance Criteria (desc > 50): ${withAcceptanceCriteria}/${total}`);
+    console.log(`    With Estimates: ${withEstimates}/${total}`);
+    console.log(`    Linked to Goals: ${linkedToGoals}/${total}`);
+
     if (total === 0) {
+      console.log(`  ⚠️  No backlog issues found!`);
       return {
         withAcceptanceCriteria: 0,
         withEstimates: 0,

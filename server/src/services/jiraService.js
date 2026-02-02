@@ -31,7 +31,7 @@ class JiraService {
     try {
       let allBoards = [];
       let startAt = 0;
-      const maxResults = 100;
+      const maxResults = 200; // Increased from 100 to 200
       let hasMore = true;
 
       // Fetch all boards with pagination
@@ -46,13 +46,15 @@ class JiraService {
 
         allBoards = allBoards.concat(response.data.values);
         startAt += maxResults;
-        hasMore = !response.data.isLast;
+        hasMore = !response.data.isLast && response.data.values.length > 0;
 
-        // Safety limit to prevent infinite loops
-        if (allBoards.length >= 2000) {
+        // Safety limit to prevent infinite loops (increased to 3000)
+        if (allBoards.length >= 3000) {
           break;
         }
       }
+
+      console.log(`Fetched ${allBoards.length} boards total`);
 
       // Sort boards alphabetically by name
       allBoards.sort((a, b) => (a.name || '').localeCompare(b.name || ''));

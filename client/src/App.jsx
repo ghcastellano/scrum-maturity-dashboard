@@ -1,24 +1,83 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import JiraConnection from './components/JiraConnection';
 import TeamSelector from './components/TeamSelector';
 import Dashboard from './components/Dashboard';
 
+const STORAGE_KEY_JIRA_URL = 'scrum-dashboard-jira-url';
+const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
+const STORAGE_KEY_TOKEN = 'scrum-dashboard-api-token';
+const STORAGE_KEY_BOARDS = 'scrum-dashboard-selected-boards';
+
 function App() {
-  const [step, setStep] = useState('connection'); // connection | teamSelection | dashboard
+  const [step, setStep] = useState('loading'); // loading | connection | teamSelection | dashboard
   const [credentials, setCredentials] = useState(null);
   const [selectedBoards, setSelectedBoards] = useState([]);
 
+  // Auto-load saved credentials and boards on mount
+  useEffect(() => {
+    try {
+      const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
+      const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
+      const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
+
+      // If we have all required data, auto-load dashboard
+      if (savedUrl && savedEmail && savedToken && savedBoards) {
+        const boards = JSON.parse(savedBoards);
+        if (boards.length > 0) {
+          setCredentials({
+            jiraUrl: savedUrl,
+            email: savedEmail,
+            apiToken: savedToken
+          });
+          setSelectedBoards(boards);
+          setStep('dashboard');
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load saved session:', err);
+    }
+
+    // If we don't have saved data, show connection screen
+    setStep('connection');
+  }, []);
+
   const handleConnectionSuccess = (creds) => {
+    // Save credentials to localStorage for auto-login
+    try {
+      localStorage.setItem(STORAGE_KEY_JIRA_URL, creds.jiraUrl);
+      localStorage.setItem(STORAGE_KEY_EMAIL, creds.email);
+      localStorage.setItem(STORAGE_KEY_TOKEN, creds.apiToken);
+    } catch (err) {
+      console.error('Failed to save credentials:', err);
+    }
+
     setCredentials(creds);
     setStep('teamSelection');
   };
 
   const handleTeamsSelected = (boards) => {
+    // Save selected boards
+    try {
+      localStorage.setItem(STORAGE_KEY_BOARDS, JSON.stringify(boards));
+    } catch (err) {
+      console.error('Failed to save boards:', err);
+    }
+
     setSelectedBoards(boards);
     setStep('dashboard');
   };
 
   const handleReset = () => {
+    // Clear all saved data
+    try {
+      localStorage.removeItem(STORAGE_KEY_TOKEN);
+      localStorage.removeItem(STORAGE_KEY_BOARDS);
+    } catch (err) {
+      console.error('Failed to clear saved data:', err);
+    }
+
     setStep('connection');
     setCredentials(null);
     setSelectedBoards([]);
@@ -35,32 +94,47 @@ function App() {
           </div>
           
           {step === 'dashboard' && (
-            <button
-              onClick={handleReset}
-              className="btn-secondary"
-            >
-              Change Teams
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep('teamSelection')}
+                className="btn-secondary"
+              >
+                Change Teams
+              </button>
+              <button
+                onClick={handleReset}
+                className="px-4 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                Disconnect
+              </button>
+            </div>
           )}
         </div>
       </header>
 
       {/* Main Content */}
       <main className="py-8">
+        {step === 'loading' && (
+          <div className="max-w-2xl mx-auto card text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading saved session...</p>
+          </div>
+        )}
+
         {step === 'connection' && (
           <JiraConnection onConnectionSuccess={handleConnectionSuccess} />
         )}
 
         {step === 'teamSelection' && (
-          <TeamSelector 
-            credentials={credentials} 
+          <TeamSelector
+            credentials={credentials}
             onTeamsSelected={handleTeamsSelected}
           />
         )}
 
         {step === 'dashboard' && (
-          <Dashboard 
-            credentials={credentials} 
+          <Dashboard
+            credentials={credentials}
             selectedBoards={selectedBoards}
           />
         )}

@@ -18,10 +18,11 @@ export default function JiraConnection({ onConnectionSuccess }) {
     try {
       const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
       const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+      const defaultJiraUrl = import.meta.env.VITE_JIRA_URL || 'https://indeed.atlassian.net/';
 
       setFormData(prev => ({
         ...prev,
-        jiraUrl: savedUrl || 'https://indeed.atlassian.net/',
+        jiraUrl: savedUrl || defaultJiraUrl,
         email: savedEmail || ''
       }));
     } catch (err) {
@@ -51,8 +52,9 @@ export default function JiraConnection({ onConnectionSuccess }) {
       );
 
       if (result.success) {
-        // Save URL and email (but NOT the token for security)
+        // Save URL and email for convenience
         saveCredentials(formData.jiraUrl, formData.email);
+        // Token is saved by App.jsx for auto-login
         onConnectionSuccess(formData);
       }
     } catch (err) {
@@ -80,7 +82,7 @@ export default function JiraConnection({ onConnectionSuccess }) {
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            Your Jira Cloud instance URL (saved automatically)
+            Pre-configured for your organization (saved automatically)
           </p>
         </div>
 
@@ -123,7 +125,7 @@ export default function JiraConnection({ onConnectionSuccess }) {
               Create an API token here
             </a>
             {' • '}
-            <span className="text-gray-500">Not saved for security</span>
+            <span className="text-orange-600">Saved locally for auto-login</span>
           </p>
         </div>
 
@@ -142,14 +144,25 @@ export default function JiraConnection({ onConnectionSuccess }) {
         </button>
       </form>
 
-      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-        <h3 className="font-semibold text-sm text-blue-900 mb-2">How to get your API token:</h3>
-        <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-          <li>Go to Atlassian account settings</li>
-          <li>Click "Security" → "Create and manage API tokens"</li>
-          <li>Click "Create API token"</li>
-          <li>Copy the token and paste it above</li>
-        </ol>
+      <div className="mt-6 space-y-4">
+        <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+          <h3 className="font-semibold text-sm text-orange-900 mb-2">🔐 Security Notice</h3>
+          <p className="text-sm text-orange-800">
+            Your credentials (including API token) will be saved in your browser's local storage
+            for automatic login. This data stays only on your device and is never sent to any server
+            except Jira. Use the "Disconnect" button to clear all saved data.
+          </p>
+        </div>
+
+        <div className="p-4 bg-blue-50 rounded-lg">
+          <h3 className="font-semibold text-sm text-blue-900 mb-2">How to get your API token:</h3>
+          <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+            <li>Go to Atlassian account settings</li>
+            <li>Click "Security" → "Create and manage API tokens"</li>
+            <li>Click "Create API token"</li>
+            <li>Copy the token and paste it above</li>
+          </ol>
+        </div>
       </div>
     </div>
   );

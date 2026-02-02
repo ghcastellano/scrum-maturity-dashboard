@@ -39,6 +39,12 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
 
+  // Helper function to safely format numbers
+  const formatNumber = (value, decimals = 1) => {
+    if (value === null || value === undefined || isNaN(value)) return '0.0';
+    return Number(value).toFixed(decimals);
+  };
+
   useEffect(() => {
     loadMetrics();
   }, [selectedBoard]);
@@ -323,7 +329,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Avg Sprint Goal Attainment</div>
             <div className="text-3xl font-bold text-primary-600">
-              {metrics.aggregated.avgSprintGoalAttainment.toFixed(1)}%
+              {formatNumber(metrics.aggregated?.avgSprintGoalAttainment)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
               Target Level 3: &gt;70%
@@ -332,7 +338,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Avg Rollover Rate</div>
             <div className="text-3xl font-bold text-red-600">
-              {metrics.aggregated.avgRolloverRate.toFixed(1)}%
+              {formatNumber(metrics.aggregated?.avgRolloverRate)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
               Target Level 3: &lt;10-15%
@@ -341,7 +347,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Avg Hit Rate</div>
             <div className="text-3xl font-bold text-green-600">
-              {metrics.aggregated.avgSprintHitRate.toFixed(1)}%
+              {formatNumber(metrics.aggregated?.avgSprintHitRate)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
               Higher is better
@@ -350,7 +356,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Backlog Health Score</div>
             <div className="text-3xl font-bold text-blue-600">
-              {metrics.backlogHealth.overallScore.toFixed(1)}%
+              {formatNumber(metrics.backlogHealth?.overallScore)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
               Target Level 3: &gt;80%
@@ -396,7 +402,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
                   <div key={sprint.sprintId} className="flex justify-between items-center p-3 bg-gray-50 rounded">
                     <span className="text-sm font-medium">{sprint.sprintName}</span>
                     <span className="text-sm">
-                      {sprint.midSprintAdditions.count} issues ({sprint.midSprintAdditions.percentage.toFixed(1)}%)
+                      {sprint.midSprintAdditions?.count || 0} issues ({formatNumber(sprint.midSprintAdditions?.percentage)}%)
                     </span>
                   </div>
                 ))}
@@ -427,7 +433,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
                     <div key={type} className="flex justify-between items-center p-3 bg-gray-50 rounded">
                       <span className="font-medium">{type}</span>
                       <span className="text-lg font-bold text-primary-600">
-                        {time > 0 ? time.toFixed(1) : 'N/A'} days
+                        {time > 0 ? formatNumber(time) : 'N/A'} days
                       </span>
                     </div>
                   ))}
@@ -463,19 +469,19 @@ export default function Dashboard({ credentials, selectedBoards }) {
                 <div className="p-4 bg-blue-50 rounded-lg">
                   <div className="text-sm text-gray-600 mb-1">Items with Acceptance Criteria</div>
                   <div className="text-2xl font-bold text-blue-600">
-                    {metrics.backlogHealth.withAcceptanceCriteria.toFixed(1)}%
+                    {formatNumber(metrics.backlogHealth?.withAcceptanceCriteria)}%
                   </div>
                 </div>
                 <div className="p-4 bg-green-50 rounded-lg">
                   <div className="text-sm text-gray-600 mb-1">Items with Estimates</div>
                   <div className="text-2xl font-bold text-green-600">
-                    {metrics.backlogHealth.withEstimates.toFixed(1)}%
+                    {formatNumber(metrics.backlogHealth?.withEstimates)}%
                   </div>
                 </div>
                 <div className="p-4 bg-orange-50 rounded-lg">
                   <div className="text-sm text-gray-600 mb-1">Items Linked to Goals</div>
                   <div className="text-2xl font-bold text-orange-600">
-                    {metrics.backlogHealth.linkedToGoals.toFixed(1)}%
+                    {formatNumber(metrics.backlogHealth?.linkedToGoals)}%
                   </div>
                 </div>
               </div>

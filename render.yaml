@@ -1,9 +1,7 @@
 services:
   - type: web
     name: scrum-maturity-api
-    env: node
-    region: oregon
-    plan: free
+    runtime: node
     buildCommand: cd server && npm install
     startCommand: cd server && npm start
     envVars:

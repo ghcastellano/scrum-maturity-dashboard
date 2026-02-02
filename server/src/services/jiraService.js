@@ -85,9 +85,9 @@ class JiraService {
   // Get issues for a sprint
   async getSprintIssues(sprintId) {
     try {
-      const response = await this.api.get('/search', {
+      // Use Agile API endpoint for sprint issues
+      const response = await this.agileApi.get(`/sprint/${sprintId}/issue`, {
         params: {
-          jql: `sprint = ${sprintId}`,
           maxResults: 1000,
           fields: 'summary,status,issuetype,created,resolutiondate,customfield_10016,assignee,priority,parent,fixVersions'
         }

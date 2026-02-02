@@ -98,13 +98,25 @@ class DashboardController {
       }
       
       // Get current backlog health
-      const backlogIssues = await jiraService.searchIssues(
-        `board = ${boardId} AND status != Done AND sprint is EMPTY`,
-        ['summary', 'description', 'customfield_10016', 'fixVersions'],
-        500
-      );
-      
-      const backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);
+      // NOTE: board JQL function is deprecated and returns 410
+      // Using project-based query instead for backlog health
+      const boardConfig = await jiraService.getBoardConfiguration(boardId);
+      const projectKey = boardConfig.location?.projectKey || null;
+
+      let backlogHealth = { score: 0, details: {} };
+
+      if (projectKey) {
+        try {
+          const backlogIssues = await jiraService.searchIssues(
+            `project = "${projectKey}" AND status != Done AND sprint is EMPTY`,
+            ['summary', 'description', 'customfield_10016', 'fixVersions'],
+            500
+          );
+          backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);
+        } catch (err) {
+          console.warn('Could not fetch backlog health:', err.message);
+        }
+      }
       
       // Aggregate metrics
       const aggregated = this.metricsService.aggregateSprintMetrics(sprintMetrics);

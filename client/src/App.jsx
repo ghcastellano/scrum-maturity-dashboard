@@ -31,9 +31,18 @@ function App() {
             apiToken: savedToken
           });
 
-          // Handle both old format (array of IDs) and new format (array of objects)
-          // If boards are just numbers, keep them as IDs (backward compatibility)
-          // The Dashboard component will handle both formats
+          // Check if boards are in old format (array of numbers) or new format (array of objects)
+          const isOldFormat = typeof boards[0] === 'number';
+
+          if (isOldFormat) {
+            // Old format detected - need to re-select teams to get names
+            console.log('Old board format detected, please re-select your teams');
+            localStorage.removeItem(STORAGE_KEY_BOARDS);
+            setStep('teamSelection');
+            return;
+          }
+
+          // New format - proceed to dashboard
           setSelectedBoards(boards);
           setStep('dashboard');
           return;

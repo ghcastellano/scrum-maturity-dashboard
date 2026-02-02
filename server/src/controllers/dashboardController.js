@@ -163,7 +163,7 @@ class DashboardController {
 
       if (projectKey) {
         try {
-          const backlogJQL = `project = "${projectKey}" AND status != Done AND sprint is EMPTY`;
+          const backlogJQL = `project = "${projectKey}" AND status != CLOSED AND sprint is EMPTY`;
           console.log(`  JQL Query: ${backlogJQL}`);
 
           const backlogIssues = await jiraService.searchIssues(

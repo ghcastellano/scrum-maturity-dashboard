@@ -97,26 +97,21 @@ class MetricsService {
       this._loggedStatuses = true;
     }
 
-    // Find when issue moved to "In Progress" (or similar)
+    // Find when issue moved to "IN PROGRESS" (Indeed Jira workflow)
     for (const change of changelog) {
       for (const item of change.items) {
         if (item.field === 'status') {
-          // Check for work-in-progress status
+          // Check for work-in-progress status (Indeed Jira uses "IN PROGRESS")
           if (!startTime && (
-            item.toString === 'In Progress' ||
-            item.toString === 'In Development' ||
-            item.toString === 'In Review' ||
-            item.toString.toLowerCase().includes('progress') ||
-            item.toString.toLowerCase().includes('development')
+            item.toString === 'IN PROGRESS' ||
+            item.toString === 'In Progress'
           )) {
             startTime = parseISO(change.created);
           }
-          // Check for done status
+          // Check for closed status (Indeed Jira uses "CLOSED")
           if (startTime && (
-            item.toString === 'Done' ||
-            item.toString === 'Closed' ||
-            item.toString === 'Resolved' ||
-            item.toString.toLowerCase().includes('done')
+            item.toString === 'CLOSED' ||
+            item.toString === 'Closed'
           )) {
             endTime = parseISO(change.created);
             break;

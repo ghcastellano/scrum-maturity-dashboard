@@ -73,11 +73,16 @@ class DashboardController {
       }
 
       const jiraService = new JiraService(jiraUrl, email, apiToken);
-      
+
       // Get sprints
       const sprints = await jiraService.getSprints(boardId, 'closed');
       const recentSprints = sprints.slice(0, sprintCount);
-      
+
+      console.log(`\n📋 Board ${boardId} - Analyzing ${recentSprints.length} sprints:`);
+      recentSprints.forEach((s, idx) => {
+        console.log(`  ${idx + 1}. ${s.name} (${s.startDate?.split('T')[0]} to ${s.endDate?.split('T')[0]})`);
+      });
+
       // Process each sprint
       const sprintMetrics = [];
       

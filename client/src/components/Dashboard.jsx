@@ -54,19 +54,22 @@ export default function Dashboard({ credentials, selectedBoards }) {
       setLoading(true);
       setError('');
 
+      // selectedBoard can be either an object {id, name} or just an id (for backward compatibility)
+      const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+
       const [teamData, flowData] = await Promise.all([
         api.getTeamMetrics(
           credentials.jiraUrl,
           credentials.email,
           credentials.apiToken,
-          selectedBoard,
+          boardId,
           6
         ),
         api.getFlowMetrics(
           credentials.jiraUrl,
           credentials.email,
           credentials.apiToken,
-          selectedBoard,
+          boardId,
           3
         )
       ]);
@@ -260,13 +263,21 @@ export default function Dashboard({ credentials, selectedBoards }) {
           
           {selectedBoards.length > 1 && (
             <select
-              value={selectedBoard}
-              onChange={(e) => setSelectedBoard(Number(e.target.value))}
+              value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
+              onChange={(e) => {
+                const boardId = Number(e.target.value);
+                const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
+                setSelectedBoard(board || boardId);
+              }}
               className="input-field max-w-md"
             >
-              {selectedBoards.map(boardId => (
-                <option key={boardId} value={boardId}>Board {boardId}</option>
-              ))}
+              {selectedBoards.map(board => {
+                const boardId = typeof board === 'object' ? board.id : board;
+                const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
+                return (
+                  <option key={boardId} value={boardId}>{boardName}</option>
+                );
+              })}
             </select>
           )}
         </div>

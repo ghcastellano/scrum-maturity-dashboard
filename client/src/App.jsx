@@ -30,7 +30,10 @@ function App() {
             email: savedEmail,
             apiToken: savedToken
           });
-          // boards is now an array of objects with {id, name, type}
+
+          // Handle both old format (array of IDs) and new format (array of objects)
+          // If boards are just numbers, keep them as IDs (backward compatibility)
+          // The Dashboard component will handle both formats
           setSelectedBoards(boards);
           setStep('dashboard');
           return;

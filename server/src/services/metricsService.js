@@ -198,7 +198,15 @@ class MetricsService {
 
   // Determine Maturity Level
   determineMaturityLevel(metrics) {
-    const { rolloverRate, sprintGoalAttainment, backlogHealth, midSprintAdditions } = metrics;
+    const {
+      rolloverRate = 0,
+      sprintGoalAttainment = 0,
+      backlogHealth = { overallScore: 0 },
+      midSprintAdditions = 0
+    } = metrics || {};
+
+    // Ensure backlogHealth has the expected structure
+    const backlogScore = backlogHealth?.overallScore ?? 0;
 
     // Level 1: Assisted Scrum (Scrum Manager Required)
     // Typical Characteristics:
@@ -210,7 +218,7 @@ class MetricsService {
     if (
       rolloverRate > 25 ||
       sprintGoalAttainment < 50 ||
-      backlogHealth.overallScore < 50 ||
+      backlogScore < 50 ||
       midSprintAdditions > 25
     ) {
       return {
@@ -220,7 +228,7 @@ class MetricsService {
         characteristics: [
           `Rollover: ${rolloverRate.toFixed(1)}% (threshold: >20-25%)`,
           `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (threshold: <50-60%)`,
-          `Backlog Health: ${backlogHealth.overallScore.toFixed(1)}% (needs improvement)`,
+          `Backlog Health: ${backlogScore.toFixed(1)}% (needs improvement)`,
           `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (high churn)`
         ],
         recommendations: [
@@ -243,7 +251,7 @@ class MetricsService {
     if (
       rolloverRate < 15 &&
       sprintGoalAttainment > 70 &&
-      backlogHealth.overallScore > 80 &&
+      backlogScore > 80 &&
       midSprintAdditions < 10
     ) {
       return {
@@ -253,7 +261,7 @@ class MetricsService {
         characteristics: [
           `Rollover: ${rolloverRate.toFixed(1)}% (excellent: <10-15%)`,
           `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (excellent: >70%)`,
-          `Backlog Health: ${backlogHealth.overallScore.toFixed(1)}% (excellent: >80%)`,
+          `Backlog Health: ${backlogScore.toFixed(1)}% (excellent: >80%)`,
           `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (minimal churn)`
         ],
         recommendations: [
@@ -280,7 +288,7 @@ class MetricsService {
       characteristics: [
         `Rollover: ${rolloverRate.toFixed(1)}% (target: 10-20%)`,
         `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (target: 60-70%)`,
-        `Backlog Health: ${backlogHealth.overallScore.toFixed(1)}% (improving)`,
+        `Backlog Health: ${backlogScore.toFixed(1)}% (improving)`,
         `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (manageable)`
       ],
       supportModel: 'Shared Scrum Manager, Time-bound engagement (1-2 sprints/month)',

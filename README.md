@@ -169,7 +169,7 @@ Os thresholds de rollover podem variar baseado em processos internos de como/qua
 
 ## 📝 Notas Importantes
 
-- **Story Points Field**: O campo padrão usado é `customfield_10016`. Se sua instância usar outro, ajuste em `metricsService.js`.
+- **Story Points Field**: O campo configurado é `customfield_10061` (Indeed Jira). Se sua instância usar outro, ajuste em `metricsService.js`.
 - **Rate Limits**: Jira API tem rate limits. Para muitos boards/sprints, pode levar alguns minutos.
 - **Dados Históricos**: Analisa os últimos 6 sprints fechados por padrão.
 

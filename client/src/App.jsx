@@ -30,6 +30,7 @@ function App() {
             email: savedEmail,
             apiToken: savedToken
           });
+          // boards is now an array of objects with {id, name, type}
           setSelectedBoards(boards);
           setStep('dashboard');
           return;

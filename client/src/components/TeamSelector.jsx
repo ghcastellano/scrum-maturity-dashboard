@@ -75,7 +75,17 @@ export default function TeamSelector({ credentials, onTeamsSelected }) {
       return;
     }
     setError('');
-    onTeamsSelected(selectedBoards);
+
+    // Pass full board objects with id and name
+    const selectedBoardObjects = boards
+      .filter(board => selectedBoards.includes(board.id))
+      .map(board => ({
+        id: board.id,
+        name: board.name,
+        type: board.type
+      }));
+
+    onTeamsSelected(selectedBoardObjects);
   };
 
   // Filter boards based on search term

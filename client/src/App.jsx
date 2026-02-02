@@ -8,6 +8,11 @@ const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
 const STORAGE_KEY_TOKEN = 'scrum-dashboard-api-token';
 const STORAGE_KEY_BOARDS = 'scrum-dashboard-selected-boards';
 
+// Default credentials from environment variables (for auto-login on first access)
+const DEFAULT_JIRA_URL = import.meta.env.VITE_JIRA_URL || '';
+const DEFAULT_EMAIL = import.meta.env.VITE_JIRA_EMAIL || '';
+const DEFAULT_API_TOKEN = import.meta.env.VITE_JIRA_API_TOKEN || '';
+
 function App() {
   // Initialize state by checking localStorage immediately (no loading state)
   const initializeState = () => {
@@ -43,11 +48,33 @@ function App() {
           };
         }
       }
+
+      // If no saved data but we have default credentials, use them automatically
+      if (!savedUrl && DEFAULT_JIRA_URL && DEFAULT_EMAIL && DEFAULT_API_TOKEN) {
+        console.log('Using default credentials from environment');
+        const defaultCredentials = {
+          jiraUrl: DEFAULT_JIRA_URL,
+          email: DEFAULT_EMAIL,
+          apiToken: DEFAULT_API_TOKEN
+        };
+
+        // Save to localStorage for future use
+        localStorage.setItem(STORAGE_KEY_JIRA_URL, DEFAULT_JIRA_URL);
+        localStorage.setItem(STORAGE_KEY_EMAIL, DEFAULT_EMAIL);
+        localStorage.setItem(STORAGE_KEY_TOKEN, DEFAULT_API_TOKEN);
+
+        // Skip connection screen, go directly to team selection
+        return {
+          step: 'teamSelection',
+          credentials: defaultCredentials,
+          boards: []
+        };
+      }
     } catch (err) {
       console.error('Failed to load saved session:', err);
     }
 
-    // No saved data - show connection screen
+    // No saved data and no default credentials - show connection screen
     return { step: 'connection', credentials: null, boards: [] };
   };
 

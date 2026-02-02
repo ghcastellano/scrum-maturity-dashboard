@@ -57,12 +57,19 @@ class DashboardController {
     try {
       const { jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false } = req.body;
 
+      console.log(`\n🎯 getTeamMetrics called with:`);
+      console.log(`  Board ID: ${boardId} (type: ${typeof boardId})`);
+      console.log(`  Sprint Count: ${sprintCount}`);
+      console.log(`  Force Refresh: ${forceRefresh}`);
+
       // Check cache first (unless force refresh)
       if (!forceRefresh) {
         const cacheKey = cacheService.generateKey(boardId, 'team-metrics');
+        console.log(`  Cache Key: ${cacheKey}`);
         const cachedData = cacheService.get(cacheKey);
 
         if (cachedData) {
+          console.log(`  ✅ Returning cached data for board ${boardId}`);
           return res.json({
             success: true,
             data: cachedData,
@@ -72,6 +79,7 @@ class DashboardController {
         }
       }
 
+      console.log(`  📡 Fetching fresh data from Jira for board ${boardId}`);
       const jiraService = new JiraService(jiraUrl, email, apiToken);
 
       // Get sprints

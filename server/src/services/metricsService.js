@@ -4,7 +4,7 @@ class MetricsService {
   
   // Calculate Sprint Goal Attainment
   calculateSprintGoalAttainment(sprint, issues) {
-    const storyPointsField = 'customfield_10016'; // Padrão Jira, ajustar se necessário
+    const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
 
     let committedPoints = 0;
     let completedPoints = 0;
@@ -122,7 +122,7 @@ class MetricsService {
     let withAcceptanceCriteria = 0;
     let withEstimates = 0;
     let linkedToGoals = 0;
-    const storyPointsField = 'customfield_10016';
+    const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
 
     issues.forEach(issue => {
       // Check for AC (assuming description length > 50 chars indicates AC)

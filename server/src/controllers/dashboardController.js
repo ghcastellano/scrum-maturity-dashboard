@@ -97,14 +97,34 @@ class DashboardController {
       for (let i = 0; i < recentSprints.length; i++) {
         const sprint = recentSprints[i];
         const issues = await jiraService.getSprintIssues(sprint.id);
-        
+
+        // Log sample issues on first sprint to help identify story points field
+        if (i === 0 && issues.length > 0) {
+          console.log(`\n📝 Sample Issues from first sprint (${sprint.name}):`);
+          issues.slice(0, 3).forEach((issue, idx) => {
+            console.log(`\n${idx + 1}. ${issue.key} - ${issue.fields.summary}`);
+            const numericFields = [];
+            Object.keys(issue.fields).forEach(fieldKey => {
+              if (fieldKey.startsWith('customfield_')) {
+                const value = issue.fields[fieldKey];
+                if (typeof value === 'number' && value > 0) {
+                  numericFields.push(`${fieldKey}=${value}`);
+                }
+              }
+            });
+            if (numericFields.length > 0) {
+              console.log(`   Numeric: ${numericFields.join(', ')}`);
+            }
+          });
+        }
+
         // Get next sprint for rollover calculation
         const nextSprint = recentSprints[i - 1];
         let nextSprintIssues = [];
         if (nextSprint) {
           nextSprintIssues = await jiraService.getSprintIssues(nextSprint.id);
         }
-        
+
         // Calculate metrics
         const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
         const rolloverRate = this.metricsService.calculateRolloverRate(issues, nextSprintIssues);

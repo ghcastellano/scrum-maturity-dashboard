@@ -223,7 +223,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
   };
 
   const backlogHealthData = {
-    labels: ['With AC', 'With Estimates', 'Linked to Goals'],
+    labels: ['With AC', 'With Estimates', 'Linked to Fix Versions'],
     datasets: [{
       label: 'Backlog Health (%)',
       data: [
@@ -514,7 +514,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
                   </div>
                 </div>
                 <div className="p-4 bg-orange-50 rounded-lg">
-                  <div className="text-sm text-gray-600 mb-1">Items Linked to Goals</div>
+                  <div className="text-sm text-gray-600 mb-1">Items Linked to Fix Versions</div>
                   <div className="text-2xl font-bold text-orange-600">
                     {formatNumber(metrics.backlogHealth?.linkedToGoals)}%
                   </div>

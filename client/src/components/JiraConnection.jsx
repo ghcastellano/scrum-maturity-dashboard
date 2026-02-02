@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../services/api';
+
+const STORAGE_KEY_JIRA_URL = 'scrum-dashboard-jira-url';
+const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
 
 export default function JiraConnection({ onConnectionSuccess }) {
   const [formData, setFormData] = useState({
@@ -9,6 +12,31 @@ export default function JiraConnection({ onConnectionSuccess }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Load saved credentials on mount
+  useEffect(() => {
+    try {
+      const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
+      const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+
+      setFormData(prev => ({
+        ...prev,
+        jiraUrl: savedUrl || 'https://indeed.atlassian.net/',
+        email: savedEmail || ''
+      }));
+    } catch (err) {
+      console.error('Failed to load saved credentials:', err);
+    }
+  }, []);
+
+  const saveCredentials = (jiraUrl, email) => {
+    try {
+      localStorage.setItem(STORAGE_KEY_JIRA_URL, jiraUrl);
+      localStorage.setItem(STORAGE_KEY_EMAIL, email);
+    } catch (err) {
+      console.error('Failed to save credentials:', err);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,6 +51,8 @@ export default function JiraConnection({ onConnectionSuccess }) {
       );
 
       if (result.success) {
+        // Save URL and email (but NOT the token for security)
+        saveCredentials(formData.jiraUrl, formData.email);
         onConnectionSuccess(formData);
       }
     } catch (err) {
@@ -35,7 +65,7 @@ export default function JiraConnection({ onConnectionSuccess }) {
   return (
     <div className="max-w-2xl mx-auto card">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Connect to Jira Cloud</h2>
-      
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -50,7 +80,7 @@ export default function JiraConnection({ onConnectionSuccess }) {
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            Your Jira Cloud instance URL
+            Your Jira Cloud instance URL (saved automatically)
           </p>
         </div>
 
@@ -66,6 +96,9 @@ export default function JiraConnection({ onConnectionSuccess }) {
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             required
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Saved automatically for convenience
+          </p>
         </div>
 
         <div>
@@ -81,14 +114,16 @@ export default function JiraConnection({ onConnectionSuccess }) {
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            <a 
-              href="https://id.atlassian.com/manage-profile/security/api-tokens" 
-              target="_blank" 
+            <a
+              href="https://id.atlassian.com/manage-profile/security/api-tokens"
+              target="_blank"
               rel="noopener noreferrer"
               className="text-primary-600 hover:underline"
             >
               Create an API token here
             </a>
+            {' • '}
+            <span className="text-gray-500">Not saved for security</span>
           </p>
         </div>
 

@@ -120,13 +120,21 @@ class DashboardController {
       
       // Aggregate metrics
       const aggregated = this.metricsService.aggregateSprintMetrics(sprintMetrics);
-      
+
+      // Handle case where there are no sprints or aggregation fails
+      if (!aggregated) {
+        return res.status(400).json({
+          success: false,
+          message: 'No valid sprint data available for analysis. Please ensure the board has closed sprints with issues.'
+        });
+      }
+
       // Determine maturity level
       const maturityLevel = this.metricsService.determineMaturityLevel({
-        rolloverRate: aggregated.avgRolloverRate,
-        sprintGoalAttainment: aggregated.avgSprintGoalAttainment,
+        rolloverRate: aggregated.avgRolloverRate || 0,
+        sprintGoalAttainment: aggregated.avgSprintGoalAttainment || 0,
         backlogHealth,
-        midSprintAdditions: aggregated.avgMidSprintAdditions
+        midSprintAdditions: aggregated.avgMidSprintAdditions || 0
       });
       
       res.json({

@@ -641,10 +641,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 </select>
                 <button
                   onClick={handleDeleteBoard}
-                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
-                  title="Remove this board"
+                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-lg hover:bg-red-50 transition-colors flex items-center gap-1.5"
+                  title="Permanently delete this board and all its saved metrics"
                 >
-                  ✕
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="hidden sm:inline">Delete</span>
                 </button>
               </div>
             )}
@@ -1064,25 +1067,90 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             
             <div>
               <h3 className="font-semibold mb-4">Backlog Metrics</h3>
-              <div className="space-y-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="text-sm text-gray-600 mb-1">Items with Acceptance Criteria</div>
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatNumber(metrics.backlogHealth?.withAcceptanceCriteria)}%
-                  </div>
-                </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <div className="text-sm text-gray-600 mb-1">Items with Estimates</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatNumber(metrics.backlogHealth?.withEstimates)}%
-                  </div>
-                </div>
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <div className="text-sm text-gray-600 mb-1">Items Linked to Fix Versions</div>
-                  <div className="text-2xl font-bold text-orange-600">
-                    {formatNumber(metrics.backlogHealth?.linkedToGoals)}%
-                  </div>
-                </div>
+              <div className="space-y-3">
+                {/* Items with Acceptance Criteria */}
+                {(() => {
+                  const missing = metrics.backlogHealth?.missingAC || [];
+                  const total = metrics.backlogHealth?.totalItems || 0;
+                  return (
+                    <details className="bg-blue-50 rounded-lg border border-blue-100">
+                      <summary className="p-4 cursor-pointer hover:bg-blue-100 rounded-lg flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Items with Acceptance Criteria</span>
+                        <span className="text-2xl font-bold text-blue-600">{formatNumber(metrics.backlogHealth?.withAcceptanceCriteria)}%</span>
+                      </summary>
+                      {missing.length > 0 && (
+                        <div className="px-4 pb-3">
+                          <div className="text-xs font-semibold text-blue-800 mb-2">Missing AC ({missing.length} of {total} items):</div>
+                          <div className="space-y-0 max-h-48 overflow-y-auto">
+                            {missing.map(issue => (
+                              <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-blue-100">
+                                <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-blue-700 shrink-0 hover:underline">{issue.key}</a>
+                                <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
+                                <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </details>
+                  );
+                })()}
+
+                {/* Items with Estimates */}
+                {(() => {
+                  const missing = metrics.backlogHealth?.missingEstimates || [];
+                  const total = metrics.backlogHealth?.totalItems || 0;
+                  return (
+                    <details className="bg-green-50 rounded-lg border border-green-100">
+                      <summary className="p-4 cursor-pointer hover:bg-green-100 rounded-lg flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Items with Estimates</span>
+                        <span className="text-2xl font-bold text-green-600">{formatNumber(metrics.backlogHealth?.withEstimates)}%</span>
+                      </summary>
+                      {missing.length > 0 && (
+                        <div className="px-4 pb-3">
+                          <div className="text-xs font-semibold text-green-800 mb-2">Missing Estimates ({missing.length} of {total} items):</div>
+                          <div className="space-y-0 max-h-48 overflow-y-auto">
+                            {missing.map(issue => (
+                              <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-green-100">
+                                <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-green-700 shrink-0 hover:underline">{issue.key}</a>
+                                <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
+                                <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </details>
+                  );
+                })()}
+
+                {/* Items Linked to Fix Versions */}
+                {(() => {
+                  const missing = metrics.backlogHealth?.missingFixVersions || [];
+                  const total = metrics.backlogHealth?.totalItems || 0;
+                  return (
+                    <details className="bg-orange-50 rounded-lg border border-orange-100">
+                      <summary className="p-4 cursor-pointer hover:bg-orange-100 rounded-lg flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Items Linked to Fix Versions</span>
+                        <span className="text-2xl font-bold text-orange-600">{formatNumber(metrics.backlogHealth?.linkedToGoals)}%</span>
+                      </summary>
+                      {missing.length > 0 && (
+                        <div className="px-4 pb-3">
+                          <div className="text-xs font-semibold text-orange-800 mb-2">Missing Fix Versions ({missing.length} of {total} items):</div>
+                          <div className="space-y-0 max-h-48 overflow-y-auto">
+                            {missing.map(issue => (
+                              <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-orange-100">
+                                <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-orange-700 shrink-0 hover:underline">{issue.key}</a>
+                                <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
+                                <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </details>
+                  );
+                })()}
               </div>
             </div>
           </div>

@@ -209,6 +209,10 @@ class MetricsService {
     let linkedToGoals = 0;
     const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
 
+    const missingAC = [];
+    const missingEstimates = [];
+    const missingFixVersions = [];
+
     console.log(`\n📋 Backlog Health Analysis:`);
     console.log(`  Total backlog issues: ${issues.length}`);
 
@@ -223,20 +227,33 @@ class MetricsService {
       });
     }
 
+    const makeDetail = (issue) => ({
+      key: issue.key,
+      summary: issue.fields?.summary || '',
+      type: issue.fields?.issuetype?.name || 'unknown',
+      status: issue.fields?.status?.name || 'unknown'
+    });
+
     issues.forEach(issue => {
       // Check for AC (assuming description length > 50 chars indicates AC)
       if (issue.fields.description && issue.fields.description.length > 50) {
         withAcceptanceCriteria++;
+      } else {
+        missingAC.push(makeDetail(issue));
       }
 
       // Check for estimates
       if (issue.fields[storyPointsField]) {
         withEstimates++;
+      } else {
+        missingEstimates.push(makeDetail(issue));
       }
 
       // Check for links to goals/fix versions
       if (issue.fields.fixVersions && issue.fields.fixVersions.length > 0) {
         linkedToGoals++;
+      } else {
+        missingFixVersions.push(makeDetail(issue));
       }
     });
 
@@ -253,7 +270,11 @@ class MetricsService {
         withAcceptanceCriteria: 0,
         withEstimates: 0,
         linkedToGoals: 0,
-        overallScore: 0
+        overallScore: 0,
+        missingAC: [],
+        missingEstimates: [],
+        missingFixVersions: [],
+        totalItems: 0
       };
     }
 
@@ -261,7 +282,11 @@ class MetricsService {
       withAcceptanceCriteria: (withAcceptanceCriteria / total) * 100,
       withEstimates: (withEstimates / total) * 100,
       linkedToGoals: (linkedToGoals / total) * 100,
-      overallScore: ((withAcceptanceCriteria + withEstimates + linkedToGoals) / (total * 3)) * 100
+      overallScore: ((withAcceptanceCriteria + withEstimates + linkedToGoals) / (total * 3)) * 100,
+      missingAC,
+      missingEstimates,
+      missingFixVersions,
+      totalItems: total
     };
   }
 

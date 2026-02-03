@@ -6,8 +6,8 @@ class CacheService {
 
   // Generate cache key
   generateKey(boardId, type = 'metrics') {
-    const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    return `${type}:${boardId}:${date}`;
+    // Don't include date in key - let TTL handle expiration
+    return `${type}:${boardId}`;
   }
 
   // Set cache with TTL

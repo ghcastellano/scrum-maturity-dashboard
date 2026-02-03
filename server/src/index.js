@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import DashboardController from './controllers/dashboardController.js';
+import database from './services/database.js';
 
 dotenv.config();
 
@@ -70,6 +71,40 @@ app.post('/api/metrics/flow', (req, res) =>
 app.post('/api/diagnostics', (req, res) =>
   dashboardController.diagnostics(req, res)
 );
+
+// Metrics History endpoints
+app.get('/api/history/boards', (req, res) => {
+  try {
+    const boards = database.getAllBoardsWithMetrics();
+    res.json({ success: true, boards });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/history/board/:boardId', (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const history = database.getMetricsHistory(parseInt(boardId), 30);
+    res.json({ success: true, history });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/history/metrics/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const metrics = database.getMetricsById(parseInt(id));
+    if (metrics) {
+      res.json({ success: true, data: metrics });
+    } else {
+      res.status(404).json({ success: false, message: 'Metrics not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Health check
 app.get('/health', (req, res) => {

@@ -1,6 +1,7 @@
 import JiraService from '../services/jiraService.js';
 import MetricsService from '../services/metricsService.js';
 import cacheService from '../services/cacheService.js';
+import database from '../services/database.js';
 
 class DashboardController {
   constructor() {
@@ -208,6 +209,10 @@ class DashboardController {
         midSprintAdditions: aggregated.avgMidSprintAdditions || 0
       });
 
+      // Get board name
+      const board = await jiraService.getBoard(boardId);
+      const boardName = board?.name || `Board ${boardId}`;
+
       // Prepare response data
       const responseData = {
         sprintMetrics,
@@ -215,12 +220,26 @@ class DashboardController {
         backlogHealth,
         maturityLevel,
         boardId,
+        boardName,
         sprintsAnalyzed: sprintMetrics.length
       };
 
       // Cache the data
       const cacheKey = cacheService.generateKey(boardId, 'team-metrics');
       cacheService.set(cacheKey, responseData);
+
+      // Save to database for history
+      try {
+        database.saveMetrics(
+          boardId,
+          boardName,
+          sprintCount,
+          responseData,
+          maturityLevel.level
+        );
+      } catch (dbError) {
+        console.warn('Failed to save metrics to database:', dbError.message);
+      }
 
       res.json({
         success: true,

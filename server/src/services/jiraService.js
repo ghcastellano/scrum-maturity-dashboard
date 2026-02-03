@@ -70,6 +70,17 @@ class JiraService {
     }
   }
 
+  // Get a single board by ID
+  async getBoard(boardId) {
+    try {
+      const response = await this.agileApi.get(`/board/${boardId}`);
+      return response.data;
+    } catch (error) {
+      console.warn(`Failed to fetch board ${boardId}:`, error.message);
+      return null;
+    }
+  }
+
   // Get sprints for a board
   async getSprints(boardId, state = 'closed') {
     try {

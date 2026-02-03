@@ -69,44 +69,41 @@ class MetricsService {
     }
 
     const currentSprintKeys = new Set(sprintIssues.map(i => i.key));
-    // An issue present in both the current sprint and the next sprint is a rollover,
-    // regardless of its current status (it may have been completed in the next sprint)
-    const rolledOverIssues = nextSprintIssues.filter(issue => {
-      return currentSprintKeys.has(issue.key);
-    });
+    // An issue is a rollover only if it appears in both sprints AND has a rollover label
+    const candidateIssues = nextSprintIssues.filter(issue => currentSprintKeys.has(issue.key));
 
-    const rate = sprintIssues.length > 0 ? (rolledOverIssues.length / sprintIssues.length) * 100 : 0;
-
-    // Extract rollover reason labels and build breakdown
+    // Extract rollover reason labels and keep only labeled issues
     const reasonBreakdown = {};
-    const issueDetails = rolledOverIssues.map(issue => {
+    const issueDetails = [];
+
+    for (const issue of candidateIssues) {
       const allLabels = issue.fields?.labels || [];
       const rolloverReasons = allLabels.filter(l =>
         MetricsService.ROLLOVER_LABELS.includes(l)
       );
 
-      // Count each reason
+      // Only count as rollover if it has at least one rollover label
+      if (rolloverReasons.length === 0) continue;
+
       for (const reason of rolloverReasons) {
         reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
       }
-      if (rolloverReasons.length === 0) {
-        reasonBreakdown['unlabeled'] = (reasonBreakdown['unlabeled'] || 0) + 1;
-      }
 
-      return {
+      issueDetails.push({
         key: issue.key,
         summary: issue.fields?.summary || '',
         status: issue.fields?.status?.name || 'unknown',
         type: issue.fields?.issuetype?.name || 'unknown',
         reasons: rolloverReasons
-      };
-    });
+      });
+    }
 
-    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${rolledOverIssues.length}/${sprintIssues.length} issues = ${rate.toFixed(1)}%`);
+    const rate = sprintIssues.length > 0 ? (issueDetails.length / sprintIssues.length) * 100 : 0;
+
+    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${issueDetails.length}/${sprintIssues.length} issues = ${rate.toFixed(1)}% (${candidateIssues.length} in both sprints, ${issueDetails.length} with rollover labels)`);
     if (issueDetails.length > 0) {
       issueDetails.forEach(issue => {
-        const reasons = issue.reasons.length > 0 ? issue.reasons.join(', ') : 'no label';
-        console.log(`  → ${issue.key} - ${issue.summary} [${issue.status}] (${reasons})`);
+        console.log(`  → ${issue.key} - ${issue.summary} [${issue.status}] (${issue.reasons.join(', ')})`);
       });
       console.log(`  Breakdown: ${Object.entries(reasonBreakdown).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
     }

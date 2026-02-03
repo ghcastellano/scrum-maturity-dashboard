@@ -897,8 +897,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                                 reason === 'dev-qa-spill' ? 'bg-cyan-100 text-cyan-800' :
                                 'bg-gray-100 text-gray-600'
                               }`}>
-                                {reason === 'unlabeled' ? 'No Label' :
-                                 reason === 'external-blockers' ? 'External Blockers' :
+                                {reason === 'external-blockers' ? 'External Blockers' :
                                  reason === 'late-discovery' ? 'Late Discovery' :
                                  reason === 'resource-constraints' ? 'Resource Constraints' :
                                  reason === 'internal-blockers' ? 'Internal Blockers' :
@@ -917,21 +916,17 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                               <span className="font-mono font-semibold text-red-700 shrink-0">{issue.key}</span>
                               <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
                               <span className="flex-1 truncate">{issue.summary}</span>
-                              {issue.reasons && issue.reasons.length > 0 ? (
-                                issue.reasons.map(r => (
-                                  <span key={r} className={`px-1.5 py-0.5 rounded text-xs shrink-0 ${
-                                    r === 'external-blockers' ? 'bg-purple-100 text-purple-700' :
-                                    r === 'late-discovery' ? 'bg-blue-100 text-blue-700' :
-                                    r === 'resource-constraints' ? 'bg-orange-100 text-orange-700' :
-                                    r === 'internal-blockers' ? 'bg-red-100 text-red-700' :
-                                    r === 'req-gap' ? 'bg-yellow-100 text-yellow-700' :
-                                    r === 'dev-qa-spill' ? 'bg-cyan-100 text-cyan-700' :
-                                    'bg-gray-100 text-gray-600'
-                                  }`}>{r}</span>
-                                ))
-                              ) : (
-                                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs shrink-0">no label</span>
-                              )}
+                              {issue.reasons.map(r => (
+                                <span key={r} className={`px-1.5 py-0.5 rounded text-xs shrink-0 ${
+                                  r === 'external-blockers' ? 'bg-purple-100 text-purple-700' :
+                                  r === 'late-discovery' ? 'bg-blue-100 text-blue-700' :
+                                  r === 'resource-constraints' ? 'bg-orange-100 text-orange-700' :
+                                  r === 'internal-blockers' ? 'bg-red-100 text-red-700' :
+                                  r === 'req-gap' ? 'bg-yellow-100 text-yellow-700' :
+                                  r === 'dev-qa-spill' ? 'bg-cyan-100 text-cyan-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>{r}</span>
+                              ))}
                             </div>
                           ))}
                         </div>

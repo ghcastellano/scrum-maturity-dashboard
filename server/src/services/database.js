@@ -7,7 +7,13 @@ const __dirname = path.dirname(__filename);
 
 class DatabaseService {
   constructor() {
-    this.dataDir = path.join(__dirname, '../../data');
+    // In production (Render), use persistent disk at /data
+    // In development, use local ./data directory
+    if (process.env.NODE_ENV === 'production' && fs.existsSync('/data')) {
+      this.dataDir = '/data';
+    } else {
+      this.dataDir = path.join(__dirname, '../../data');
+    }
     this.dbPath = path.join(this.dataDir, 'metrics.json');
     this.data = this.load();
     console.log('✓ Database initialized:', this.dbPath);

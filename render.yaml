@@ -4,7 +4,7 @@ services:
     name: scrum-maturity-dashboard
     env: node
     region: oregon
-    plan: free
+    plan: starter
     buildCommand: npm run build:all
     startCommand: npm start
     envVars:
@@ -17,3 +17,7 @@ services:
       - key: JIRA_API_TOKEN
         sync: false
     healthCheckPath: /health
+    disk:
+      name: metrics-data
+      mountPath: /data
+      sizeGB: 1

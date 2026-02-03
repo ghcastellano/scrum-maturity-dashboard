@@ -944,7 +944,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         <div className="space-y-1">
                           {issues.map(issue => (
                             <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-red-100">
-                              <span className="font-mono font-semibold text-red-700 shrink-0">{issue.key}</span>
+                              <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-red-700 shrink-0 hover:underline">{issue.key}</a>
                               <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
                               <span className="flex-1 truncate">{issue.summary}</span>
                               {(issue.reasons || []).map(r => (
@@ -998,7 +998,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       <div className="px-3 pb-3 space-y-1">
                         {msIssues.map(issue => (
                           <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-amber-100">
-                            <span className="font-mono font-semibold text-amber-700 shrink-0">{issue.key}</span>
+                            <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-amber-700 shrink-0 hover:underline">{issue.key}</a>
                             <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
                             <span className="flex-1 truncate">{issue.summary}</span>
                           </div>

@@ -39,17 +39,58 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
   const [isCached, setIsCached] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState('live');
+  const [isHistorical, setIsHistorical] = useState(false);
 
-  // Log selected boards on mount
+  // Load history for board on mount and when board changes
   useEffect(() => {
-    console.log('📋 Dashboard mounted with selectedBoards:', selectedBoards);
-    console.log('📋 Initial selectedBoard:', selectedBoards[0]);
-  }, []);
+    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+    loadHistory(boardId);
+  }, [selectedBoard]);
 
   // Helper function to safely format numbers
   const formatNumber = (value, decimals = 1) => {
     if (value === null || value === undefined || isNaN(value)) return '0.0';
     return Number(value).toFixed(decimals);
+  };
+
+  const loadHistory = async (boardId) => {
+    try {
+      const result = await api.getBoardHistory(boardId);
+      if (result.success) {
+        setHistory(result.history || []);
+      }
+    } catch (err) {
+      console.warn('Could not load history:', err.message);
+      setHistory([]);
+    }
+  };
+
+  const loadHistoricalMetrics = async (historyId) => {
+    if (historyId === 'live') {
+      setSelectedHistoryId('live');
+      setIsHistorical(false);
+      loadMetrics();
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setSelectedHistoryId(historyId);
+      setIsHistorical(true);
+      const result = await api.getHistoricalMetrics(historyId);
+      if (result.success && result.data) {
+        setMetrics(result.data.metrics_data);
+        setFlowMetrics(null);
+        setIsCached(true);
+      }
+    } catch (err) {
+      console.error('Failed to load historical metrics:', err);
+      setError('Failed to load historical metrics');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -294,25 +335,52 @@ export default function Dashboard({ credentials, selectedBoards }) {
             </div>
           </div>
 
-          {selectedBoards.length > 1 && (
-            <select
-              value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
-              onChange={(e) => {
-                const boardId = Number(e.target.value);
-                const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
-                setSelectedBoard(board || boardId);
-              }}
-              className="input-field max-w-md"
-            >
-              {selectedBoards.map(board => {
-                const boardId = typeof board === 'object' ? board.id : board;
-                const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
-                return (
-                  <option key={boardId} value={boardId}>{boardName}</option>
-                );
-              })}
-            </select>
-          )}
+          <div className="flex flex-wrap items-center gap-4 mt-2">
+            {selectedBoards.length > 1 && (
+              <select
+                value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
+                onChange={(e) => {
+                  const boardId = Number(e.target.value);
+                  const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
+                  setSelectedBoard(board || boardId);
+                  setSelectedHistoryId('live');
+                  setIsHistorical(false);
+                }}
+                className="input-field max-w-md"
+              >
+                {selectedBoards.map(board => {
+                  const boardId = typeof board === 'object' ? board.id : board;
+                  const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
+                  return (
+                    <option key={boardId} value={boardId}>{boardName}</option>
+                  );
+                })}
+              </select>
+            )}
+
+            {history.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-600">History:</label>
+                <select
+                  value={selectedHistoryId}
+                  onChange={(e) => loadHistoricalMetrics(e.target.value === 'live' ? 'live' : Number(e.target.value))}
+                  className="input-field max-w-xs text-sm"
+                >
+                  <option value="live">Live - Calculate Now</option>
+                  {history.map(h => (
+                    <option key={h.id} value={h.id}>
+                      {new Date(h.calculated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })} - Level {h.maturity_level}
+                    </option>
+                  ))}
+                </select>
+                {isHistorical && (
+                  <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
+                    Historical Data
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Maturity Level Card */}

@@ -53,6 +53,22 @@ class ApiService {
     });
     return response.data;
   }
+
+  // History endpoints
+  async getBoardsWithHistory() {
+    const response = await this.client.get('/history/boards');
+    return response.data;
+  }
+
+  async getBoardHistory(boardId) {
+    const response = await this.client.get(`/history/board/${boardId}`);
+    return response.data;
+  }
+
+  async getHistoricalMetrics(id) {
+    const response = await this.client.get(`/history/metrics/${id}`);
+    return response.data;
+  }
 }
 
 export default new ApiService();

@@ -60,9 +60,9 @@ class DashboardController {
         type: board.type
       }));
 
-      // Cache the boards list for 1 hour (3600 seconds)
+      // Cache the boards list for 1 hour (3600000 ms)
       const cacheKey = cacheService.generateKey('boards', 'list');
-      cacheService.set(cacheKey, formattedBoards, 3600);
+      cacheService.set(cacheKey, formattedBoards, 3600 * 1000);
       console.log('💾 Boards list cached');
 
       res.json({

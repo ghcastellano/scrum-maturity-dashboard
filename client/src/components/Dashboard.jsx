@@ -932,34 +932,27 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             📊 Pillar 1: Delivery Predictability
           </h2>
           
-          {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Sprint Goal Attainment */}
             <div>
               <h3 className="font-semibold mb-4">Sprint Goal Attainment</h3>
               <div className="h-64">
                 <Line data={sprintGoalData} options={chartOptions} />
               </div>
+              {/* Sprint Hit Rate below Sprint Goal */}
+              <h3 className="font-semibold mb-4 mt-8">Sprint Hit Rate</h3>
+              <div className="h-64">
+                <Bar data={hitRateData} options={chartOptions} />
+              </div>
             </div>
+
+            {/* Rollover Rate + Issues */}
             <div>
               <h3 className="font-semibold mb-4">Rollover Rate</h3>
               <div className="h-64">
                 <Line data={rolloverData} options={chartOptions} />
               </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Sprint Hit Rate</h3>
-              <div className="h-64">
-                <Bar data={hitRateData} options={chartOptions} />
-              </div>
-            </div>
-          </div>
-
-          {/* Details Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Rollover Issues Detail */}
-            <div>
-              <h3 className="font-semibold mb-3 text-red-800">Rollover Issues by Sprint</h3>
-              <div className="space-y-2">
+              <div className="mt-4 space-y-2">
                 {metrics.sprintMetrics.slice().reverse().map(sprint => {
                   const issues = sprint.rolloverIssues || [];
                   const breakdown = sprint.rolloverReasonBreakdown || {};
@@ -971,7 +964,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         <span className="shrink-0">{issues.length} rolled over ({formatNumber(sprint.rolloverRate)}%)</span>
                       </summary>
                       <div className="px-3 pb-3">
-                        {/* Reason Breakdown */}
                         {Object.keys(breakdown).length > 0 && (
                           <div className="flex flex-wrap gap-1.5 py-2 mb-2 border-b border-red-200">
                             {Object.entries(breakdown).map(([reason, count]) => (
@@ -995,8 +987,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             ))}
                           </div>
                         )}
-
-                        {/* Issue List */}
                         <div className="space-y-0">
                           {issues.map(issue => (
                             <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-red-100">
@@ -1024,9 +1014,9 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               </div>
             </div>
 
-            {/* Mid-Sprint Additions Detail */}
+            {/* Mid-Sprint Additions + Issues */}
             <div>
-              <h3 className="font-semibold mb-3 text-amber-800">Mid-Sprint Additions by Sprint</h3>
+              <h3 className="font-semibold mb-4">Mid-Sprint Additions</h3>
               <div className="space-y-2">
                 {metrics.sprintMetrics.slice().reverse().map(sprint => {
                   const msIssues = sprint.midSprintAdditions?.issues || [];

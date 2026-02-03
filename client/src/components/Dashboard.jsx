@@ -196,6 +196,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     const board = displayBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
     setSelectedBoard(board || boardId);
 
+    // Reload sprint list if the sprint selector is visible
+    if (showSprintSelector) {
+      loadAvailableSprints(boardId);
+    }
+
     const boardData = allBoardsData[String(boardId)];
     if (boardData) {
       // Board has data - instant switch

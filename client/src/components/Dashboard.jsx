@@ -39,7 +39,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
-  const [metricsCache, setMetricsCache] = useState({});
+  const [allBoardsData, setAllBoardsData] = useState({});
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
 
@@ -49,23 +49,10 @@ export default function Dashboard({ credentials, selectedBoards }) {
     return Number(value).toFixed(decimals);
   };
 
-  // Load ALL board metrics at once on mount
+  // Load ALL board metrics from database on mount - NEVER call Jira API
   useEffect(() => {
     loadAllMetrics();
   }, []);
-
-  // When switching boards, use cached data instantly
-  useEffect(() => {
-    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
-    if (metricsCache[boardId]) {
-      setMetrics(metricsCache[boardId]);
-      setFlowMetrics(null);
-      setSelectedHistoryId(null);
-      setError('');
-      // Load history for this board in background
-      loadBoardHistory(boardId);
-    }
-  }, [selectedBoard, metricsCache]);
 
   const loadAllMetrics = async () => {
     setLoading(true);
@@ -74,42 +61,47 @@ export default function Dashboard({ credentials, selectedBoards }) {
     try {
       const result = await api.getAllLatestMetrics();
       if (result.success && result.boards?.length > 0) {
-        // Build cache: boardId -> metrics_data
-        const cache = {};
+        // Build lookup: boardId -> metrics_data (use String keys for consistency)
+        const dataMap = {};
         for (const board of result.boards) {
-          cache[board.board_id] = board.metrics_data;
+          dataMap[String(board.board_id)] = board.metrics_data;
         }
-        setMetricsCache(cache);
+        setAllBoardsData(dataMap);
 
         // Show the first selected board's metrics
         const firstBoardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
-        if (cache[firstBoardId]) {
-          setMetrics(cache[firstBoardId]);
-        } else {
-          // Selected board not in cache, show first available
-          const firstAvailable = result.boards[0];
-          setMetrics(firstAvailable.metrics_data);
-        }
+        const firstData = dataMap[String(firstBoardId)] || result.boards[0].metrics_data;
+        setMetrics(firstData);
         setFlowMetrics(null);
 
         // Load history for the current board
-        await loadBoardHistory(firstBoardId);
+        loadBoardHistory(firstBoardId);
         setLoading(false);
         return;
       }
     } catch (err) {
-      console.warn('Failed to load all metrics:', err.message);
+      console.warn('Failed to load metrics from database:', err.message);
     }
 
-    // No saved data at all
-    if (!credentials) {
-      setError('No saved metrics found. Jira credentials are needed to calculate metrics.');
-      setLoading(false);
-      return;
-    }
+    // No saved data - show message, NEVER call Jira API automatically
+    setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
+    setLoading(false);
+  };
 
-    // Has credentials but no saved data - calculate for first time
-    await refreshFromJira();
+  // Handle board change from combobox - instant switch from pre-loaded data
+  const handleBoardChange = (e) => {
+    const boardId = Number(e.target.value);
+    const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
+    setSelectedBoard(board || boardId);
+
+    const boardData = allBoardsData[String(boardId)];
+    if (boardData) {
+      setMetrics(boardData);
+      setFlowMetrics(null);
+      setSelectedHistoryId(null);
+      setError('');
+      loadBoardHistory(boardId);
+    }
   };
 
   const loadBoardHistory = async (boardId) => {
@@ -177,7 +169,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
       setFlowMetrics(flowData.data);
 
       // Update cache with new data
-      setMetricsCache(prev => ({ ...prev, [boardId]: teamData.data }));
+      setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
 
       // Reload history to include the new entry
       await loadBoardHistory(boardId);
@@ -383,11 +375,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
             {selectedBoards.length >= 1 && (
               <select
                 value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
-                onChange={(e) => {
-                  const boardId = Number(e.target.value);
-                  const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
-                  setSelectedBoard(board || boardId);
-                }}
+                onChange={handleBoardChange}
                 className="input-field max-w-md"
               >
                 {selectedBoards.map(board => {

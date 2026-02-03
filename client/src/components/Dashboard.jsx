@@ -32,7 +32,7 @@ ChartJS.register(
   Filler
 );
 
-export default function Dashboard({ credentials, selectedBoards }) {
+export default function Dashboard({ credentials: credentialsProp, selectedBoards }) {
   const [metrics, setMetrics] = useState(null);
   const [flowMetrics, setFlowMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +42,25 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [allBoardsData, setAllBoardsData] = useState({});
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+  const [localCredentials, setLocalCredentials] = useState(credentialsProp);
+
+  // Use prop credentials or locally fetched ones
+  const credentials = credentialsProp || localCredentials;
+
+  // Fetch credentials from backend if not provided via props
+  useEffect(() => {
+    if (!credentialsProp && !localCredentials) {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      fetch(`${API_URL}/credentials`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.credentials) {
+            setLocalCredentials(data.credentials);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [credentialsProp]);
 
   // Helper function to safely format numbers
   const formatNumber = (value, decimals = 1) => {

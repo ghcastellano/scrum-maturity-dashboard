@@ -122,15 +122,24 @@ class MetricsService {
   // Calculate Mid-Sprint Additions
   calculateMidSprintAdditions(issues, sprintStartDate) {
     const sprintStart = parseISO(sprintStartDate);
-    
+
     const addedDuringSprint = issues.filter(issue => {
       const created = parseISO(issue.fields.created);
       return created > sprintStart;
     });
 
+    const issueDetails = addedDuringSprint.map(issue => ({
+      key: issue.key,
+      summary: issue.fields?.summary || '',
+      status: issue.fields?.status?.name || 'unknown',
+      type: issue.fields?.issuetype?.name || 'unknown',
+      created: issue.fields.created
+    }));
+
     return {
       count: addedDuringSprint.length,
-      percentage: issues.length > 0 ? (addedDuringSprint.length / issues.length) * 100 : 0
+      percentage: issues.length > 0 ? (addedDuringSprint.length / issues.length) * 100 : 0,
+      issues: issueDetails
     };
   }
 

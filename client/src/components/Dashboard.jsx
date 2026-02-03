@@ -817,16 +817,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         </div>
 
         {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Sprint Goal Attainment</div>
-            <div className="text-3xl font-bold text-primary-600">
-              {formatNumber(metrics.aggregated?.avgSprintGoalAttainment)}%
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Target Level 3: &gt;70%
-            </div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Avg Rollover Rate</div>
             <div className="text-3xl font-bold text-red-600">
@@ -837,12 +828,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </div>
           </div>
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Hit Rate</div>
-            <div className="text-3xl font-bold text-green-600">
-              {formatNumber(metrics.aggregated?.avgSprintHitRate)}%
+            <div className="text-sm text-gray-600 mb-1">Avg Sprint Goal Attainment</div>
+            <div className="text-3xl font-bold text-primary-600">
+              {formatNumber(metrics.aggregated?.avgSprintGoalAttainment)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Higher is better
+              Target Level 3: &gt;70%
             </div>
           </div>
           <div className="card">
@@ -852,6 +843,24 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </div>
             <div className="text-xs text-gray-500 mt-1">
               Target Level 3: &gt;80%
+            </div>
+          </div>
+          <div className="card">
+            <div className="text-sm text-gray-600 mb-1">Avg Mid-Sprint Injection</div>
+            <div className="text-3xl font-bold text-amber-600">
+              {formatNumber(metrics.aggregated?.avgMidSprintAdditions)}%
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Target Level 3: &lt;10%
+            </div>
+          </div>
+          <div className="card">
+            <div className="text-sm text-gray-600 mb-1">Avg Hit Rate</div>
+            <div className="text-3xl font-bold text-green-600">
+              {formatNumber(metrics.aggregated?.avgSprintHitRate)}%
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Higher is better
             </div>
           </div>
         </div>

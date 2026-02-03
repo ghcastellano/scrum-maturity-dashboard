@@ -219,18 +219,29 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="max-w-2xl card">
           <div className="text-center">
-            <div className="text-red-600 text-5xl mb-4">⚠️</div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Failed to Load Metrics</h2>
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              <p className="font-medium mb-2">Error Details:</p>
+            <div className="text-yellow-500 text-5xl mb-4">📊</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">No Metrics Data Yet</h2>
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg mb-6">
               <p className="text-sm">{error}</p>
             </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="btn-primary"
-            >
-              Reload Page
-            </button>
+            <div className="flex gap-3 justify-center">
+              {credentials && (
+                <button
+                  onClick={() => refreshFromJira()}
+                  disabled={refreshing}
+                  className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <span>🔄</span>
+                  {refreshing ? 'Refreshing...' : 'Refresh from Jira'}
+                </button>
+              )}
+              <button
+                onClick={() => window.location.reload()}
+                className="btn-secondary"
+              >
+                Reload Page
+              </button>
+            </div>
           </div>
         </div>
       </div>

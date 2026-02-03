@@ -239,6 +239,28 @@ class DatabaseService {
     }
   }
 
+  // Delete all metrics for a board
+  async deleteBoardMetrics(boardId) {
+    if (!this.client) return 0;
+
+    try {
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .delete()
+        .eq('board_id', boardId)
+        .select('id');
+
+      if (error) throw error;
+
+      const removed = data?.length || 0;
+      console.log(`✓ Deleted ${removed} metrics entries for board ${boardId}`);
+      return removed;
+    } catch (err) {
+      console.error('Failed to delete board metrics:', err.message);
+      return 0;
+    }
+  }
+
   // Clean old metrics (keep last 90 days)
   async cleanOldMetrics() {
     if (!this.client) return 0;

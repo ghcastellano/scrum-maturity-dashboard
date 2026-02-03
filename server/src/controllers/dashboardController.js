@@ -73,14 +73,51 @@ class DashboardController {
     }
   }
 
+  // Get available sprints for a board (filtered and deduplicated)
+  async getSprints(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardId } = req.body;
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      // Get board name for sprint filtering
+      const board = await jiraService.getBoard(boardId);
+      const boardName = board?.name || `Board ${boardId}`;
+
+      // Get all closed sprints (already deduplicated and sorted in jiraService)
+      const allSprints = await jiraService.getSprints(boardId, 'closed');
+
+      // Filter by board naming convention
+      const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
+      const filtered = allSprints.filter(sprint => {
+        const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
+        if (!prefixMatch) return true;
+        const sprintPrefix = prefixMatch[1].toUpperCase();
+        return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+      });
+
+      const sprints = (filtered.length > 0 ? filtered : allSprints).map(s => ({
+        id: s.id,
+        name: s.name,
+        startDate: s.startDate,
+        endDate: s.endDate,
+        state: s.state
+      }));
+
+      res.json({ success: true, sprints, boardName });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
   // Get team metrics
   async getTeamMetrics(req, res) {
     try {
-      const { jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false } = req.body;
+      const { jiraUrl, email, apiToken, boardId, sprintCount = 6, sprintIds, forceRefresh = false } = req.body;
 
       console.log(`\n🎯 getTeamMetrics called with:`);
       console.log(`  Board ID: ${boardId} (type: ${typeof boardId})`);
       console.log(`  Sprint Count: ${sprintCount}`);
+      console.log(`  Sprint IDs: ${sprintIds ? sprintIds.join(', ') : 'auto (most recent)'}`);
       console.log(`  Force Refresh: ${forceRefresh}`);
 
       // Check cache first (unless force refresh)
@@ -103,11 +140,53 @@ class DashboardController {
       console.log(`  📡 Fetching fresh data from Jira for board ${boardId}`);
       const jiraService = new JiraService(jiraUrl, email, apiToken);
 
-      // Get sprints
-      const sprints = await jiraService.getSprints(boardId, 'closed');
-      const recentSprints = sprints.slice(0, sprintCount);
+      // Get board name early (needed for sprint filtering)
+      const board = await jiraService.getBoard(boardId);
+      const boardName = board?.name || `Board ${boardId}`;
 
-      console.log(`\n📋 Board ${boardId} - Analyzing ${recentSprints.length} sprints:`);
+      // Get sprints
+      const allSprints = await jiraService.getSprints(boardId, 'closed');
+
+      // Filter sprints to match the board's naming convention
+      // Extracts the board key (e.g., "STCPQ" from "STCPQ Scrum Board")
+      // and keeps only sprints whose prefix is related to the board key
+      const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
+      const filteredSprints = allSprints.filter(sprint => {
+        const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
+        if (!prefixMatch) return true;
+        const sprintPrefix = prefixMatch[1].toUpperCase();
+        return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+      });
+
+      // Use filtered sprints if they exist, otherwise fall back to all sprints
+      const matchedSprints = filteredSprints.length > 0 ? filteredSprints : allSprints;
+
+      if (matchedSprints.length < allSprints.length) {
+        console.log(`\n🔍 Sprint name filter: board key="${boardKey}", kept ${matchedSprints.length}/${allSprints.length} sprints`);
+        const excluded = allSprints.filter(s => !matchedSprints.includes(s));
+        if (excluded.length > 0) {
+          console.log(`  Excluded sprints:`);
+          excluded.slice(0, 5).forEach(s => console.log(`    - ${s.name}`));
+          if (excluded.length > 5) console.log(`    ... and ${excluded.length - 5} more`);
+        }
+      }
+
+      // If specific sprint IDs were provided, use those; otherwise take most recent N
+      let recentSprints;
+      if (sprintIds && sprintIds.length > 0) {
+        const idSet = new Set(sprintIds);
+        recentSprints = matchedSprints.filter(s => idSet.has(s.id));
+        // Sort by endDate descending (most recent first) to maintain consistent order
+        recentSprints.sort((a, b) => {
+          const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
+          const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
+          return dateB - dateA;
+        });
+      } else {
+        recentSprints = matchedSprints.slice(0, sprintCount);
+      }
+
+      console.log(`\n📋 Board ${boardId} (${boardName}) - Analyzing ${recentSprints.length} sprints:`);
       recentSprints.forEach((s, idx) => {
         console.log(`  ${idx + 1}. ${s.name} (${s.startDate?.split('T')[0]} to ${s.endDate?.split('T')[0]})`);
       });
@@ -152,18 +231,19 @@ class DashboardController {
 
         // Calculate metrics
         const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
-        const rolloverRate = this.metricsService.calculateRolloverRate(issues, nextSprintIssues);
+        const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name);
         const sprintHitRate = this.metricsService.calculateSprintHitRate(issues);
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
         const defectDistribution = this.metricsService.calculateDefectDistribution(issues);
-        
+
         sprintMetrics.push({
           sprintId: sprint.id,
           sprintName: sprint.name,
           startDate: sprint.startDate,
           endDate: sprint.endDate,
           sprintGoalAttainment,
-          rolloverRate,
+          rolloverRate: rolloverResult.rate,
+          rolloverIssues: rolloverResult.issues,
           sprintHitRate,
           midSprintAdditions,
           defectDistribution,
@@ -203,10 +283,6 @@ class DashboardController {
         backlogHealth,
         midSprintAdditions: aggregated.avgMidSprintAdditions || 0
       });
-
-      // Get board name
-      const board = await jiraService.getBoard(boardId);
-      const boardName = board?.name || `Board ${boardId}`;
 
       // Prepare response data
       const responseData = {

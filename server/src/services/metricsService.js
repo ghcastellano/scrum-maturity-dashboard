@@ -41,10 +41,11 @@ class MetricsService {
     return committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0;
   }
 
-  // Calculate Rollover Rate
-  calculateRolloverRate(sprintIssues, nextSprintIssues) {
+  // Calculate Rollover Rate - returns { rate, issues[] }
+  calculateRolloverRate(sprintIssues, nextSprintIssues, sprintName = '') {
     if (!nextSprintIssues || nextSprintIssues.length === 0) {
-      return 0;
+      console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: no next sprint data, rollover = 0%`);
+      return { rate: 0, issues: [] };
     }
 
     const currentSprintKeys = new Set(sprintIssues.map(i => i.key));
@@ -54,7 +55,25 @@ class MetricsService {
       return currentSprintKeys.has(issue.key);
     });
 
-    return sprintIssues.length > 0 ? (rolledOverIssues.length / sprintIssues.length) * 100 : 0;
+    const rate = sprintIssues.length > 0 ? (rolledOverIssues.length / sprintIssues.length) * 100 : 0;
+
+    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${rolledOverIssues.length}/${sprintIssues.length} issues = ${rate.toFixed(1)}%`);
+    if (rolledOverIssues.length > 0) {
+      rolledOverIssues.forEach(issue => {
+        const status = issue.fields?.status?.name || 'unknown';
+        console.log(`  → ${issue.key} - ${issue.fields?.summary || ''} [${status}]`);
+      });
+    }
+
+    // Return both rate and issue details for display
+    const issueDetails = rolledOverIssues.map(issue => ({
+      key: issue.key,
+      summary: issue.fields?.summary || '',
+      status: issue.fields?.status?.name || 'unknown',
+      type: issue.fields?.issuetype?.name || 'unknown'
+    }));
+
+    return { rate, issues: issueDetails };
   }
 
   // Calculate Sprint Hit Rate

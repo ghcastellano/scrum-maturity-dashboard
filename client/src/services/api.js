@@ -30,15 +30,27 @@ class ApiService {
     return response.data;
   }
 
-  async getTeamMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false) {
-    const response = await this.client.post('/metrics/team', {
+  async getSprints(jiraUrl, email, apiToken, boardId) {
+    const response = await this.client.post('/jira/sprints', {
+      jiraUrl,
+      email,
+      apiToken,
+      boardId
+    });
+    return response.data;
+  }
+
+  async getTeamMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false, sprintIds = null) {
+    const body = {
       jiraUrl,
       email,
       apiToken,
       boardId,
       sprintCount,
       forceRefresh
-    });
+    };
+    if (sprintIds) body.sprintIds = sprintIds;
+    const response = await this.client.post('/metrics/team', body);
     return response.data;
   }
 
@@ -72,6 +84,11 @@ class ApiService {
 
   async getHistoricalMetrics(id) {
     const response = await this.client.get(`/history/metrics/${id}`);
+    return response.data;
+  }
+
+  async deleteBoard(boardId) {
+    const response = await this.client.delete(`/history/board/${boardId}`);
     return response.data;
   }
 }

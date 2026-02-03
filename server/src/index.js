@@ -60,7 +60,11 @@ app.post('/api/jira/boards', (req, res) =>
   dashboardController.getBoards(req, res)
 );
 
-app.post('/api/metrics/team', (req, res) => 
+app.post('/api/jira/sprints', (req, res) =>
+  dashboardController.getSprints(req, res)
+);
+
+app.post('/api/metrics/team', (req, res) =>
   dashboardController.getTeamMetrics(req, res)
 );
 
@@ -110,6 +114,16 @@ app.get('/api/history/metrics/:id', async (req, res) => {
     } else {
       res.status(404).json({ success: false, message: 'Metrics not found' });
     }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/history/board/:boardId', async (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const removed = await database.deleteBoardMetrics(parseInt(boardId));
+    res.json({ success: true, removed });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

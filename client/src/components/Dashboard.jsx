@@ -43,6 +43,10 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
   const [localCredentials, setLocalCredentials] = useState(credentialsProp);
+  const [availableSprints, setAvailableSprints] = useState([]);
+  const [selectedSprintIds, setSelectedSprintIds] = useState([]);
+  const [showSprintSelector, setShowSprintSelector] = useState(false);
+  const [loadingSprints, setLoadingSprints] = useState(false);
 
   // Use prop credentials or locally fetched ones
   const credentials = credentialsProp || localCredentials;
@@ -245,6 +249,109 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       }
     } catch (err) {
       console.warn('Failed to load history:', err.message);
+    }
+  };
+
+  // Load available sprints for the current board
+  const loadAvailableSprints = async (boardId) => {
+    if (!credentials) return;
+    try {
+      setLoadingSprints(true);
+      const result = await api.getSprints(
+        credentials.jiraUrl, credentials.email, credentials.apiToken, boardId
+      );
+      if (result.success) {
+        setAvailableSprints(result.sprints);
+        // Default: select the 6 most recent
+        setSelectedSprintIds(result.sprints.slice(0, 6).map(s => s.id));
+      }
+    } catch (err) {
+      console.warn('Failed to load sprints:', err.message);
+    } finally {
+      setLoadingSprints(false);
+    }
+  };
+
+  // Toggle sprint selection
+  const toggleSprintSelection = (sprintId) => {
+    setSelectedSprintIds(prev =>
+      prev.includes(sprintId)
+        ? prev.filter(id => id !== sprintId)
+        : [...prev, sprintId]
+    );
+  };
+
+  // Refresh with selected sprints
+  const refreshWithSelectedSprints = async () => {
+    if (selectedSprintIds.length === 0) return;
+    try {
+      setRefreshing(true);
+      setLoading(true);
+      setError('');
+      setShowSprintSelector(false);
+
+      const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+
+      const teamData = await api.getTeamMetrics(
+        credentials.jiraUrl, credentials.email, credentials.apiToken,
+        boardId, selectedSprintIds.length, true, selectedSprintIds
+      );
+
+      if (teamData.success) {
+        setMetrics(teamData.data);
+        setFlowMetrics(null);
+        setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+        setError('');
+        await loadBoardHistory(boardId);
+      }
+    } catch (err) {
+      setError(`Failed to refresh: ${err.message}`);
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  };
+
+  // Delete board from database
+  const handleDeleteBoard = async () => {
+    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+    const boardName = typeof selectedBoard === 'object' ? selectedBoard.name : `Board ${selectedBoard}`;
+
+    if (!window.confirm(`Remove "${boardName}" and all its saved metrics?`)) return;
+
+    try {
+      await api.deleteBoard(boardId);
+
+      // Remove from local state
+      setAllBoardsData(prev => {
+        const next = { ...prev };
+        delete next[String(boardId)];
+        return next;
+      });
+      setDbBoards(prev => prev.filter(b => b.id !== boardId));
+
+      // Switch to the next available board
+      const remaining = displayBoards.filter(b => {
+        const id = typeof b === 'object' ? b.id : b;
+        return id !== boardId;
+      });
+
+      if (remaining.length > 0) {
+        const next = remaining[0];
+        const nextId = typeof next === 'object' ? next.id : next;
+        setSelectedBoard(next);
+        const nextData = allBoardsData[String(nextId)];
+        if (nextData) {
+          setMetrics(nextData);
+          setFlowMetrics(null);
+          loadBoardHistory(nextId);
+        }
+      } else {
+        setMetrics(null);
+        setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
+      }
+    } catch (err) {
+      setError(`Failed to delete board: ${err.message}`);
     }
   };
 
@@ -513,19 +620,43 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
           <div className="flex flex-wrap items-center gap-4 mt-2">
             {displayBoards.length >= 1 && (
-              <select
-                value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
-                onChange={handleBoardChange}
-                className="input-field max-w-md"
+              <div className="flex items-center gap-2">
+                <select
+                  value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
+                  onChange={handleBoardChange}
+                  className="input-field max-w-md"
+                >
+                  {displayBoards.map(board => {
+                    const boardId = typeof board === 'object' ? board.id : board;
+                    const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
+                    return (
+                      <option key={boardId} value={boardId}>{boardName}</option>
+                    );
+                  })}
+                </select>
+                <button
+                  onClick={handleDeleteBoard}
+                  className="px-3 py-2 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+                  title="Remove this board"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {credentials && (
+              <button
+                onClick={() => {
+                  if (!showSprintSelector) {
+                    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+                    loadAvailableSprints(boardId);
+                  }
+                  setShowSprintSelector(!showSprintSelector);
+                }}
+                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                {displayBoards.map(board => {
-                  const boardId = typeof board === 'object' ? board.id : board;
-                  const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
-                  return (
-                    <option key={boardId} value={boardId}>{boardName}</option>
-                  );
-                })}
-              </select>
+                {showSprintSelector ? 'Hide Sprints' : 'Select Sprints'}
+              </button>
             )}
 
             {history.length > 1 && (
@@ -545,6 +676,79 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               </div>
             )}
           </div>
+
+          {/* Sprint Selector Panel */}
+          {showSprintSelector && (
+            <div className="mt-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-gray-800">Select Sprints to Analyze</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedSprintIds(availableSprints.slice(0, 6).map(s => s.id))}
+                    className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                  >
+                    Last 6
+                  </button>
+                  <button
+                    onClick={() => setSelectedSprintIds(availableSprints.map(s => s.id))}
+                    className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={() => setSelectedSprintIds([])}
+                    className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {loadingSprints ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600 mx-auto"></div>
+                  <p className="mt-2 text-sm text-gray-500">Loading sprints...</p>
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-60 overflow-y-auto space-y-1 mb-3">
+                    {availableSprints.map(sprint => (
+                      <label
+                        key={sprint.id}
+                        className={`flex items-center p-2 rounded cursor-pointer hover:bg-gray-50 transition-colors ${
+                          selectedSprintIds.includes(sprint.id) ? 'bg-primary-50' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedSprintIds.includes(sprint.id)}
+                          onChange={() => toggleSprintSelection(sprint.id)}
+                          className="w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500"
+                        />
+                        <span className="ml-3 text-sm text-gray-800">{sprint.name}</span>
+                        <span className="ml-auto text-xs text-gray-500">
+                          {sprint.endDate ? new Date(sprint.endDate).toLocaleDateString() : 'No date'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500">
+                      {selectedSprintIds.length} sprint{selectedSprintIds.length !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={refreshWithSelectedSprints}
+                      disabled={selectedSprintIds.length === 0 || refreshing}
+                      className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {refreshing ? 'Analyzing...' : 'Analyze Selected Sprints'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Maturity Level Card */}
@@ -661,6 +865,31 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               <h3 className="font-semibold mb-4">Rollover Rate</h3>
               <div className="h-64">
                 <Line data={rolloverData} options={chartOptions} />
+              </div>
+
+              {/* Rollover Issues Detail */}
+              <div className="mt-4 space-y-2">
+                {metrics.sprintMetrics.slice().reverse().map(sprint => {
+                  const issues = sprint.rolloverIssues || [];
+                  if (issues.length === 0) return null;
+                  return (
+                    <details key={sprint.sprintId} className="bg-red-50 rounded-lg border border-red-100">
+                      <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-red-800 hover:bg-red-100 rounded-lg">
+                        {sprint.sprintName} — {issues.length} rolled over ({formatNumber(sprint.rolloverRate)}%)
+                      </summary>
+                      <div className="px-3 pb-2 space-y-1">
+                        {issues.map(issue => (
+                          <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-red-100">
+                            <span className="font-mono font-semibold text-red-700">{issue.key}</span>
+                            <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600">{issue.type}</span>
+                            <span className="flex-1 truncate">{issue.summary}</span>
+                            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">{issue.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })}
               </div>
             </div>
             

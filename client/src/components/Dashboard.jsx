@@ -757,56 +757,63 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         </div>
 
         {/* Maturity Level Card */}
-        <div className="card mb-8 bg-gradient-to-r from-primary-50 to-primary-100">
-          <div className="flex flex-col lg:flex-row items-start justify-between gap-6">
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold mb-4">Team Maturity Level</h2>
+        <div className="card mb-8">
+          {/* Header row */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">Team Maturity Level</h2>
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span>Based on</span>
+              <span className="font-semibold text-primary-600">{metrics.sprintsAnalyzed} sprints</span>
+            </div>
+          </div>
+
+          {/* Badge + Characteristics row */}
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Left: Badge */}
+            <div className="lg:w-64 shrink-0">
               <MaturityBadge {...metrics.maturityLevel} size="large" />
-              
-              {/* Characteristics */}
-              {metrics.maturityLevel.characteristics && (
-                <div className="mt-6">
-                  <h3 className="font-semibold text-lg mb-2">Current Characteristics:</h3>
-                  <div className="space-y-2">
-                    {metrics.maturityLevel.characteristics.map((char, idx) => (
-                      <div key={idx} className="flex items-start bg-white bg-opacity-50 rounded p-2">
-                        <span className="text-primary-600 mr-2 font-bold">•</span>
-                        <span className="text-sm">{char}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Support Model for Level 2 */}
               {metrics.maturityLevel.supportModel && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm font-semibold text-yellow-900">Support Model:</p>
-                  <p className="text-sm text-yellow-800">{metrics.maturityLevel.supportModel}</p>
+                  <p className="text-xs font-semibold text-yellow-900">Support Model:</p>
+                  <p className="text-xs text-yellow-800">{metrics.maturityLevel.supportModel}</p>
                 </div>
               )}
-              
-              <div className="mt-6">
-                <h3 className="font-semibold text-lg mb-2">Recommendations:</h3>
-                <ul className="space-y-2">
-                  {metrics.maturityLevel.recommendations.map((rec, idx) => (
-                    <li key={idx} className="flex items-start">
-                      <span className="text-primary-600 mr-2">→</span>
-                      <span>{rec}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </div>
-            <div className="text-right">
-              <div className="text-sm text-gray-600 mb-2">Sprints Analyzed</div>
-              <div className="text-4xl font-bold text-primary-600">{metrics.sprintsAnalyzed}</div>
-              <div className="mt-4 p-4 bg-white rounded-lg shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">Based on</div>
-                <div className="text-sm font-semibold">Last {metrics.sprintsAnalyzed} Closed Sprints</div>
+
+            {/* Right: Characteristics grid */}
+            {metrics.maturityLevel.characteristics && (
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {metrics.maturityLevel.characteristics.map((char, idx) => {
+                  const icons = ['📉', '🎯', '📋', '🔄'];
+                  return (
+                    <div key={idx} className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                      <span className="text-base shrink-0">{icons[idx] || '📊'}</span>
+                      <span className="text-sm text-gray-700">{char}</span>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
           </div>
+
+          {/* Recommendations */}
+          {metrics.maturityLevel.recommendations && (
+            <details className="mt-6">
+              <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900">
+                Recommendations ({metrics.maturityLevel.recommendations.length})
+              </summary>
+              <ul className="mt-3 space-y-2 pl-1">
+                {metrics.maturityLevel.recommendations.map((rec, idx) => (
+                  <li key={idx} className="flex items-start text-sm text-gray-600">
+                    <span className="text-primary-600 mr-2 shrink-0">{idx + 1}.</span>
+                    <span>{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
 
         {/* Key Metrics Grid */}
@@ -947,14 +954,35 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             <div>
               <h3 className="font-semibold mb-4">Mid-Sprint Additions</h3>
               <div className="space-y-2">
-                {metrics.sprintMetrics.slice().reverse().map(sprint => (
-                  <div key={sprint.sprintId} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="text-sm font-medium">{sprint.sprintName}</span>
-                    <span className="text-sm">
-                      {sprint.midSprintAdditions?.count || 0} issues ({formatNumber(sprint.midSprintAdditions?.percentage)}%)
-                    </span>
-                  </div>
-                ))}
+                {metrics.sprintMetrics.slice().reverse().map(sprint => {
+                  const msIssues = sprint.midSprintAdditions?.issues || [];
+                  const msCount = sprint.midSprintAdditions?.count || 0;
+                  if (msCount === 0) {
+                    return (
+                      <div key={sprint.sprintId} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                        <span className="text-sm font-medium">{sprint.sprintName}</span>
+                        <span className="text-sm text-gray-500">0 issues (0.0%)</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <details key={sprint.sprintId} className="bg-amber-50 rounded-lg border border-amber-100">
+                      <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-amber-800 hover:bg-amber-100 rounded-lg flex justify-between items-center">
+                        <span>{sprint.sprintName}</span>
+                        <span>{msCount} issues ({formatNumber(sprint.midSprintAdditions?.percentage)}%)</span>
+                      </summary>
+                      <div className="px-3 pb-3 space-y-1">
+                        {msIssues.map(issue => (
+                          <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-amber-100">
+                            <span className="font-mono font-semibold text-amber-700 shrink-0">{issue.key}</span>
+                            <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
+                            <span className="flex-1 truncate">{issue.summary}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })}
               </div>
             </div>
           </div>

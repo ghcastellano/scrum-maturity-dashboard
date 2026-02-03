@@ -1080,109 +1080,112 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
             👥 Pillar 3: Team Ownership & Execution
           </h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div>
-              <h3 className="font-semibold mb-4">Backlog Health</h3>
-              <div className="h-64">
-                <Bar 
-                  data={backlogHealthData} 
-                  options={{
-                    ...chartOptions,
-                    indexAxis: 'y'
-                  }} 
-                />
-              </div>
-            </div>
-            
-            <div>
-              <h3 className="font-semibold mb-4">Backlog Metrics</h3>
-              <div className="space-y-3">
-                {/* Items with Acceptance Criteria */}
-                {(() => {
-                  const missing = metrics.backlogHealth?.missingAC || [];
-                  const total = metrics.backlogHealth?.totalItems || 0;
-                  return (
-                    <details className="bg-blue-50 rounded-lg border border-blue-100">
-                      <summary className="p-4 cursor-pointer hover:bg-blue-100 rounded-lg flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Items with Acceptance Criteria</span>
-                        <span className="text-2xl font-bold text-blue-600">{formatNumber(metrics.backlogHealth?.withAcceptanceCriteria)}%</span>
-                      </summary>
-                      {missing.length > 0 && (
-                        <div className="px-4 pb-3">
-                          <div className="text-xs font-semibold text-blue-800 mb-2">Missing AC ({missing.length} of {total} items):</div>
-                          <div className="space-y-0 max-h-48 overflow-y-auto">
-                            {missing.map(issue => (
-                              <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-blue-100">
-                                <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-blue-700 shrink-0 hover:underline">{issue.key}</a>
-                                <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
-                                <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </details>
-                  );
-                })()}
 
-                {/* Items with Estimates */}
-                {(() => {
-                  const missing = metrics.backlogHealth?.missingEstimates || [];
-                  const total = metrics.backlogHealth?.totalItems || 0;
-                  return (
-                    <details className="bg-green-50 rounded-lg border border-green-100">
-                      <summary className="p-4 cursor-pointer hover:bg-green-100 rounded-lg flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Items with Estimates</span>
-                        <span className="text-2xl font-bold text-green-600">{formatNumber(metrics.backlogHealth?.withEstimates)}%</span>
-                      </summary>
-                      {missing.length > 0 && (
-                        <div className="px-4 pb-3">
-                          <div className="text-xs font-semibold text-green-800 mb-2">Missing Estimates ({missing.length} of {total} items):</div>
-                          <div className="space-y-0 max-h-48 overflow-y-auto">
-                            {missing.map(issue => (
-                              <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-green-100">
-                                <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-green-700 shrink-0 hover:underline">{issue.key}</a>
-                                <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
-                                <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </details>
-                  );
-                })()}
-
-                {/* Items Linked to Fix Versions */}
-                {(() => {
-                  const missing = metrics.backlogHealth?.missingFixVersions || [];
-                  const total = metrics.backlogHealth?.totalItems || 0;
-                  return (
-                    <details className="bg-orange-50 rounded-lg border border-orange-100">
-                      <summary className="p-4 cursor-pointer hover:bg-orange-100 rounded-lg flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Items Linked to Fix Versions</span>
-                        <span className="text-2xl font-bold text-orange-600">{formatNumber(metrics.backlogHealth?.linkedToGoals)}%</span>
-                      </summary>
-                      {missing.length > 0 && (
-                        <div className="px-4 pb-3">
-                          <div className="text-xs font-semibold text-orange-800 mb-2">Missing Fix Versions ({missing.length} of {total} items):</div>
-                          <div className="space-y-0 max-h-48 overflow-y-auto">
-                            {missing.map(issue => (
-                              <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-orange-100">
-                                <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-orange-700 shrink-0 hover:underline">{issue.key}</a>
-                                <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
-                                <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </details>
-                  );
-                })()}
+          {/* Overall Backlog Health Score */}
+          {(() => {
+            const overallScore = metrics.backlogHealth?.overallScore ?? 0;
+            const scoreColor = overallScore >= 80 ? 'text-green-600' : overallScore >= 50 ? 'text-yellow-600' : 'text-red-600';
+            const scoreBg = overallScore >= 80 ? 'bg-green-50 border-green-200' : overallScore >= 50 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200';
+            return (
+              <div className={`flex items-center gap-4 p-4 rounded-xl border ${scoreBg} mb-6`}>
+                <div className={`text-4xl font-black ${scoreColor}`}>{formatNumber(overallScore)}%</div>
+                <div>
+                  <div className="font-semibold text-gray-800">Overall Backlog Health</div>
+                  <div className="text-sm text-gray-500">Average across all backlog quality metrics</div>
+                </div>
               </div>
-            </div>
+            );
+          })()}
+
+          {/* Backlog Health Metrics */}
+          <div className="space-y-4">
+            {[
+              {
+                label: 'Acceptance Criteria',
+                description: 'Items with clearly defined acceptance criteria',
+                value: metrics.backlogHealth?.withAcceptanceCriteria ?? 0,
+                missing: metrics.backlogHealth?.missingAC || [],
+                missingLabel: 'Missing AC',
+                color: { bar: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', hoverBg: 'hover:bg-blue-100', lightBar: 'bg-blue-100', badge: 'bg-blue-100 text-blue-800', link: 'text-blue-700', divider: 'border-blue-100' }
+              },
+              {
+                label: 'Story Points / Estimates',
+                description: 'Items with effort estimates assigned',
+                value: metrics.backlogHealth?.withEstimates ?? 0,
+                missing: metrics.backlogHealth?.missingEstimates || [],
+                missingLabel: 'Missing Estimates',
+                color: { bar: 'bg-green-500', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', hoverBg: 'hover:bg-green-100', lightBar: 'bg-green-100', badge: 'bg-green-100 text-green-800', link: 'text-green-700', divider: 'border-green-100' }
+              },
+              {
+                label: 'Fix Versions / Goals',
+                description: 'Items linked to a release or fix version',
+                value: metrics.backlogHealth?.linkedToGoals ?? 0,
+                missing: metrics.backlogHealth?.missingFixVersions || [],
+                missingLabel: 'Missing Fix Versions',
+                color: { bar: 'bg-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', hoverBg: 'hover:bg-orange-100', lightBar: 'bg-orange-100', badge: 'bg-orange-100 text-orange-800', link: 'text-orange-700', divider: 'border-orange-100' }
+              }
+            ].map(metric => {
+              const total = metrics.backlogHealth?.totalItems || 0;
+              const hasDetails = metric.missing.length > 0;
+              const isComplete = metric.value >= 100;
+              const statusColor = metric.value >= 80 ? 'text-green-600' : metric.value >= 50 ? 'text-yellow-600' : 'text-red-600';
+
+              return (
+                <details key={metric.label} className={`rounded-xl border ${metric.color.border} overflow-hidden group`}>
+                  <summary className={`p-5 cursor-pointer ${metric.color.hoverBg} transition-colors list-none`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <svg className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                        <div>
+                          <div className="font-semibold text-gray-800">{metric.label}</div>
+                          <div className="text-xs text-gray-500">{metric.description}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-2xl font-bold ${statusColor}`}>{formatNumber(metric.value)}%</div>
+                        {!isComplete && total > 0 && (
+                          <div className="text-xs text-gray-400">{metric.missing.length > 0 ? `${metric.missing.length}` : '?'} of {total} missing</div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div className={`w-full h-2.5 ${metric.color.lightBar} rounded-full overflow-hidden`}>
+                      <div className={`h-full ${metric.color.bar} rounded-full transition-all`} style={{ width: `${Math.min(metric.value, 100)}%` }} />
+                    </div>
+                  </summary>
+
+                  <div className={`${metric.color.bg} px-5 pb-4 pt-2`}>
+                    {hasDetails ? (
+                      <>
+                        <div className={`text-xs font-semibold ${metric.color.text} mb-2`}>
+                          {metric.missingLabel} ({metric.missing.length} of {total} items)
+                        </div>
+                        <div className="max-h-56 overflow-y-auto rounded-lg bg-white border border-gray-100">
+                          {metric.missing.map((issue, idx) => (
+                            <div key={issue.key} className={`flex items-center gap-2 text-xs text-gray-700 px-3 py-2 ${idx > 0 ? 'border-t border-gray-100' : ''}`}>
+                              <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className={`font-mono font-semibold ${metric.color.link} shrink-0 hover:underline`}>{issue.key}</a>
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${metric.color.badge}`}>{issue.type}</span>
+                              <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
+                              <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 text-xs shrink-0">{issue.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : isComplete ? (
+                      <div className="flex items-center gap-2 text-sm text-green-700 py-2">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        All items meet this criteria
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Click "Refresh from Jira" to load item details
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
           </div>
         </div>
       </div>

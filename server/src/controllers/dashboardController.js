@@ -36,7 +36,7 @@ class DashboardController {
 
       // Check database cache first (persists for all users, survives restarts)
       if (!forceRefresh) {
-        const cachedBoards = database.getCachedBoards(3600 * 1000); // 1 hour
+        const cachedBoards = await database.getCachedBoards(3600 * 1000); // 1 hour
         if (cachedBoards) {
           return res.json({
             success: true,
@@ -58,7 +58,7 @@ class DashboardController {
       }));
 
       // Save to database (persistent cache for all users)
-      database.saveBoards(formattedBoards);
+      await database.saveBoards(formattedBoards);
 
       res.json({
         success: true,
@@ -225,7 +225,7 @@ class DashboardController {
 
       // Save to database for history
       try {
-        database.saveMetrics(
+        await database.saveMetrics(
           boardId,
           boardName,
           sprintCount,

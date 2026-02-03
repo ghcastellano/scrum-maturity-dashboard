@@ -9,6 +9,7 @@
     "start": "node src/index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.94.0",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "date-fns": "^3.0.6",

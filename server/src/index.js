@@ -82,6 +82,15 @@ app.get('/api/history/boards', (req, res) => {
   }
 });
 
+app.get('/api/history/all-latest', (req, res) => {
+  try {
+    const allMetrics = database.getAllBoardsWithLatestMetrics();
+    res.json({ success: true, boards: allMetrics });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.get('/api/history/board/:boardId', (req, res) => {
   try {
     const { boardId } = req.params;

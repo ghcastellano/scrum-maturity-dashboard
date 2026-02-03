@@ -102,6 +102,19 @@ class DatabaseService {
       .sort((a, b) => new Date(b.last_calculated) - new Date(a.last_calculated));
   }
 
+  // Get all boards with their latest metrics data included
+  getAllBoardsWithLatestMetrics() {
+    const boardMap = new Map();
+    for (const m of this.data.metrics) {
+      const existing = boardMap.get(m.board_id);
+      if (!existing || new Date(m.calculated_at) > new Date(existing.calculated_at)) {
+        boardMap.set(m.board_id, m);
+      }
+    }
+    return Array.from(boardMap.values())
+      .sort((a, b) => new Date(b.calculated_at) - new Date(a.calculated_at));
+  }
+
   // Save boards list
   saveBoards(boards) {
     this.data.boards = {

@@ -60,6 +60,11 @@ class ApiService {
     return response.data;
   }
 
+  async getAllLatestMetrics() {
+    const response = await this.client.get('/history/all-latest');
+    return response.data;
+  }
+
   async getBoardHistory(boardId) {
     const response = await this.client.get(`/history/board/${boardId}`);
     return response.data;

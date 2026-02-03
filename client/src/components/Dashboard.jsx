@@ -36,8 +36,10 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [metrics, setMetrics] = useState(null);
   const [flowMetrics, setFlowMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
+  const [metricsCache, setMetricsCache] = useState({});
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
 
@@ -47,44 +49,81 @@ export default function Dashboard({ credentials, selectedBoards }) {
     return Number(value).toFixed(decimals);
   };
 
-  // Load board data when board changes
+  // Load ALL board metrics at once on mount
   useEffect(() => {
-    loadBoardData();
-  }, [selectedBoard]);
+    loadAllMetrics();
+  }, []);
 
-  // Always load from database first. Only call API if nothing saved.
-  const loadBoardData = async () => {
+  // When switching boards, use cached data instantly
+  useEffect(() => {
     const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+    if (metricsCache[boardId]) {
+      setMetrics(metricsCache[boardId]);
+      setFlowMetrics(null);
+      setSelectedHistoryId(null);
+      setError('');
+      // Load history for this board in background
+      loadBoardHistory(boardId);
+    }
+  }, [selectedBoard, metricsCache]);
+
+  const loadAllMetrics = async () => {
     setLoading(true);
     setError('');
 
     try {
+      const result = await api.getAllLatestMetrics();
+      if (result.success && result.boards?.length > 0) {
+        // Build cache: boardId -> metrics_data
+        const cache = {};
+        for (const board of result.boards) {
+          cache[board.board_id] = board.metrics_data;
+        }
+        setMetricsCache(cache);
+
+        // Show the first selected board's metrics
+        const firstBoardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+        if (cache[firstBoardId]) {
+          setMetrics(cache[firstBoardId]);
+        } else {
+          // Selected board not in cache, show first available
+          const firstAvailable = result.boards[0];
+          setMetrics(firstAvailable.metrics_data);
+        }
+        setFlowMetrics(null);
+
+        // Load history for the current board
+        await loadBoardHistory(firstBoardId);
+        setLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to load all metrics:', err.message);
+    }
+
+    // No saved data at all
+    if (!credentials) {
+      setError('No saved metrics found. Jira credentials are needed to calculate metrics.');
+      setLoading(false);
+      return;
+    }
+
+    // Has credentials but no saved data - calculate for first time
+    await refreshFromJira();
+  };
+
+  const loadBoardHistory = async (boardId) => {
+    try {
       const historyResult = await api.getBoardHistory(boardId);
       if (historyResult.success && historyResult.history?.length > 0) {
         setHistory(historyResult.history);
-
-        // Load the most recent saved metrics
-        const latest = historyResult.history[0];
-        const metricsResult = await api.getHistoricalMetrics(latest.id);
-        if (metricsResult.success && metricsResult.data) {
-          console.log('✅ Loaded latest metrics from database for board', boardId);
-          setMetrics(metricsResult.data.metrics_data);
-          setFlowMetrics(null);
-          setSelectedHistoryId(latest.id);
-          setLoading(false);
-          return;
-        }
+        setSelectedHistoryId(historyResult.history[0].id);
+      } else {
+        setHistory([]);
+        setSelectedHistoryId(null);
       }
     } catch (err) {
-      console.warn('No saved metrics, will calculate:', err.message);
-    }
-
-    // No saved data at all - calculate from Jira for the first time (only if credentials available)
-    if (credentials) {
-      await refreshFromJira();
-    } else {
-      setError('No saved metrics found for this board. Jira credentials are needed to calculate metrics.');
-      setLoading(false);
+      console.warn('Failed to load history:', err.message);
     }
   };
 
@@ -106,9 +145,10 @@ export default function Dashboard({ credentials, selectedBoards }) {
     }
   };
 
-  // Refresh from Jira API (only called by button or first-time calculation)
+  // Refresh from Jira API (only called by button)
   const refreshFromJira = async () => {
     try {
+      setRefreshing(true);
       setLoading(true);
       setError('');
 
@@ -121,7 +161,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
           credentials.apiToken,
           boardId,
           6,
-          true // always force refresh when explicitly calling Jira
+          true
         ),
         api.getFlowMetrics(
           credentials.jiraUrl,
@@ -136,18 +176,18 @@ export default function Dashboard({ credentials, selectedBoards }) {
       setMetrics(teamData.data);
       setFlowMetrics(flowData.data);
 
+      // Update cache with new data
+      setMetricsCache(prev => ({ ...prev, [boardId]: teamData.data }));
+
       // Reload history to include the new entry
-      const historyResult = await api.getBoardHistory(boardId);
-      if (historyResult.success && historyResult.history?.length > 0) {
-        setHistory(historyResult.history);
-        setSelectedHistoryId(historyResult.history[0].id);
-      }
+      await loadBoardHistory(boardId);
     } catch (err) {
       console.error('Failed to load metrics:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Failed to load metrics';
       setError(errorMessage);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -330,11 +370,11 @@ export default function Dashboard({ credentials, selectedBoards }) {
             {credentials && (
               <button
                 onClick={() => refreshFromJira()}
-                disabled={loading}
+                disabled={refreshing}
                 className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <span>🔄</span>
-                {loading ? 'Loading...' : 'Refresh from Jira'}
+                {refreshing ? 'Refreshing...' : 'Refresh from Jira'}
               </button>
             )}
           </div>

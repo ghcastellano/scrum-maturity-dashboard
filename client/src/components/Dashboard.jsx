@@ -38,16 +38,8 @@ export default function Dashboard({ credentials, selectedBoards }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
-  const [isCached, setIsCached] = useState(false);
   const [history, setHistory] = useState([]);
-  const [selectedHistoryId, setSelectedHistoryId] = useState('live');
-  const [isHistorical, setIsHistorical] = useState(false);
-
-  // Load history for board on mount and when board changes
-  useEffect(() => {
-    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
-    loadHistory(boardId);
-  }, [selectedBoard]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState(null);
 
   // Helper function to safely format numbers
   const formatNumber = (value, decimals = 1) => {
@@ -55,35 +47,51 @@ export default function Dashboard({ credentials, selectedBoards }) {
     return Number(value).toFixed(decimals);
   };
 
-  const loadHistory = async (boardId) => {
+  // Load board data when board changes
+  useEffect(() => {
+    loadBoardData();
+  }, [selectedBoard]);
+
+  // Always load from database first. Only call API if nothing saved.
+  const loadBoardData = async () => {
+    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+    setLoading(true);
+    setError('');
+
     try {
-      const result = await api.getBoardHistory(boardId);
-      if (result.success) {
-        setHistory(result.history || []);
+      const historyResult = await api.getBoardHistory(boardId);
+      if (historyResult.success && historyResult.history?.length > 0) {
+        setHistory(historyResult.history);
+
+        // Load the most recent saved metrics
+        const latest = historyResult.history[0];
+        const metricsResult = await api.getHistoricalMetrics(latest.id);
+        if (metricsResult.success && metricsResult.data) {
+          console.log('✅ Loaded latest metrics from database for board', boardId);
+          setMetrics(metricsResult.data.metrics_data);
+          setFlowMetrics(null);
+          setSelectedHistoryId(latest.id);
+          setLoading(false);
+          return;
+        }
       }
     } catch (err) {
-      console.warn('Could not load history:', err.message);
-      setHistory([]);
+      console.warn('No saved metrics, will calculate:', err.message);
     }
+
+    // No saved data at all - calculate from Jira for the first time
+    await refreshFromJira();
   };
 
+  // Load a specific historical entry by ID
   const loadHistoricalMetrics = async (historyId) => {
-    if (historyId === 'live') {
-      setSelectedHistoryId('live');
-      setIsHistorical(false);
-      loadMetrics();
-      return;
-    }
-
     try {
       setLoading(true);
       setSelectedHistoryId(historyId);
-      setIsHistorical(true);
       const result = await api.getHistoricalMetrics(historyId);
       if (result.success && result.data) {
         setMetrics(result.data.metrics_data);
         setFlowMetrics(null);
-        setIsCached(true);
       }
     } catch (err) {
       console.error('Failed to load historical metrics:', err);
@@ -93,48 +101,12 @@ export default function Dashboard({ credentials, selectedBoards }) {
     }
   };
 
-  useEffect(() => {
-    loadBoardData();
-  }, [selectedBoard]);
-
-  // Try to load from database first, only call API if no saved data
-  const loadBoardData = async () => {
-    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
-
-    try {
-      // First try to load latest saved metrics from database
-      const historyResult = await api.getBoardHistory(boardId);
-      if (historyResult.success && historyResult.history?.length > 0) {
-        setHistory(historyResult.history);
-
-        // Load the most recent saved metrics
-        const latestId = historyResult.history[0].id;
-        const metricsResult = await api.getHistoricalMetrics(latestId);
-        if (metricsResult.success && metricsResult.data) {
-          console.log('✅ Loaded metrics from database for board', boardId);
-          setMetrics(metricsResult.data.metrics_data);
-          setFlowMetrics(null);
-          setIsCached(true);
-          setIsHistorical(false);
-          setSelectedHistoryId('live');
-          setLoading(false);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('No saved metrics found, fetching from API:', err.message);
-    }
-
-    // No saved data - fetch from API
-    loadMetrics();
-  };
-
-  const loadMetrics = async (forceRefresh = false) => {
+  // Refresh from Jira API (only called by button or first-time calculation)
+  const refreshFromJira = async () => {
     try {
       setLoading(true);
       setError('');
 
-      // selectedBoard can be either an object {id, name} or just an id (for backward compatibility)
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
       const [teamData, flowData] = await Promise.all([
@@ -144,7 +116,7 @@ export default function Dashboard({ credentials, selectedBoards }) {
           credentials.apiToken,
           boardId,
           6,
-          forceRefresh
+          true // always force refresh when explicitly calling Jira
         ),
         api.getFlowMetrics(
           credentials.jiraUrl,
@@ -152,18 +124,19 @@ export default function Dashboard({ credentials, selectedBoards }) {
           credentials.apiToken,
           boardId,
           3,
-          forceRefresh
+          true
         )
       ]);
 
       setMetrics(teamData.data);
       setFlowMetrics(flowData.data);
-      setIsCached(teamData.cached || false);
-      setIsHistorical(false);
-      setSelectedHistoryId('live');
 
-      // Refresh history list after new calculation
-      loadHistory(boardId);
+      // Reload history to include the new entry
+      const historyResult = await api.getBoardHistory(boardId);
+      if (historyResult.success && historyResult.history?.length > 0) {
+        setHistory(historyResult.history);
+        setSelectedHistoryId(historyResult.history[0].id);
+      }
     } catch (err) {
       console.error('Failed to load metrics:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Failed to load metrics';
@@ -349,21 +322,14 @@ export default function Dashboard({ credentials, selectedBoards }) {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-4xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
-            <div className="flex items-center gap-3">
-              {isCached && (
-                <span className="text-sm text-gray-600 bg-yellow-50 border border-yellow-200 px-3 py-1 rounded-lg">
-                  📦 Cached data (30 min)
-                </span>
-              )}
-              <button
-                onClick={() => loadMetrics(true)}
-                disabled={loading}
-                className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <span>🔄</span>
-                {loading ? 'Loading...' : 'Refresh from Jira'}
-              </button>
-            </div>
+            <button
+              onClick={() => refreshFromJira()}
+              disabled={loading}
+              className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <span>🔄</span>
+              {loading ? 'Loading...' : 'Refresh from Jira'}
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-4 mt-2">
@@ -374,8 +340,6 @@ export default function Dashboard({ credentials, selectedBoards }) {
                   const boardId = Number(e.target.value);
                   const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
                   setSelectedBoard(board || boardId);
-                  setSelectedHistoryId('live');
-                  setIsHistorical(false);
                 }}
                 className="input-field max-w-md"
               >
@@ -389,26 +353,20 @@ export default function Dashboard({ credentials, selectedBoards }) {
               </select>
             )}
 
-            {history.length > 0 && (
+            {history.length > 1 && (
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-gray-600">History:</label>
                 <select
-                  value={selectedHistoryId}
-                  onChange={(e) => loadHistoricalMetrics(e.target.value === 'live' ? 'live' : Number(e.target.value))}
+                  value={selectedHistoryId || ''}
+                  onChange={(e) => loadHistoricalMetrics(Number(e.target.value))}
                   className="input-field max-w-xs text-sm"
                 >
-                  <option value="live">Live - Calculate Now</option>
                   {history.map(h => (
                     <option key={h.id} value={h.id}>
                       {new Date(h.calculated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })} - Level {h.maturity_level}
                     </option>
                   ))}
                 </select>
-                {isHistorical && (
-                  <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
-                    Historical Data
-                  </span>
-                )}
               </div>
             )}
           </div>

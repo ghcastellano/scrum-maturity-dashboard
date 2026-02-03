@@ -89,10 +89,14 @@ class DashboardController {
       // Filter by board naming convention
       const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
       const filtered = allSprints.filter(sprint => {
+        const sprintNameUpper = sprint.name.toUpperCase();
         const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
-        if (!prefixMatch) return true;
-        const sprintPrefix = prefixMatch[1].toUpperCase();
-        return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+        if (prefixMatch) {
+          const sprintPrefix = prefixMatch[1].toUpperCase();
+          return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+        }
+        // No letter prefix (e.g., "3Q25.S16RISE") - only keep if name contains board key
+        return sprintNameUpper.includes(boardKey);
       });
 
       const sprints = (filtered.length > 0 ? filtered : allSprints).map(s => ({
@@ -152,10 +156,14 @@ class DashboardController {
       // and keeps only sprints whose prefix is related to the board key
       const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
       const filteredSprints = allSprints.filter(sprint => {
+        const sprintNameUpper = sprint.name.toUpperCase();
         const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
-        if (!prefixMatch) return true;
-        const sprintPrefix = prefixMatch[1].toUpperCase();
-        return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+        if (prefixMatch) {
+          const sprintPrefix = prefixMatch[1].toUpperCase();
+          return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+        }
+        // No letter prefix (e.g., "3Q25.S16RISE") - only keep if name contains board key
+        return sprintNameUpper.includes(boardKey);
       });
 
       // Use filtered sprints if they exist, otherwise fall back to all sprints

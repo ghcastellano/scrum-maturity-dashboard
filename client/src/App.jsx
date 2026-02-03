@@ -8,95 +8,90 @@ const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
 const STORAGE_KEY_TOKEN = 'scrum-dashboard-api-token';
 const STORAGE_KEY_BOARDS = 'scrum-dashboard-selected-boards';
 
-// Default credentials from environment variables (for auto-login on first access)
-const DEFAULT_JIRA_URL = import.meta.env.VITE_JIRA_URL || '';
-const DEFAULT_EMAIL = import.meta.env.VITE_JIRA_EMAIL || '';
-const DEFAULT_API_TOKEN = import.meta.env.VITE_JIRA_API_TOKEN || '';
-
-// Debug: Log environment variables on app load
-console.log('🔧 Environment Variables:');
-console.log('  VITE_JIRA_URL:', DEFAULT_JIRA_URL ? '✓ Set' : '✗ Not set');
-console.log('  VITE_JIRA_EMAIL:', DEFAULT_EMAIL ? '✓ Set' : '✗ Not set');
-console.log('  VITE_JIRA_API_TOKEN:', DEFAULT_API_TOKEN ? '✓ Set' : '✗ Not set');
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 function App() {
-  // Initialize state by checking localStorage immediately (no loading state)
-  const initializeState = () => {
-    try {
-      const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
-      const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
-      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
-      const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
+  const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
+  const [step, setStep] = useState('connection');
+  const [credentials, setCredentials] = useState(null);
+  const [selectedBoards, setSelectedBoards] = useState([]);
 
-      // If we have all required data, start with dashboard
-      if (savedUrl && savedEmail && savedToken && savedBoards) {
-        const boards = JSON.parse(savedBoards);
-        if (boards.length > 0) {
-          // Check if boards are in old format
-          const isOldFormat = typeof boards[0] === 'number';
+  // Fetch default credentials from backend on mount
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
+        const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+        const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
+        const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
 
-          if (isOldFormat) {
-            // Old format - need to re-select teams
-            console.log('Old board format detected, please re-select your teams');
-            localStorage.removeItem(STORAGE_KEY_BOARDS);
-            return {
-              step: 'teamSelection',
-              credentials: { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken },
-              boards: []
-            };
+        // If we have all required data, start with dashboard
+        if (savedUrl && savedEmail && savedToken && savedBoards) {
+          const boards = JSON.parse(savedBoards);
+          if (boards.length > 0) {
+            // Check if boards are in old format
+            const isOldFormat = typeof boards[0] === 'number';
+
+            if (isOldFormat) {
+              // Old format - need to re-select teams
+              console.log('Old board format detected, please re-select your teams');
+              localStorage.removeItem(STORAGE_KEY_BOARDS);
+              setStep('teamSelection');
+              setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
+              setIsLoadingCredentials(false);
+              return;
+            }
+
+            // New format - go directly to dashboard!
+            setStep('dashboard');
+            setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
+            setSelectedBoards(boards);
+            setIsLoadingCredentials(false);
+            return;
           }
-
-          // New format - go directly to dashboard!
-          return {
-            step: 'dashboard',
-            credentials: { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken },
-            boards: boards
-          };
         }
+
+        // If we have saved credentials, go to team selection
+        if (savedUrl && savedEmail && savedToken) {
+          setStep('teamSelection');
+          setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
+          setIsLoadingCredentials(false);
+          return;
+        }
+
+        // No saved credentials - try to fetch from backend
+        console.log('Fetching default credentials from backend...');
+        const response = await fetch(`${API_URL}/credentials`);
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.credentials) {
+            console.log('✓ Default credentials loaded from backend');
+            const { jiraUrl, email, apiToken } = data.credentials;
+
+            // Save to localStorage for future use
+            localStorage.setItem(STORAGE_KEY_JIRA_URL, jiraUrl);
+            localStorage.setItem(STORAGE_KEY_EMAIL, email);
+            localStorage.setItem(STORAGE_KEY_TOKEN, apiToken);
+
+            // Skip connection screen, go directly to team selection
+            setStep('teamSelection');
+            setCredentials({ jiraUrl, email, apiToken });
+            setIsLoadingCredentials(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load credentials:', err);
       }
 
-      // If we have saved credentials, go to team selection
-      if (savedUrl && savedEmail && savedToken) {
-        return {
-          step: 'teamSelection',
-          credentials: { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken },
-          boards: []
-        };
-      }
+      // No credentials found - show connection screen
+      setStep('connection');
+      setIsLoadingCredentials(false);
+    };
 
-      // If no saved data but we have default credentials, use them automatically
-      if (DEFAULT_JIRA_URL && DEFAULT_EMAIL && DEFAULT_API_TOKEN) {
-        console.log('Using default credentials from environment');
-        const defaultCredentials = {
-          jiraUrl: DEFAULT_JIRA_URL,
-          email: DEFAULT_EMAIL,
-          apiToken: DEFAULT_API_TOKEN
-        };
-
-        // Save to localStorage for future use
-        localStorage.setItem(STORAGE_KEY_JIRA_URL, DEFAULT_JIRA_URL);
-        localStorage.setItem(STORAGE_KEY_EMAIL, DEFAULT_EMAIL);
-        localStorage.setItem(STORAGE_KEY_TOKEN, DEFAULT_API_TOKEN);
-
-        // Skip connection screen, go directly to team selection
-        return {
-          step: 'teamSelection',
-          credentials: defaultCredentials,
-          boards: []
-        };
-      }
-    } catch (err) {
-      console.error('Failed to load saved session:', err);
-    }
-
-    // No saved data and no default credentials - show connection screen
-    return { step: 'connection', credentials: null, boards: [] };
-  };
-
-  const initial = initializeState();
-  const [step, setStep] = useState(initial.step);
-  const [credentials, setCredentials] = useState(initial.credentials);
-  const [selectedBoards, setSelectedBoards] = useState(initial.boards);
+    initializeApp();
+  }, []);
 
   const handleConnectionSuccess = (creds) => {
     // Save credentials to localStorage for auto-login
@@ -138,6 +133,18 @@ function App() {
     setSelectedBoards([]);
   };
 
+  // Show loading while fetching credentials
+  if (isLoadingCredentials) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -147,7 +154,7 @@ function App() {
             <h1 className="text-2xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
             <p className="text-sm text-gray-600">Analyze team health and maturity</p>
           </div>
-          
+
           {step === 'dashboard' && (
             <div className="flex gap-3">
               <button

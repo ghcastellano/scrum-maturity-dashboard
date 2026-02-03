@@ -27,7 +27,31 @@ if (process.env.NODE_ENV === 'production') {
 const dashboardController = new DashboardController();
 
 // API Routes
-app.post('/api/jira/test-connection', (req, res) => 
+// Get default Jira credentials (for team-wide access)
+app.get('/api/credentials', (req, res) => {
+  const jiraUrl = process.env.JIRA_URL;
+  const jiraEmail = process.env.JIRA_EMAIL;
+  const jiraToken = process.env.JIRA_API_TOKEN;
+
+  // Only return credentials if all are configured
+  if (jiraUrl && jiraEmail && jiraToken) {
+    res.json({
+      success: true,
+      credentials: {
+        jiraUrl,
+        email: jiraEmail,
+        apiToken: jiraToken
+      }
+    });
+  } else {
+    res.status(404).json({
+      success: false,
+      message: 'No default credentials configured'
+    });
+  }
+});
+
+app.post('/api/jira/test-connection', (req, res) =>
   dashboardController.testConnection(req, res)
 );
 

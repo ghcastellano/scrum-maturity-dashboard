@@ -239,6 +239,29 @@ class DatabaseService {
     }
   }
 
+  // Update latest metrics record with flow data
+  async updateLatestWithFlow(boardId, flowData) {
+    if (!this.client) return false;
+
+    try {
+      const latest = await this.getLatestMetrics(boardId);
+      if (!latest) return false;
+
+      const updatedData = { ...latest.metrics_data, flowMetrics: flowData };
+      const { error } = await this.client
+        .from('metrics_history')
+        .update({ metrics_data: updatedData })
+        .eq('id', latest.id);
+
+      if (error) throw error;
+      console.log(`✓ Flow metrics saved for board ${boardId}`);
+      return true;
+    } catch (err) {
+      console.warn('Failed to update with flow metrics:', err.message);
+      return false;
+    }
+  }
+
   // Delete all metrics for a board
   async deleteBoardMetrics(boardId) {
     if (!this.client) return 0;

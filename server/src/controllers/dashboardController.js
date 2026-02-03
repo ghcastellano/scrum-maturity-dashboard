@@ -31,18 +31,43 @@ class DashboardController {
   // Get available boards/teams
   async getBoards(req, res) {
     try {
-      const { jiraUrl, email, apiToken } = req.body;
-      
+      const { jiraUrl, email, apiToken, forceRefresh = false } = req.body;
+
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cacheKey = cacheService.generateKey('boards', 'list');
+        const cachedData = cacheService.get(cacheKey);
+
+        if (cachedData) {
+          console.log('✅ Returning cached boards list');
+          return res.json({
+            success: true,
+            boards: cachedData,
+            cached: true,
+            message: 'Boards loaded from cache'
+          });
+        }
+      }
+
+      console.log('📡 Fetching boards from Jira');
       const jiraService = new JiraService(jiraUrl, email, apiToken);
       const boards = await jiraService.getBoards();
-      
+
+      const formattedBoards = boards.map(board => ({
+        id: board.id,
+        name: board.name,
+        type: board.type
+      }));
+
+      // Cache the boards list for 1 hour (3600 seconds)
+      const cacheKey = cacheService.generateKey('boards', 'list');
+      cacheService.set(cacheKey, formattedBoards, 3600);
+      console.log('💾 Boards list cached');
+
       res.json({
         success: true,
-        boards: boards.map(board => ({
-          id: board.id,
-          name: board.name,
-          type: board.type
-        }))
+        boards: formattedBoards,
+        cached: false
       });
     } catch (error) {
       res.status(500).json({

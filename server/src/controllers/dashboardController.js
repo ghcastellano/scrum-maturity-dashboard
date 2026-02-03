@@ -34,23 +34,20 @@ class DashboardController {
     try {
       const { jiraUrl, email, apiToken, forceRefresh = false } = req.body;
 
-      // Check cache first (unless force refresh)
+      // Check database cache first (persists for all users, survives restarts)
       if (!forceRefresh) {
-        const cacheKey = cacheService.generateKey('boards', 'list');
-        const cachedData = cacheService.get(cacheKey);
-
-        if (cachedData) {
-          console.log('✅ Returning cached boards list');
+        const cachedBoards = database.getCachedBoards(3600 * 1000); // 1 hour
+        if (cachedBoards) {
           return res.json({
             success: true,
-            boards: cachedData,
+            boards: cachedBoards,
             cached: true,
-            message: 'Boards loaded from cache'
+            message: 'Boards loaded from database cache'
           });
         }
       }
 
-      console.log('📡 Fetching boards from Jira');
+      console.log('📡 Fetching boards from Jira API...');
       const jiraService = new JiraService(jiraUrl, email, apiToken);
       const boards = await jiraService.getBoards();
 
@@ -60,10 +57,8 @@ class DashboardController {
         type: board.type
       }));
 
-      // Cache the boards list for 1 hour (3600000 ms)
-      const cacheKey = cacheService.generateKey('boards', 'list');
-      cacheService.set(cacheKey, formattedBoards, 3600 * 1000);
-      console.log('💾 Boards list cached');
+      // Save to database (persistent cache for all users)
+      database.saveBoards(formattedBoards);
 
       res.json({
         success: true,

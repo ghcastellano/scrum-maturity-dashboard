@@ -15,7 +15,6 @@ class DatabaseService {
   }
 
   initTables() {
-    // Create metrics history table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS metrics_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +29,12 @@ class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_board_date
       ON metrics_history(board_id, calculated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS boards_cache (
+        id INTEGER PRIMARY KEY,
+        boards_data TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   }
 
@@ -121,6 +126,34 @@ class DatabaseService {
     `);
 
     return stmt.all();
+  }
+
+  // Save boards list to database
+  saveBoards(boards) {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO boards_cache (id, boards_data, updated_at)
+      VALUES (1, ?, CURRENT_TIMESTAMP)
+    `);
+    stmt.run(JSON.stringify(boards));
+    console.log(`✓ Boards list saved to database (${boards.length} boards)`);
+  }
+
+  // Get cached boards list (returns null if older than maxAge in ms)
+  getCachedBoards(maxAgeMs = 3600 * 1000) {
+    const stmt = this.db.prepare(`
+      SELECT boards_data, updated_at FROM boards_cache WHERE id = 1
+    `);
+    const row = stmt.get();
+    if (!row) return null;
+
+    const updatedAt = new Date(row.updated_at + 'Z').getTime();
+    if (Date.now() - updatedAt > maxAgeMs) {
+      console.log('✗ Boards cache expired in database');
+      return null;
+    }
+
+    console.log('✅ Boards loaded from database cache');
+    return JSON.parse(row.boards_data);
   }
 
   // Clean old metrics (keep last 90 days)

@@ -347,16 +347,24 @@ class MetricsService {
       backlogScore < 50 ||
       midSprintAdditions > 25
     ) {
+      // Identify which metrics are blocking promotion to Level 2
+      const blockers = [];
+      if (rolloverRate > 25) blockers.push('rollover');
+      if (sprintGoalAttainment < 50) blockers.push('sprintGoals');
+      if (backlogScore < 50) blockers.push('backlog');
+      if (midSprintAdditions > 25) blockers.push('midSprint');
+
       return {
         level: 1,
         name: 'Assisted Scrum',
         description: 'Scrum Manager Required',
         characteristics: [
-          `Rollover: ${rolloverRate.toFixed(1)}% (threshold: >20-25%)`,
-          `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (threshold: <50-60%)`,
-          `Backlog Health: ${backlogScore.toFixed(1)}% (needs improvement)`,
-          `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (high churn)`
+          `Rollover: ${rolloverRate.toFixed(1)}% (must be ≤25% for Level 2)`,
+          `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (must be ≥50% for Level 2)`,
+          `Backlog Health: ${backlogScore.toFixed(1)}% (must be ≥50% for Level 2)`,
+          `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (must be ≤25% for Level 2)`
         ],
+        blockers,
         recommendations: [
           'Establish basic operating cadence',
           'Improve backlog readiness and capacity planning',
@@ -385,11 +393,12 @@ class MetricsService {
         name: 'Self-Managed Scrum',
         description: 'Scrum Manager Optional',
         characteristics: [
-          `Rollover: ${rolloverRate.toFixed(1)}% (excellent: <10-15%)`,
+          `Rollover: ${rolloverRate.toFixed(1)}% (excellent: <15%)`,
           `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (excellent: >70%)`,
           `Backlog Health: ${backlogScore.toFixed(1)}% (excellent: >80%)`,
-          `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (minimal churn)`
+          `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (excellent: <10%)`
         ],
+        blockers: [],
         recommendations: [
           'Continue excellence in delivery',
           'Focus on continuous improvement',
@@ -402,21 +411,24 @@ class MetricsService {
     }
 
     // Level 2: Supported Scrum (Conditional Support)
-    // Typical Characteristics:
-    // - Rollover ~10-20%
-    // - Sprint goals met ~60-70%
-    // - Some scope churn but manageable
-    // - Backlog mostly healthy
+    // Identify which metrics are blocking promotion to Level 3
+    const blockers = [];
+    if (rolloverRate >= 15) blockers.push('rollover');
+    if (sprintGoalAttainment <= 70) blockers.push('sprintGoals');
+    if (backlogScore <= 80) blockers.push('backlog');
+    if (midSprintAdditions >= 10) blockers.push('midSprint');
+
     return {
       level: 2,
       name: 'Supported Scrum',
       description: 'Conditional Support',
       characteristics: [
-        `Rollover: ${rolloverRate.toFixed(1)}% (target: 10-20%)`,
-        `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (target: 60-70%)`,
-        `Backlog Health: ${backlogScore.toFixed(1)}% (improving)`,
-        `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (manageable)`
+        `Rollover: ${rolloverRate.toFixed(1)}% (must be <15% for Level 3)`,
+        `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (must be >70% for Level 3)`,
+        `Backlog Health: ${backlogScore.toFixed(1)}% (must be >80% for Level 3)`,
+        `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (must be <10% for Level 3)`
       ],
+      blockers,
       supportModel: 'Shared Scrum Manager, Time-bound engagement (1-2 sprints/month)',
       recommendations: [
         'Pattern recognition (last-minute rush, WIP aging)',

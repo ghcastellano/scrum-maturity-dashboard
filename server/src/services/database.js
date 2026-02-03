@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -7,167 +7,138 @@ const __dirname = path.dirname(__filename);
 
 class DatabaseService {
   constructor() {
-    // Create database in server directory
-    const dbPath = path.join(__dirname, '../../data/metrics.db');
-    this.db = new Database(dbPath);
-    this.initTables();
-    console.log('✓ Database initialized:', dbPath);
+    this.dataDir = path.join(__dirname, '../../data');
+    this.dbPath = path.join(this.dataDir, 'metrics.json');
+    this.data = this.load();
+    console.log('✓ Database initialized:', this.dbPath);
   }
 
-  initTables() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS metrics_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        board_id INTEGER NOT NULL,
-        board_name TEXT NOT NULL,
-        calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        sprint_count INTEGER NOT NULL,
-        metrics_data TEXT NOT NULL,
-        maturity_level INTEGER NOT NULL,
-        UNIQUE(board_id, calculated_at)
-      );
+  load() {
+    try {
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+      }
+      if (fs.existsSync(this.dbPath)) {
+        const raw = fs.readFileSync(this.dbPath, 'utf-8');
+        return JSON.parse(raw);
+      }
+    } catch (err) {
+      console.warn('Failed to load database, starting fresh:', err.message);
+    }
+    return { metrics: [], boards: null, nextId: 1 };
+  }
 
-      CREATE INDEX IF NOT EXISTS idx_board_date
-      ON metrics_history(board_id, calculated_at DESC);
-
-      CREATE TABLE IF NOT EXISTS boards_cache (
-        id INTEGER PRIMARY KEY,
-        boards_data TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+  save() {
+    try {
+      fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2));
+    } catch (err) {
+      console.error('Failed to save database:', err.message);
+    }
   }
 
   // Save calculated metrics
   saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO metrics_history
-      (board_id, board_name, sprint_count, metrics_data, maturity_level)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+    const entry = {
+      id: this.data.nextId++,
+      board_id: boardId,
+      board_name: boardName,
+      calculated_at: new Date().toISOString(),
+      sprint_count: sprintCount,
+      metrics_data: metricsData,
+      maturity_level: maturityLevel
+    };
 
-    const result = stmt.run(
-      boardId,
-      boardName,
-      sprintCount,
-      JSON.stringify(metricsData),
-      maturityLevel
-    );
+    this.data.metrics.push(entry);
 
+    // Keep only last 100 entries per board
+    const boardEntries = this.data.metrics.filter(m => m.board_id === boardId);
+    if (boardEntries.length > 100) {
+      const toRemove = boardEntries.slice(0, boardEntries.length - 100);
+      this.data.metrics = this.data.metrics.filter(m => !toRemove.includes(m));
+    }
+
+    this.save();
     console.log(`✓ Metrics saved for board ${boardName} (ID: ${boardId})`);
-    return result.lastInsertRowid;
+    return entry.id;
   }
 
   // Get latest metrics for a board
   getLatestMetrics(boardId) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM metrics_history
-      WHERE board_id = ?
-      ORDER BY calculated_at DESC
-      LIMIT 1
-    `);
+    const entries = this.data.metrics
+      .filter(m => m.board_id === boardId)
+      .sort((a, b) => new Date(b.calculated_at) - new Date(a.calculated_at));
 
-    const row = stmt.get(boardId);
-    if (row) {
-      return {
-        ...row,
-        metrics_data: JSON.parse(row.metrics_data)
-      };
-    }
-    return null;
+    return entries[0] || null;
   }
 
   // Get metrics history for a board
   getMetricsHistory(boardId, limit = 30) {
-    const stmt = this.db.prepare(`
-      SELECT
-        id,
-        board_id,
-        board_name,
-        calculated_at,
-        sprint_count,
-        maturity_level
-      FROM metrics_history
-      WHERE board_id = ?
-      ORDER BY calculated_at DESC
-      LIMIT ?
-    `);
-
-    return stmt.all(boardId, limit);
+    return this.data.metrics
+      .filter(m => m.board_id === boardId)
+      .sort((a, b) => new Date(b.calculated_at) - new Date(a.calculated_at))
+      .slice(0, limit)
+      .map(({ metrics_data, ...rest }) => rest); // Exclude large data from list
   }
 
   // Get specific metrics by ID
   getMetricsById(id) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM metrics_history
-      WHERE id = ?
-    `);
-
-    const row = stmt.get(id);
-    if (row) {
-      return {
-        ...row,
-        metrics_data: JSON.parse(row.metrics_data)
-      };
-    }
-    return null;
+    return this.data.metrics.find(m => m.id === id) || null;
   }
 
   // Get all boards with metrics
   getAllBoardsWithMetrics() {
-    const stmt = this.db.prepare(`
-      SELECT DISTINCT
-        board_id,
-        board_name,
-        MAX(calculated_at) as last_calculated
-      FROM metrics_history
-      GROUP BY board_id, board_name
-      ORDER BY last_calculated DESC
-    `);
-
-    return stmt.all();
+    const boardMap = new Map();
+    for (const m of this.data.metrics) {
+      const existing = boardMap.get(m.board_id);
+      if (!existing || new Date(m.calculated_at) > new Date(existing.last_calculated)) {
+        boardMap.set(m.board_id, {
+          board_id: m.board_id,
+          board_name: m.board_name,
+          last_calculated: m.calculated_at
+        });
+      }
+    }
+    return Array.from(boardMap.values())
+      .sort((a, b) => new Date(b.last_calculated) - new Date(a.last_calculated));
   }
 
-  // Save boards list to database
+  // Save boards list
   saveBoards(boards) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO boards_cache (id, boards_data, updated_at)
-      VALUES (1, ?, CURRENT_TIMESTAMP)
-    `);
-    stmt.run(JSON.stringify(boards));
+    this.data.boards = {
+      list: boards,
+      updated_at: new Date().toISOString()
+    };
+    this.save();
     console.log(`✓ Boards list saved to database (${boards.length} boards)`);
   }
 
   // Get cached boards list (returns null if older than maxAge in ms)
   getCachedBoards(maxAgeMs = 3600 * 1000) {
-    const stmt = this.db.prepare(`
-      SELECT boards_data, updated_at FROM boards_cache WHERE id = 1
-    `);
-    const row = stmt.get();
-    if (!row) return null;
+    if (!this.data.boards) return null;
 
-    const updatedAt = new Date(row.updated_at + 'Z').getTime();
+    const updatedAt = new Date(this.data.boards.updated_at).getTime();
     if (Date.now() - updatedAt > maxAgeMs) {
       console.log('✗ Boards cache expired in database');
       return null;
     }
 
     console.log('✅ Boards loaded from database cache');
-    return JSON.parse(row.boards_data);
+    return this.data.boards.list;
   }
 
   // Clean old metrics (keep last 90 days)
   cleanOldMetrics() {
-    const stmt = this.db.prepare(`
-      DELETE FROM metrics_history
-      WHERE calculated_at < datetime('now', '-90 days')
-    `);
-
-    const result = stmt.run();
-    if (result.changes > 0) {
-      console.log(`✓ Cleaned ${result.changes} old metrics entries`);
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const before = this.data.metrics.length;
+    this.data.metrics = this.data.metrics.filter(
+      m => new Date(m.calculated_at) >= cutoff
+    );
+    const removed = before - this.data.metrics.length;
+    if (removed > 0) {
+      this.save();
+      console.log(`✓ Cleaned ${removed} old metrics entries`);
     }
-    return result.changes;
+    return removed;
   }
 }
 

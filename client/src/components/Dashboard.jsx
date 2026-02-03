@@ -94,8 +94,40 @@ export default function Dashboard({ credentials, selectedBoards }) {
   };
 
   useEffect(() => {
-    loadMetrics();
+    loadBoardData();
   }, [selectedBoard]);
+
+  // Try to load from database first, only call API if no saved data
+  const loadBoardData = async () => {
+    const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+
+    try {
+      // First try to load latest saved metrics from database
+      const historyResult = await api.getBoardHistory(boardId);
+      if (historyResult.success && historyResult.history?.length > 0) {
+        setHistory(historyResult.history);
+
+        // Load the most recent saved metrics
+        const latestId = historyResult.history[0].id;
+        const metricsResult = await api.getHistoricalMetrics(latestId);
+        if (metricsResult.success && metricsResult.data) {
+          console.log('✅ Loaded metrics from database for board', boardId);
+          setMetrics(metricsResult.data.metrics_data);
+          setFlowMetrics(null);
+          setIsCached(true);
+          setIsHistorical(false);
+          setSelectedHistoryId('live');
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('No saved metrics found, fetching from API:', err.message);
+    }
+
+    // No saved data - fetch from API
+    loadMetrics();
+  };
 
   const loadMetrics = async (forceRefresh = false) => {
     try {
@@ -104,12 +136,6 @@ export default function Dashboard({ credentials, selectedBoards }) {
 
       // selectedBoard can be either an object {id, name} or just an id (for backward compatibility)
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
-
-      console.log('🎯 Dashboard loadMetrics:');
-      console.log('  selectedBoard:', selectedBoard);
-      console.log('  Extracted boardId:', boardId);
-      console.log('  boardId type:', typeof boardId);
-      console.log('  forceRefresh:', forceRefresh);
 
       const [teamData, flowData] = await Promise.all([
         api.getTeamMetrics(
@@ -133,6 +159,11 @@ export default function Dashboard({ credentials, selectedBoards }) {
       setMetrics(teamData.data);
       setFlowMetrics(flowData.data);
       setIsCached(teamData.cached || false);
+      setIsHistorical(false);
+      setSelectedHistoryId('live');
+
+      // Refresh history list after new calculation
+      loadHistory(boardId);
     } catch (err) {
       console.error('Failed to load metrics:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Failed to load metrics';

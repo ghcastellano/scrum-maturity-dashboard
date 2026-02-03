@@ -416,13 +416,20 @@ class DashboardController {
       const cacheKey = cacheService.generateKey(boardId, 'flow-metrics');
       cacheService.set(cacheKey, responseData);
 
+      // Save flow metrics to Supabase (merge into latest board record)
+      try {
+        await database.updateLatestWithFlow(boardId, responseData);
+      } catch (dbError) {
+        console.warn('Failed to save flow metrics to database:', dbError.message);
+      }
+
       res.json({
         success: true,
         data: responseData,
         cached: false,
         message: 'Data fetched from Jira API'
       });
-      
+
     } catch (error) {
       console.error('Error fetching flow metrics:', error);
       res.status(500).json({

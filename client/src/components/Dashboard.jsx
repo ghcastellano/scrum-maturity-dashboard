@@ -40,6 +40,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
   const [allBoardsData, setAllBoardsData] = useState({});
+  const [allFlowData, setAllFlowData] = useState({});
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
   const [localCredentials, setLocalCredentials] = useState(credentialsProp);
@@ -110,12 +111,17 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       if (result.success && result.boards?.length > 0) {
         // Build lookup: boardId -> metrics_data (use String keys for consistency)
         const dataMap = {};
+        const flowMap = {};
         const boardsList = [];
         for (const board of result.boards) {
           dataMap[String(board.board_id)] = board.metrics_data;
+          if (board.metrics_data?.flowMetrics) {
+            flowMap[String(board.board_id)] = board.metrics_data.flowMetrics;
+          }
           boardsList.push({ id: board.board_id, name: board.board_name });
         }
         setAllBoardsData(dataMap);
+        setAllFlowData(flowMap);
         setDbBoards(boardsList);
 
         // Find the first board that has data
@@ -124,14 +130,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
         if (firstData) {
           setMetrics(firstData);
-          setFlowMetrics(null);
+          setFlowMetrics(firstData.flowMetrics || null);
           loadBoardHistory(firstBoardId);
           setLoading(false);
         } else {
           // Selected board has no data yet - check if any board in selectedBoards needs refresh
           const firstWithData = result.boards[0];
           setMetrics(firstWithData.metrics_data);
-          setFlowMetrics(null);
+          setFlowMetrics(firstWithData.metrics_data?.flowMetrics || null);
           setSelectedBoard({ id: firstWithData.board_id, name: firstWithData.board_name });
           loadBoardHistory(firstWithData.board_id);
           setLoading(false);
@@ -205,7 +211,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     if (boardData) {
       // Board has data - instant switch
       setMetrics(boardData);
-      setFlowMetrics(null);
+      setFlowMetrics(allFlowData[String(boardId)] || boardData.flowMetrics || null);
       setSelectedHistoryId(null);
       setError('');
       loadBoardHistory(boardId);
@@ -348,7 +354,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         const nextData = allBoardsData[String(nextId)];
         if (nextData) {
           setMetrics(nextData);
-          setFlowMetrics(null);
+          setFlowMetrics(allFlowData[String(nextId)] || nextData.flowMetrics || null);
           loadBoardHistory(nextId);
         }
       } else {
@@ -368,7 +374,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       const result = await api.getHistoricalMetrics(historyId);
       if (result.success && result.data) {
         setMetrics(result.data.metrics_data);
-        setFlowMetrics(null);
+        setFlowMetrics(result.data.metrics_data?.flowMetrics || null);
       }
     } catch (err) {
       console.error('Failed to load historical metrics:', err);
@@ -411,6 +417,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       // Update cache with new data
       setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+      setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
 
       // Reload history to include the new entry
       await loadBoardHistory(boardId);

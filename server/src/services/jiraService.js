@@ -104,19 +104,41 @@ class JiraService {
 
       console.log(`\n🔍 Board ${boardId} - Fetched ${allSprints.length} ${state} sprints`);
 
+      // Deduplicate sprints with the same name (keep the one with dates/most issues)
+      const sprintsByName = new Map();
+      for (const sprint of allSprints) {
+        const existing = sprintsByName.get(sprint.name);
+        if (!existing) {
+          sprintsByName.set(sprint.name, sprint);
+        } else {
+          // Keep the one that has actual dates, or the one with the higher ID (more recent)
+          const existingHasDates = existing.startDate && existing.endDate;
+          const newHasDates = sprint.startDate && sprint.endDate;
+          if (newHasDates && !existingHasDates) {
+            sprintsByName.set(sprint.name, sprint);
+          } else if (newHasDates && existingHasDates && sprint.id > existing.id) {
+            sprintsByName.set(sprint.name, sprint);
+          }
+        }
+      }
+      const dedupedSprints = Array.from(sprintsByName.values());
+      if (dedupedSprints.length < allSprints.length) {
+        console.log(`  Deduplicated: ${allSprints.length} → ${dedupedSprints.length} sprints (removed ${allSprints.length - dedupedSprints.length} duplicates)`);
+      }
+
       // Sort sprints by end date, most recent first
-      allSprints.sort((a, b) => {
+      dedupedSprints.sort((a, b) => {
         const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
         const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
         return dateB - dateA;
       });
 
       console.log(`Most recent 3 sprints:`);
-      allSprints.slice(0, 3).forEach(s => {
+      dedupedSprints.slice(0, 3).forEach(s => {
         console.log(`  - ${s.name} (ID: ${s.id}) - End: ${s.endDate?.split('T')[0] || 'NO END DATE'}`);
       });
 
-      return allSprints;
+      return dedupedSprints;
     } catch (error) {
       throw new Error(`Failed to fetch sprints: ${error.message}`);
     }

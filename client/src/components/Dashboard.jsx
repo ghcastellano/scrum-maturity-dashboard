@@ -68,7 +68,31 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     return Number(value).toFixed(decimals);
   };
 
-  // Load ALL board metrics from database on mount - NEVER call Jira API
+  // Build display boards: union of selectedBoards prop + boards from database
+  const [dbBoards, setDbBoards] = useState([]);
+
+  const displayBoards = (() => {
+    const seen = new Set();
+    const result = [];
+    // Add all selectedBoards first
+    for (const b of selectedBoards) {
+      const id = typeof b === 'object' ? b.id : b;
+      if (!seen.has(id)) {
+        seen.add(id);
+        result.push(b);
+      }
+    }
+    // Add any boards from database that aren't in selectedBoards
+    for (const b of dbBoards) {
+      if (!seen.has(b.id)) {
+        seen.add(b.id);
+        result.push(b);
+      }
+    }
+    return result;
+  })();
+
+  // Load ALL board metrics from database on mount
   useEffect(() => {
     loadAllMetrics();
   }, []);
@@ -82,44 +106,130 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       if (result.success && result.boards?.length > 0) {
         // Build lookup: boardId -> metrics_data (use String keys for consistency)
         const dataMap = {};
+        const boardsList = [];
         for (const board of result.boards) {
           dataMap[String(board.board_id)] = board.metrics_data;
+          boardsList.push({ id: board.board_id, name: board.board_name });
         }
         setAllBoardsData(dataMap);
+        setDbBoards(boardsList);
 
-        // Show the first selected board's metrics
+        // Find the first board that has data
         const firstBoardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
-        const firstData = dataMap[String(firstBoardId)] || result.boards[0].metrics_data;
-        setMetrics(firstData);
-        setFlowMetrics(null);
+        const firstData = dataMap[String(firstBoardId)];
 
-        // Load history for the current board
-        loadBoardHistory(firstBoardId);
-        setLoading(false);
+        if (firstData) {
+          setMetrics(firstData);
+          setFlowMetrics(null);
+          loadBoardHistory(firstBoardId);
+          setLoading(false);
+        } else {
+          // Selected board has no data yet - check if any board in selectedBoards needs refresh
+          const firstWithData = result.boards[0];
+          setMetrics(firstWithData.metrics_data);
+          setFlowMetrics(null);
+          setSelectedBoard({ id: firstWithData.board_id, name: firstWithData.board_name });
+          loadBoardHistory(firstWithData.board_id);
+          setLoading(false);
+          // Auto-refresh the new board if credentials available
+          await autoRefreshNewBoards(dataMap);
+        }
         return;
       }
     } catch (err) {
       console.warn('Failed to load metrics from database:', err.message);
     }
 
-    // No saved data - show message, NEVER call Jira API automatically
+    // No saved data - show message
     setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
     setLoading(false);
   };
 
-  // Handle board change from combobox - instant switch from pre-loaded data
-  const handleBoardChange = (e) => {
+  // Auto-refresh boards that are in selectedBoards but have no data in the database
+  const autoRefreshNewBoards = async (dataMap) => {
+    if (!credentials) return;
+
+    const newBoards = selectedBoards.filter(b => {
+      const id = typeof b === 'object' ? b.id : b;
+      return !dataMap[String(id)];
+    });
+
+    for (const board of newBoards) {
+      const boardId = typeof board === 'object' ? board.id : board;
+      const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
+      try {
+        setRefreshing(true);
+        setError(`Loading ${boardName} from Jira...`);
+
+        const teamData = await api.getTeamMetrics(
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, 6, true
+        );
+
+        if (teamData.success) {
+          setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+          setDbBoards(prev => {
+            if (prev.some(b => b.id === boardId)) return prev;
+            return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
+          });
+          // Switch to the newly loaded board
+          setMetrics(teamData.data);
+          setSelectedBoard(board);
+          setError('');
+          loadBoardHistory(boardId);
+        }
+      } catch (err) {
+        console.warn(`Failed to auto-refresh board ${boardId}:`, err.message);
+      } finally {
+        setRefreshing(false);
+      }
+    }
+  };
+
+  // Handle board change from combobox - instant switch or auto-refresh
+  const handleBoardChange = async (e) => {
     const boardId = Number(e.target.value);
-    const board = selectedBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
+    const board = displayBoards.find(b => (typeof b === 'object' ? b.id : b) === boardId);
     setSelectedBoard(board || boardId);
 
     const boardData = allBoardsData[String(boardId)];
     if (boardData) {
+      // Board has data - instant switch
       setMetrics(boardData);
       setFlowMetrics(null);
       setSelectedHistoryId(null);
       setError('');
       loadBoardHistory(boardId);
+    } else if (credentials) {
+      // Board has no data - auto-refresh from Jira
+      const boardName = typeof board === 'object' ? board.name : `Board ${boardId}`;
+      try {
+        setRefreshing(true);
+        setLoading(true);
+        setError(`Loading ${boardName} from Jira...`);
+
+        const teamData = await api.getTeamMetrics(
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, 6, true
+        );
+
+        if (teamData.success) {
+          setMetrics(teamData.data);
+          setFlowMetrics(null);
+          setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+          setDbBoards(prev => {
+            if (prev.some(b => b.id === boardId)) return prev;
+            return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
+          });
+          setError('');
+          loadBoardHistory(boardId);
+        }
+      } catch (err) {
+        setError(`Failed to load ${boardName}: ${err.message}`);
+      } finally {
+        setRefreshing(false);
+        setLoading(false);
+      }
     }
   };
 
@@ -402,13 +512,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </div>
 
           <div className="flex flex-wrap items-center gap-4 mt-2">
-            {selectedBoards.length >= 1 && (
+            {displayBoards.length >= 1 && (
               <select
                 value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
                 onChange={handleBoardChange}
                 className="input-field max-w-md"
               >
-                {selectedBoards.map(board => {
+                {displayBoards.map(board => {
                   const boardId = typeof board === 'object' ? board.id : board;
                   const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
                   return (

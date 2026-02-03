@@ -25,9 +25,10 @@ COPY --from=backend /app/server ./server
 # Copy built frontend
 COPY --from=frontend-builder /app/client/dist ./server/public
 
-# Install serve to serve frontend
+# Create data directory for persistent storage
+RUN mkdir -p /app/server/data
+
 WORKDIR /app/server
-RUN npm install -g concurrently
 
 # Expose port
 EXPOSE 3001

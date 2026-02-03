@@ -48,9 +48,10 @@ class MetricsService {
     }
 
     const currentSprintKeys = new Set(sprintIssues.map(i => i.key));
+    // An issue present in both the current sprint and the next sprint is a rollover,
+    // regardless of its current status (it may have been completed in the next sprint)
     const rolledOverIssues = nextSprintIssues.filter(issue => {
-      return currentSprintKeys.has(issue.key) && 
-             issue.fields.status.statusCategory.key !== 'done';
+      return currentSprintKeys.has(issue.key);
     });
 
     return sprintIssues.length > 0 ? (rolledOverIssues.length / sprintIssues.length) * 100 : 0;

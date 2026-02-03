@@ -1,163 +1,268 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+dotenv.config();
 
 class DatabaseService {
   constructor() {
-    // In production (Render), use persistent disk at /data
-    // In development, use local ./data directory
-    if (process.env.NODE_ENV === 'production' && fs.existsSync('/data')) {
-      this.dataDir = '/data';
-    } else {
-      this.dataDir = path.join(__dirname, '../../data');
-    }
-    this.dbPath = path.join(this.dataDir, 'metrics.json');
-    this.data = this.load();
-    console.log('✓ Database initialized:', this.dbPath);
-  }
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY;
 
-  load() {
-    try {
-      if (!fs.existsSync(this.dataDir)) {
-        fs.mkdirSync(this.dataDir, { recursive: true });
-      }
-      if (fs.existsSync(this.dbPath)) {
-        const raw = fs.readFileSync(this.dbPath, 'utf-8');
-        return JSON.parse(raw);
-      }
-    } catch (err) {
-      console.warn('Failed to load database, starting fresh:', err.message);
+    if (!supabaseUrl || !supabaseKey) {
+      console.warn('⚠ Supabase credentials not configured. Database will not work.');
+      this.client = null;
+      return;
     }
-    return { metrics: [], boards: null, nextId: 1 };
-  }
 
-  save() {
-    try {
-      fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2));
-    } catch (err) {
-      console.error('Failed to save database:', err.message);
-    }
+    this.client = createClient(supabaseUrl, supabaseKey);
+    console.log('✓ Supabase database initialized');
   }
 
   // Save calculated metrics
-  saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel) {
-    const entry = {
-      id: this.data.nextId++,
-      board_id: boardId,
-      board_name: boardName,
-      calculated_at: new Date().toISOString(),
-      sprint_count: sprintCount,
-      metrics_data: metricsData,
-      maturity_level: maturityLevel
-    };
+  async saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel) {
+    if (!this.client) return null;
 
-    this.data.metrics.push(entry);
+    try {
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .insert({
+          board_id: boardId,
+          board_name: boardName,
+          sprint_count: sprintCount,
+          metrics_data: metricsData,
+          maturity_level: maturityLevel
+        })
+        .select('id')
+        .single();
 
-    // Keep only last 100 entries per board
-    const boardEntries = this.data.metrics.filter(m => m.board_id === boardId);
-    if (boardEntries.length > 100) {
-      const toRemove = boardEntries.slice(0, boardEntries.length - 100);
-      this.data.metrics = this.data.metrics.filter(m => !toRemove.includes(m));
+      if (error) throw error;
+
+      console.log(`✓ Metrics saved for board ${boardName} (ID: ${boardId})`);
+
+      // Keep only last 100 entries per board
+      await this._pruneOldEntries(boardId, 100);
+
+      return data.id;
+    } catch (err) {
+      console.error('Failed to save metrics:', err.message);
+      return null;
     }
+  }
 
-    this.save();
-    console.log(`✓ Metrics saved for board ${boardName} (ID: ${boardId})`);
-    return entry.id;
+  // Keep only the latest N entries per board
+  async _pruneOldEntries(boardId, keepCount) {
+    try {
+      const { data: entries } = await this.client
+        .from('metrics_history')
+        .select('id')
+        .eq('board_id', boardId)
+        .order('calculated_at', { ascending: false });
+
+      if (entries && entries.length > keepCount) {
+        const idsToDelete = entries.slice(keepCount).map(e => e.id);
+        await this.client
+          .from('metrics_history')
+          .delete()
+          .in('id', idsToDelete);
+      }
+    } catch (err) {
+      console.warn('Failed to prune old entries:', err.message);
+    }
   }
 
   // Get latest metrics for a board
-  getLatestMetrics(boardId) {
-    const entries = this.data.metrics
-      .filter(m => m.board_id === boardId)
-      .sort((a, b) => new Date(b.calculated_at) - new Date(a.calculated_at));
+  async getLatestMetrics(boardId) {
+    if (!this.client) return null;
 
-    return entries[0] || null;
+    try {
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .select('*')
+        .eq('board_id', boardId)
+        .order('calculated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      return data || null;
+    } catch (err) {
+      console.warn('Failed to get latest metrics:', err.message);
+      return null;
+    }
   }
 
-  // Get metrics history for a board
-  getMetricsHistory(boardId, limit = 30) {
-    return this.data.metrics
-      .filter(m => m.board_id === boardId)
-      .sort((a, b) => new Date(b.calculated_at) - new Date(a.calculated_at))
-      .slice(0, limit)
-      .map(({ metrics_data, ...rest }) => rest); // Exclude large data from list
+  // Get metrics history for a board (without metrics_data to reduce payload)
+  async getMetricsHistory(boardId, limit = 30) {
+    if (!this.client) return [];
+
+    try {
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .select('id, board_id, board_name, calculated_at, sprint_count, maturity_level')
+        .eq('board_id', boardId)
+        .order('calculated_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('Failed to get metrics history:', err.message);
+      return [];
+    }
   }
 
   // Get specific metrics by ID
-  getMetricsById(id) {
-    return this.data.metrics.find(m => m.id === id) || null;
+  async getMetricsById(id) {
+    if (!this.client) return null;
+
+    try {
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      return data || null;
+    } catch (err) {
+      console.warn('Failed to get metrics by id:', err.message);
+      return null;
+    }
   }
 
-  // Get all boards with metrics
-  getAllBoardsWithMetrics() {
-    const boardMap = new Map();
-    for (const m of this.data.metrics) {
-      const existing = boardMap.get(m.board_id);
-      if (!existing || new Date(m.calculated_at) > new Date(existing.last_calculated)) {
-        boardMap.set(m.board_id, {
-          board_id: m.board_id,
-          board_name: m.board_name,
-          last_calculated: m.calculated_at
-        });
+  // Get all boards that have metrics (without metrics_data)
+  async getAllBoardsWithMetrics() {
+    if (!this.client) return [];
+
+    try {
+      // Get distinct boards with their latest calculated_at
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .select('board_id, board_name, calculated_at')
+        .order('calculated_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Deduplicate: keep only the latest entry per board
+      const boardMap = new Map();
+      for (const row of (data || [])) {
+        if (!boardMap.has(row.board_id)) {
+          boardMap.set(row.board_id, {
+            board_id: row.board_id,
+            board_name: row.board_name,
+            last_calculated: row.calculated_at
+          });
+        }
       }
+
+      return Array.from(boardMap.values());
+    } catch (err) {
+      console.warn('Failed to get all boards:', err.message);
+      return [];
     }
-    return Array.from(boardMap.values())
-      .sort((a, b) => new Date(b.last_calculated) - new Date(a.last_calculated));
   }
 
   // Get all boards with their latest metrics data included
-  getAllBoardsWithLatestMetrics() {
-    const boardMap = new Map();
-    for (const m of this.data.metrics) {
-      const existing = boardMap.get(m.board_id);
-      if (!existing || new Date(m.calculated_at) > new Date(existing.calculated_at)) {
-        boardMap.set(m.board_id, m);
+  async getAllBoardsWithLatestMetrics() {
+    if (!this.client) return [];
+
+    try {
+      // Get all metrics ordered by date desc
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .select('*')
+        .order('calculated_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Deduplicate: keep only the latest entry per board
+      const boardMap = new Map();
+      for (const row of (data || [])) {
+        if (!boardMap.has(row.board_id)) {
+          boardMap.set(row.board_id, row);
+        }
       }
+
+      return Array.from(boardMap.values());
+    } catch (err) {
+      console.warn('Failed to get all boards with metrics:', err.message);
+      return [];
     }
-    return Array.from(boardMap.values())
-      .sort((a, b) => new Date(b.calculated_at) - new Date(a.calculated_at));
   }
 
-  // Save boards list
-  saveBoards(boards) {
-    this.data.boards = {
-      list: boards,
-      updated_at: new Date().toISOString()
-    };
-    this.save();
-    console.log(`✓ Boards list saved to database (${boards.length} boards)`);
+  // Save boards list (cache)
+  async saveBoards(boards) {
+    if (!this.client) return;
+
+    try {
+      // Delete old cache entries
+      await this.client.from('boards_cache').delete().neq('id', 0);
+
+      // Insert new cache
+      const { error } = await this.client
+        .from('boards_cache')
+        .insert({ boards_data: boards });
+
+      if (error) throw error;
+      console.log(`✓ Boards list saved to database (${boards.length} boards)`);
+    } catch (err) {
+      console.error('Failed to save boards:', err.message);
+    }
   }
 
-  // Get cached boards list (returns null if older than maxAge in ms)
-  getCachedBoards(maxAgeMs = 3600 * 1000) {
-    if (!this.data.boards) return null;
+  // Get cached boards list (returns null if older than maxAge)
+  async getCachedBoards(maxAgeMs = 3600 * 1000) {
+    if (!this.client) return null;
 
-    const updatedAt = new Date(this.data.boards.updated_at).getTime();
-    if (Date.now() - updatedAt > maxAgeMs) {
-      console.log('✗ Boards cache expired in database');
+    try {
+      const { data, error } = await this.client
+        .from('boards_cache')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      if (!data) return null;
+
+      const updatedAt = new Date(data.updated_at).getTime();
+      if (Date.now() - updatedAt > maxAgeMs) {
+        console.log('✗ Boards cache expired');
+        return null;
+      }
+
+      console.log('✅ Boards loaded from Supabase cache');
+      return data.boards_data;
+    } catch (err) {
+      console.warn('Failed to get cached boards:', err.message);
       return null;
     }
-
-    console.log('✅ Boards loaded from database cache');
-    return this.data.boards.list;
   }
 
   // Clean old metrics (keep last 90 days)
-  cleanOldMetrics() {
-    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const before = this.data.metrics.length;
-    this.data.metrics = this.data.metrics.filter(
-      m => new Date(m.calculated_at) >= cutoff
-    );
-    const removed = before - this.data.metrics.length;
-    if (removed > 0) {
-      this.save();
-      console.log(`✓ Cleaned ${removed} old metrics entries`);
+  async cleanOldMetrics() {
+    if (!this.client) return 0;
+
+    try {
+      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data, error } = await this.client
+        .from('metrics_history')
+        .delete()
+        .lt('calculated_at', cutoff)
+        .select('id');
+
+      if (error) throw error;
+
+      const removed = data?.length || 0;
+      if (removed > 0) {
+        console.log(`✓ Cleaned ${removed} old metrics entries`);
+      }
+      return removed;
+    } catch (err) {
+      console.warn('Failed to clean old metrics:', err.message);
+      return 0;
     }
-    return removed;
   }
 }
 

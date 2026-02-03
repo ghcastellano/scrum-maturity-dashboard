@@ -73,38 +73,38 @@ app.post('/api/diagnostics', (req, res) =>
 );
 
 // Metrics History endpoints
-app.get('/api/history/boards', (req, res) => {
+app.get('/api/history/boards', async (req, res) => {
   try {
-    const boards = database.getAllBoardsWithMetrics();
+    const boards = await database.getAllBoardsWithMetrics();
     res.json({ success: true, boards });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-app.get('/api/history/all-latest', (req, res) => {
+app.get('/api/history/all-latest', async (req, res) => {
   try {
-    const allMetrics = database.getAllBoardsWithLatestMetrics();
+    const allMetrics = await database.getAllBoardsWithLatestMetrics();
     res.json({ success: true, boards: allMetrics });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-app.get('/api/history/board/:boardId', (req, res) => {
+app.get('/api/history/board/:boardId', async (req, res) => {
   try {
     const { boardId } = req.params;
-    const history = database.getMetricsHistory(parseInt(boardId), 30);
+    const history = await database.getMetricsHistory(parseInt(boardId), 30);
     res.json({ success: true, history });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-app.get('/api/history/metrics/:id', (req, res) => {
+app.get('/api/history/metrics/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const metrics = database.getMetricsById(parseInt(id));
+    const metrics = await database.getMetricsById(parseInt(id));
     if (metrics) {
       res.json({ success: true, data: metrics });
     } else {

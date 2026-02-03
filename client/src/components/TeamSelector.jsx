@@ -151,6 +151,11 @@ export default function TeamSelector({ credentials, onTeamsSelected }) {
         </button>
       </div>
 
+      <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-4 text-sm">
+        Search by the <strong>board name</strong> in Jira (e.g. "GTMDOP Scrum Board"), not the team name.
+        You can find your board name in Jira under <em>Boards &gt; View all boards</em>.
+      </div>
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
           {error}

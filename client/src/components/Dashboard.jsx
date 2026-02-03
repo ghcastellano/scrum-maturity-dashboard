@@ -79,8 +79,13 @@ export default function Dashboard({ credentials, selectedBoards }) {
       console.warn('No saved metrics, will calculate:', err.message);
     }
 
-    // No saved data at all - calculate from Jira for the first time
-    await refreshFromJira();
+    // No saved data at all - calculate from Jira for the first time (only if credentials available)
+    if (credentials) {
+      await refreshFromJira();
+    } else {
+      setError('No saved metrics found for this board. Jira credentials are needed to calculate metrics.');
+      setLoading(false);
+    }
   };
 
   // Load a specific historical entry by ID
@@ -322,18 +327,20 @@ export default function Dashboard({ credentials, selectedBoards }) {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-4xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
-            <button
-              onClick={() => refreshFromJira()}
-              disabled={loading}
-              className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <span>🔄</span>
-              {loading ? 'Loading...' : 'Refresh from Jira'}
-            </button>
+            {credentials && (
+              <button
+                onClick={() => refreshFromJira()}
+                disabled={loading}
+                className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <span>🔄</span>
+                {loading ? 'Loading...' : 'Refresh from Jira'}
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-4 mt-2">
-            {selectedBoards.length > 1 && (
+            {selectedBoards.length >= 1 && (
               <select
                 value={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
                 onChange={(e) => {

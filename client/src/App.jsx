@@ -11,90 +11,113 @@ const STORAGE_KEY_BOARDS = 'scrum-dashboard-selected-boards';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 function App() {
-  const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [step, setStep] = useState('connection');
   const [credentials, setCredentials] = useState(null);
   const [selectedBoards, setSelectedBoards] = useState([]);
+  const [savedBoardsFromHistory, setSavedBoardsFromHistory] = useState([]);
 
-  // Fetch default credentials from backend on mount
   useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
-        const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
-        const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
-        const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
-
-        // If we have all required data, start with dashboard
-        if (savedUrl && savedEmail && savedToken && savedBoards) {
-          const boards = JSON.parse(savedBoards);
-          if (boards.length > 0) {
-            // Check if boards are in old format
-            const isOldFormat = typeof boards[0] === 'number';
-
-            if (isOldFormat) {
-              // Old format - need to re-select teams
-              console.log('Old board format detected, please re-select your teams');
-              localStorage.removeItem(STORAGE_KEY_BOARDS);
-              setStep('teamSelection');
-              setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
-              setIsLoadingCredentials(false);
-              return;
-            }
-
-            // New format - go directly to dashboard!
-            setStep('dashboard');
-            setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
-            setSelectedBoards(boards);
-            setIsLoadingCredentials(false);
-            return;
-          }
-        }
-
-        // If we have saved credentials, go to team selection
-        if (savedUrl && savedEmail && savedToken) {
-          setStep('teamSelection');
-          setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
-          setIsLoadingCredentials(false);
-          return;
-        }
-
-        // No saved credentials - try to fetch from backend
-        console.log('Fetching default credentials from backend...');
-        const response = await fetch(`${API_URL}/credentials`);
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.credentials) {
-            console.log('✓ Default credentials loaded from backend');
-            const { jiraUrl, email, apiToken } = data.credentials;
-
-            // Save to localStorage for future use
-            localStorage.setItem(STORAGE_KEY_JIRA_URL, jiraUrl);
-            localStorage.setItem(STORAGE_KEY_EMAIL, email);
-            localStorage.setItem(STORAGE_KEY_TOKEN, apiToken);
-
-            // Skip connection screen, go directly to team selection
-            setStep('teamSelection');
-            setCredentials({ jiraUrl, email, apiToken });
-            setIsLoadingCredentials(false);
-            return;
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load credentials:', err);
-      }
-
-      // No credentials found - show connection screen
-      setStep('connection');
-      setIsLoadingCredentials(false);
-    };
-
     initializeApp();
   }, []);
 
+  const initializeApp = async () => {
+    try {
+      // 1. First check if there are saved metrics in the database
+      //    This works for ANY machine - no localStorage needed
+      const historyResponse = await fetch(`${API_URL}/history/boards`);
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        if (historyData.success && historyData.boards?.length > 0) {
+          console.log('✅ Found saved metrics in database, going to dashboard');
+
+          // Convert history boards to board objects for Dashboard
+          const boardsFromHistory = historyData.boards.map(b => ({
+            id: b.board_id,
+            name: b.board_name
+          }));
+
+          setSavedBoardsFromHistory(boardsFromHistory);
+
+          // Also try to load credentials (for refresh functionality)
+          await loadCredentials();
+
+          setSelectedBoards(boardsFromHistory);
+          setStep('dashboard');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // 2. No saved metrics - need credentials to calculate
+      await loadCredentials();
+
+      // If we got credentials, go to team selection
+      if (credentials) {
+        setStep('teamSelection');
+      }
+    } catch (err) {
+      console.error('Failed to initialize:', err);
+      // Try to load credentials as fallback
+      await loadCredentials();
+    }
+
+    setIsLoading(false);
+  };
+
+  const loadCredentials = async () => {
+    try {
+      // Check localStorage first
+      const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
+      const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
+
+      if (savedUrl && savedEmail && savedToken) {
+        setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
+
+        // If no saved boards from history, check localStorage for selected boards
+        if (savedBoardsFromHistory.length === 0) {
+          const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
+          if (savedBoards) {
+            const boards = JSON.parse(savedBoards);
+            if (boards.length > 0 && typeof boards[0] === 'object') {
+              setSelectedBoards(boards);
+              setStep('dashboard');
+              return;
+            }
+          }
+          setStep('teamSelection');
+        }
+        return;
+      }
+
+      // Try to fetch from backend
+      const response = await fetch(`${API_URL}/credentials`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.credentials) {
+          const { jiraUrl, email, apiToken } = data.credentials;
+          localStorage.setItem(STORAGE_KEY_JIRA_URL, jiraUrl);
+          localStorage.setItem(STORAGE_KEY_EMAIL, email);
+          localStorage.setItem(STORAGE_KEY_TOKEN, apiToken);
+          setCredentials({ jiraUrl, email, apiToken });
+
+          if (savedBoardsFromHistory.length === 0) {
+            setStep('teamSelection');
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load credentials:', err);
+    }
+
+    if (savedBoardsFromHistory.length === 0) {
+      setStep('connection');
+    }
+  };
+
   const handleConnectionSuccess = (creds) => {
-    // Save credentials to localStorage for auto-login
     try {
       localStorage.setItem(STORAGE_KEY_JIRA_URL, creds.jiraUrl);
       localStorage.setItem(STORAGE_KEY_EMAIL, creds.email);
@@ -108,7 +131,6 @@ function App() {
   };
 
   const handleTeamsSelected = (boards) => {
-    // Save selected boards
     try {
       localStorage.setItem(STORAGE_KEY_BOARDS, JSON.stringify(boards));
     } catch (err) {
@@ -120,7 +142,6 @@ function App() {
   };
 
   const handleReset = () => {
-    // Clear all saved data
     try {
       localStorage.removeItem(STORAGE_KEY_TOKEN);
       localStorage.removeItem(STORAGE_KEY_BOARDS);
@@ -133,8 +154,7 @@ function App() {
     setSelectedBoards([]);
   };
 
-  // Show loading while fetching credentials
-  if (isLoadingCredentials) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -155,19 +175,13 @@ function App() {
             <p className="text-sm text-gray-600">Analyze team health and maturity</p>
           </div>
 
-          {step === 'dashboard' && (
+          {step === 'dashboard' && credentials && (
             <div className="flex gap-3">
               <button
                 onClick={() => setStep('teamSelection')}
                 className="btn-secondary"
               >
-                Select Boards
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-4 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
-              >
-                Disconnect
+                Add New Board
               </button>
             </div>
           )}

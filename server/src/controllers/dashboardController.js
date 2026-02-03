@@ -244,6 +244,7 @@ class DashboardController {
           sprintGoalAttainment,
           rolloverRate: rolloverResult.rate,
           rolloverIssues: rolloverResult.issues,
+          rolloverReasonBreakdown: rolloverResult.reasonBreakdown,
           sprintHitRate,
           midSprintAdditions,
           defectDistribution,

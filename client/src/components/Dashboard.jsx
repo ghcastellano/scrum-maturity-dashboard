@@ -871,21 +871,65 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               <div className="mt-4 space-y-2">
                 {metrics.sprintMetrics.slice().reverse().map(sprint => {
                   const issues = sprint.rolloverIssues || [];
+                  const breakdown = sprint.rolloverReasonBreakdown || {};
                   if (issues.length === 0) return null;
                   return (
                     <details key={sprint.sprintId} className="bg-red-50 rounded-lg border border-red-100">
                       <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-red-800 hover:bg-red-100 rounded-lg">
                         {sprint.sprintName} — {issues.length} rolled over ({formatNumber(sprint.rolloverRate)}%)
                       </summary>
-                      <div className="px-3 pb-2 space-y-1">
-                        {issues.map(issue => (
-                          <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-red-100">
-                            <span className="font-mono font-semibold text-red-700">{issue.key}</span>
-                            <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600">{issue.type}</span>
-                            <span className="flex-1 truncate">{issue.summary}</span>
-                            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">{issue.status}</span>
+                      <div className="px-3 pb-3">
+                        {/* Reason Breakdown */}
+                        {Object.keys(breakdown).length > 0 && (
+                          <div className="flex flex-wrap gap-2 py-2 mb-2 border-b border-red-200">
+                            {Object.entries(breakdown).map(([reason, count]) => (
+                              <span key={reason} className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                reason === 'external-blockers' ? 'bg-purple-100 text-purple-800' :
+                                reason === 'late-discovery' ? 'bg-blue-100 text-blue-800' :
+                                reason === 'resource-constraints' ? 'bg-orange-100 text-orange-800' :
+                                reason === 'internal-blockers' ? 'bg-red-100 text-red-800' :
+                                reason === 'req-gap' ? 'bg-yellow-100 text-yellow-800' :
+                                reason === 'dev-qa-spill' ? 'bg-cyan-100 text-cyan-800' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {reason === 'unlabeled' ? 'No Label' :
+                                 reason === 'external-blockers' ? 'External Blockers' :
+                                 reason === 'late-discovery' ? 'Late Discovery' :
+                                 reason === 'resource-constraints' ? 'Resource Constraints' :
+                                 reason === 'internal-blockers' ? 'Internal Blockers' :
+                                 reason === 'req-gap' ? 'Req Gap' :
+                                 reason === 'dev-qa-spill' ? 'Dev/QA Spill' : reason
+                                }: {count}
+                              </span>
+                            ))}
                           </div>
-                        ))}
+                        )}
+
+                        {/* Issue List */}
+                        <div className="space-y-1">
+                          {issues.map(issue => (
+                            <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-red-100">
+                              <span className="font-mono font-semibold text-red-700 shrink-0">{issue.key}</span>
+                              <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
+                              <span className="flex-1 truncate">{issue.summary}</span>
+                              {issue.reasons && issue.reasons.length > 0 ? (
+                                issue.reasons.map(r => (
+                                  <span key={r} className={`px-1.5 py-0.5 rounded text-xs shrink-0 ${
+                                    r === 'external-blockers' ? 'bg-purple-100 text-purple-700' :
+                                    r === 'late-discovery' ? 'bg-blue-100 text-blue-700' :
+                                    r === 'resource-constraints' ? 'bg-orange-100 text-orange-700' :
+                                    r === 'internal-blockers' ? 'bg-red-100 text-red-700' :
+                                    r === 'req-gap' ? 'bg-yellow-100 text-yellow-700' :
+                                    r === 'dev-qa-spill' ? 'bg-cyan-100 text-cyan-700' :
+                                    'bg-gray-100 text-gray-600'
+                                  }`}>{r}</span>
+                                ))
+                              ) : (
+                                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs shrink-0">no label</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </details>
                   );

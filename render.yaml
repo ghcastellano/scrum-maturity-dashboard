@@ -1,11 +1,19 @@
 services:
+  # Backend API Server
   - type: web
-    name: scrum-maturity-api
-    runtime: node
-    buildCommand: cd server && npm install
-    startCommand: cd server && npm start
+    name: scrum-maturity-dashboard
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm run build:all
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
+      - key: JIRA_URL
+        sync: false
+      - key: JIRA_EMAIL
+        sync: false
+      - key: JIRA_API_TOKEN
+        sync: false
+    healthCheckPath: /health

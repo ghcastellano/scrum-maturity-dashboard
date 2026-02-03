@@ -81,40 +81,42 @@ class JiraService {
     }
   }
 
-  // Get sprints for a board
+  // Get sprints for a board (paginated to get ALL sprints)
   async getSprints(boardId, state = 'closed') {
     try {
-      const response = await this.agileApi.get(`/board/${boardId}/sprint`, {
-        params: { state, maxResults: 50 }
-      });
+      let allSprints = [];
+      let startAt = 0;
+      const maxResults = 50;
+      let hasMore = true;
 
-      const sprints = response.data.values;
+      while (hasMore) {
+        const response = await this.agileApi.get(`/board/${boardId}/sprint`, {
+          params: { state, startAt, maxResults }
+        });
 
-      console.log(`\n🔍 Board ${boardId} - Raw Sprints from API (total: ${sprints.length}):`);
-      console.log(`First 3 sprints (before sorting):`);
-      sprints.slice(0, 3).forEach(s => {
-        console.log(`  - ${s.name} (ID: ${s.id}) - End: ${s.endDate || 'NO END DATE'} - State: ${s.state}`);
-      });
+        const sprints = response.data.values || [];
+        allSprints = allSprints.concat(sprints);
 
-      // Sort sprints by end date, most recent first
-      sprints.sort((a, b) => {
-        const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
-        const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
-        return dateB - dateA; // Descending order (newest first)
-      });
-
-      console.log(`\nFirst 3 sprints (after sorting by endDate DESC):`);
-      sprints.slice(0, 3).forEach(s => {
-        console.log(`  - ${s.name} (ID: ${s.id}) - End: ${s.endDate || 'NO END DATE'}`);
-      });
-
-      // Check for sprints without endDate
-      const sprintsWithoutEndDate = sprints.filter(s => !s.endDate);
-      if (sprintsWithoutEndDate.length > 0) {
-        console.log(`⚠️  WARNING: ${sprintsWithoutEndDate.length} sprints without endDate!`);
+        // Check if there are more pages
+        hasMore = sprints.length === maxResults;
+        startAt += sprints.length;
       }
 
-      return sprints;
+      console.log(`\n🔍 Board ${boardId} - Fetched ${allSprints.length} ${state} sprints`);
+
+      // Sort sprints by end date, most recent first
+      allSprints.sort((a, b) => {
+        const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
+        const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
+        return dateB - dateA;
+      });
+
+      console.log(`Most recent 3 sprints:`);
+      allSprints.slice(0, 3).forEach(s => {
+        console.log(`  - ${s.name} (ID: ${s.id}) - End: ${s.endDate?.split('T')[0] || 'NO END DATE'}`);
+      });
+
+      return allSprints;
     } catch (error) {
       throw new Error(`Failed to fetch sprints: ${error.message}`);
     }

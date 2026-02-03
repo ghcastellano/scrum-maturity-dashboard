@@ -130,14 +130,24 @@ function App() {
     setStep('teamSelection');
   };
 
-  const handleTeamsSelected = (boards) => {
+  const handleTeamsSelected = (newBoards) => {
+    // Merge new boards with existing database boards (never lose saved ones)
+    const existingIds = new Set(selectedBoards.map(b => typeof b === 'object' ? b.id : b));
+    const merged = [...selectedBoards];
+    for (const board of newBoards) {
+      const id = typeof board === 'object' ? board.id : board;
+      if (!existingIds.has(id)) {
+        merged.push(board);
+      }
+    }
+
     try {
-      localStorage.setItem(STORAGE_KEY_BOARDS, JSON.stringify(boards));
+      localStorage.setItem(STORAGE_KEY_BOARDS, JSON.stringify(merged));
     } catch (err) {
       console.error('Failed to save boards:', err);
     }
 
-    setSelectedBoards(boards);
+    setSelectedBoards(merged);
     setStep('dashboard');
   };
 
@@ -198,6 +208,7 @@ function App() {
           <TeamSelector
             credentials={credentials}
             onTeamsSelected={handleTeamsSelected}
+            existingBoards={selectedBoards}
           />
         )}
 

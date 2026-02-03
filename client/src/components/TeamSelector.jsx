@@ -5,7 +5,7 @@ const STORAGE_KEY = 'scrum-dashboard-selected-boards';
 const BOARDS_CACHE_KEY = 'scrum-dashboard-boards-cache';
 const BOARDS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
 
-export default function TeamSelector({ credentials, onTeamsSelected }) {
+export default function TeamSelector({ credentials, onTeamsSelected, existingBoards = [] }) {
   const [boards, setBoards] = useState([]);
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -14,7 +14,13 @@ export default function TeamSelector({ credentials, onTeamsSelected }) {
 
   useEffect(() => {
     loadBoards();
-    loadSavedSelection();
+    // Pre-select existing boards from the database
+    if (existingBoards.length > 0) {
+      const existingIds = existingBoards.map(b => typeof b === 'object' ? b.id : b);
+      setSelectedBoards(existingIds);
+    } else {
+      loadSavedSelection();
+    }
   }, []);
 
   const loadBoards = async (forceRefresh = false) => {

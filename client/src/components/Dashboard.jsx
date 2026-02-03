@@ -916,7 +916,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                               <span className="font-mono font-semibold text-red-700 shrink-0">{issue.key}</span>
                               <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
                               <span className="flex-1 truncate">{issue.summary}</span>
-                              {issue.reasons.map(r => (
+                              {(issue.reasons || []).map(r => (
                                 <span key={r} className={`px-1.5 py-0.5 rounded text-xs shrink-0 ${
                                   r === 'external-blockers' ? 'bg-purple-100 text-purple-700' :
                                   r === 'late-discovery' ? 'bg-blue-100 text-blue-700' :

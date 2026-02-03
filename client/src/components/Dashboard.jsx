@@ -785,35 +785,75 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               )}
             </div>
 
-            {/* Right: Characteristics grid */}
-            {metrics.maturityLevel.characteristics && (
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {metrics.maturityLevel.characteristics.map((char, idx) => {
-                  const blockerKeys = ['rollover', 'sprintGoals', 'backlog', 'midSprint'];
-                  const blockers = metrics.maturityLevel.blockers || [];
-                  const isBlocking = blockers.includes(blockerKeys[idx]);
-                  const isPassing = !isBlocking && metrics.maturityLevel.level < 3;
-                  const icons = ['📉', '🎯', '📋', '🔄'];
-                  return (
-                    <div key={idx} className={`flex items-start gap-2 p-3 rounded-lg border ${
-                      isBlocking
-                        ? 'bg-red-50 border-red-200'
-                        : isPassing
-                        ? 'bg-green-50 border-green-200'
-                        : 'bg-gray-50 border-gray-100'
-                    }`}>
-                      <span className="text-base shrink-0">{isBlocking ? '🚫' : isPassing ? '✅' : icons[idx]}</span>
-                      <div className="flex-1">
-                        <span className={`text-sm ${isBlocking ? 'text-red-800 font-semibold' : isPassing ? 'text-green-800' : 'text-gray-700'}`}>{char}</span>
-                        {isBlocking && (
-                          <div className="text-xs text-red-600 mt-1 font-medium">Blocking next level</div>
-                        )}
+            {/* Right: Characteristics grid - compute blockers from actual values */}
+            {(() => {
+              const level = metrics.maturityLevel.level;
+              const rollover = metrics.aggregated?.avgRolloverRate ?? 0;
+              const sprintGoal = metrics.aggregated?.avgSprintGoalAttainment ?? 0;
+              const backlog = metrics.backlogHealth?.overallScore ?? 0;
+              const midSprint = metrics.aggregated?.avgMidSprintAdditions ?? 0;
+
+              // Thresholds for next level
+              const thresholds = level === 1
+                ? { rollover: { max: 25, label: '≤25%' }, sprintGoal: { min: 50, label: '≥50%' }, backlog: { min: 50, label: '≥50%' }, midSprint: { max: 25, label: '≤25%' }, nextLevel: 2 }
+                : level === 2
+                ? { rollover: { max: 15, label: '<15%' }, sprintGoal: { min: 70, label: '>70%' }, backlog: { min: 80, label: '>80%' }, midSprint: { max: 10, label: '<10%' }, nextLevel: 3 }
+                : null;
+
+              const metricItems = [
+                { icon: '📉', label: 'Rollover Rate', value: rollover, blocking: thresholds ? rollover > thresholds.rollover.max : false, target: thresholds?.rollover.label, current: `${formatNumber(rollover)}%` },
+                { icon: '🎯', label: 'Sprint Goal Attainment', value: sprintGoal, blocking: thresholds ? sprintGoal < thresholds.sprintGoal.min : false, target: thresholds?.sprintGoal.label, current: `${formatNumber(sprintGoal)}%` },
+                { icon: '📋', label: 'Backlog Health', value: backlog, blocking: thresholds ? backlog < thresholds.backlog.min : false, target: thresholds?.backlog.label, current: `${formatNumber(backlog)}%` },
+                { icon: '🔄', label: 'Mid-Sprint Additions', value: midSprint, blocking: thresholds ? midSprint > thresholds.midSprint.max : false, target: thresholds?.midSprint.label, current: `${formatNumber(midSprint)}%` }
+              ];
+
+              const blockingCount = metricItems.filter(m => m.blocking).length;
+
+              return (
+                <div className="flex-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {metricItems.map((item, idx) => (
+                      <div key={idx} className={`flex items-start gap-2 p-3 rounded-lg border ${
+                        item.blocking
+                          ? 'bg-red-50 border-red-200'
+                          : thresholds
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-gray-50 border-gray-100'
+                      }`}>
+                        <span className="text-base shrink-0">{item.blocking ? '🚫' : thresholds ? '✅' : item.icon}</span>
+                        <div className="flex-1">
+                          <div className={`text-sm font-medium ${item.blocking ? 'text-red-800' : thresholds ? 'text-green-800' : 'text-gray-700'}`}>
+                            {item.label}: {item.current}
+                          </div>
+                          {thresholds && (
+                            <div className={`text-xs mt-0.5 ${item.blocking ? 'text-red-600 font-semibold' : 'text-green-600'}`}>
+                              {item.blocking
+                                ? `Needs ${item.target} for Level ${thresholds.nextLevel}`
+                                : `Passing (target: ${item.target})`}
+                            </div>
+                          )}
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                  {thresholds && blockingCount > 0 && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm font-semibold text-red-800">
+                        {blockingCount} metric{blockingCount > 1 ? 's' : ''} blocking Level {thresholds.nextLevel}
+                      </p>
+                      <p className="text-xs text-red-600 mt-1">
+                        {metricItems.filter(m => m.blocking).map(m => `${m.label} (${m.current} → ${m.target})`).join(' · ')}
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  )}
+                  {level === 3 && (
+                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-sm font-semibold text-green-800">All metrics at highest level</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Recommendations */}

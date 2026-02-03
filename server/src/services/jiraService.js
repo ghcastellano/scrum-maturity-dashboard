@@ -213,7 +213,7 @@ class JiraService {
       const response = await this.agileApi.get(`/board/${boardId}/backlog`, {
         params: {
           maxResults: 500,
-          fields: 'summary,description,customfield_10061,fixVersions,issuetype,status'
+          fields: '*all'
         }
       });
       return response.data.issues;

@@ -936,12 +936,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             {/* Sprint Goal Attainment */}
             <div>
               <h3 className="font-semibold mb-4">Sprint Goal Attainment</h3>
-              <div className="h-64">
+              <div className="h-80">
                 <Line data={sprintGoalData} options={chartOptions} />
               </div>
               {/* Sprint Hit Rate below Sprint Goal */}
               <h3 className="font-semibold mb-4 mt-8">Sprint Hit Rate</h3>
-              <div className="h-64">
+              <div className="h-80">
                 <Bar data={hitRateData} options={chartOptions} />
               </div>
             </div>
@@ -949,7 +949,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             {/* Rollover Rate + Issues */}
             <div>
               <h3 className="font-semibold mb-4">Rollover Rate</h3>
-              <div className="h-64">
+              <div className="h-80">
                 <Line data={rolloverData} options={chartOptions} />
               </div>
               <div className="mt-4 space-y-2">
@@ -1058,7 +1058,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             ⚡ Pillar 2: Flow & Quality
           </h2>
 
-          {flowMetrics && (
+          {flowMetrics ? (
             <div>
               <h3 className="font-semibold mb-4">Average Cycle Time (days)</h3>
               <div className="space-y-3">
@@ -1071,6 +1071,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   </div>
                 ))}
               </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg text-gray-500">
+              <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <span className="text-sm">Click "Refresh from Jira" to load cycle time and flow metrics.</span>
             </div>
           )}
         </div>

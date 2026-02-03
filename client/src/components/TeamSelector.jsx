@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 
 const STORAGE_KEY = 'scrum-dashboard-selected-boards';
+const BOARDS_CACHE_KEY = 'scrum-dashboard-boards-cache';
+const BOARDS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
 
 export default function TeamSelector({ credentials, onTeamsSelected }) {
   const [boards, setBoards] = useState([]);
@@ -15,15 +17,37 @@ export default function TeamSelector({ credentials, onTeamsSelected }) {
     loadSavedSelection();
   }, []);
 
-  const loadBoards = async () => {
+  const loadBoards = async (forceRefresh = false) => {
     try {
       setLoading(true);
+
+      // Try localStorage cache first
+      if (!forceRefresh) {
+        const cached = localStorage.getItem(BOARDS_CACHE_KEY);
+        if (cached) {
+          const { boards: cachedBoards, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < BOARDS_CACHE_TTL && cachedBoards?.length > 0) {
+            console.log('✅ Boards loaded from localStorage cache');
+            setBoards(cachedBoards);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      // Fetch from API
       const result = await api.getBoards(
         credentials.jiraUrl,
         credentials.email,
         credentials.apiToken
       );
       setBoards(result.boards);
+
+      // Save to localStorage
+      localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
+        boards: result.boards,
+        timestamp: Date.now()
+      }));
     } catch (err) {
       setError('Failed to load boards');
     } finally {
@@ -117,7 +141,15 @@ export default function TeamSelector({ credentials, onTeamsSelected }) {
 
   return (
     <div className="max-w-4xl mx-auto card">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Select Teams to Analyze</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Select Boards to Analyze</h2>
+        <button
+          onClick={() => loadBoards(true)}
+          className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Refresh List
+        </button>
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">

@@ -161,7 +161,7 @@ function App() {
                 onClick={() => setStep('teamSelection')}
                 className="btn-secondary"
               >
-                Change Teams
+                Select Boards
               </button>
               <button
                 onClick={handleReset}

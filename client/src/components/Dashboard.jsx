@@ -786,11 +786,26 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             {metrics.maturityLevel.characteristics && (
               <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {metrics.maturityLevel.characteristics.map((char, idx) => {
+                  const blockerKeys = ['rollover', 'sprintGoals', 'backlog', 'midSprint'];
+                  const blockers = metrics.maturityLevel.blockers || [];
+                  const isBlocking = blockers.includes(blockerKeys[idx]);
+                  const isPassing = !isBlocking && metrics.maturityLevel.level < 3;
                   const icons = ['📉', '🎯', '📋', '🔄'];
                   return (
-                    <div key={idx} className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                      <span className="text-base shrink-0">{icons[idx] || '📊'}</span>
-                      <span className="text-sm text-gray-700">{char}</span>
+                    <div key={idx} className={`flex items-start gap-2 p-3 rounded-lg border ${
+                      isBlocking
+                        ? 'bg-red-50 border-red-200'
+                        : isPassing
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-gray-50 border-gray-100'
+                    }`}>
+                      <span className="text-base shrink-0">{isBlocking ? '🚫' : isPassing ? '✅' : icons[idx]}</span>
+                      <div className="flex-1">
+                        <span className={`text-sm ${isBlocking ? 'text-red-800 font-semibold' : isPassing ? 'text-green-800' : 'text-gray-700'}`}>{char}</span>
+                        {isBlocking && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">Blocking next level</div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

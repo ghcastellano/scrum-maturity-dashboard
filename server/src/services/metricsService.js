@@ -41,11 +41,31 @@ class MetricsService {
     return committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0;
   }
 
-  // Calculate Rollover Rate - returns { rate, issues[] }
+  // Rollover reason labels used by the teams
+  static ROLLOVER_LABELS = [
+    'external-blockers',
+    'late-discovery',
+    'resource-constraints',
+    'internal-blockers',
+    'req-gap',
+    'dev-qa-spill'
+  ];
+
+  // Human-readable names for rollover labels
+  static ROLLOVER_LABEL_NAMES = {
+    'external-blockers': 'External Blockers',
+    'late-discovery': 'Late Discovery',
+    'resource-constraints': 'Resource Constraints',
+    'internal-blockers': 'Internal Blockers',
+    'req-gap': 'Requirement Gap',
+    'dev-qa-spill': 'Dev/QA Spill'
+  };
+
+  // Calculate Rollover Rate - returns { rate, issues[], reasonBreakdown }
   calculateRolloverRate(sprintIssues, nextSprintIssues, sprintName = '') {
     if (!nextSprintIssues || nextSprintIssues.length === 0) {
       console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: no next sprint data, rollover = 0%`);
-      return { rate: 0, issues: [] };
+      return { rate: 0, issues: [], reasonBreakdown: {} };
     }
 
     const currentSprintKeys = new Set(sprintIssues.map(i => i.key));
@@ -57,23 +77,41 @@ class MetricsService {
 
     const rate = sprintIssues.length > 0 ? (rolledOverIssues.length / sprintIssues.length) * 100 : 0;
 
+    // Extract rollover reason labels and build breakdown
+    const reasonBreakdown = {};
+    const issueDetails = rolledOverIssues.map(issue => {
+      const allLabels = issue.fields?.labels || [];
+      const rolloverReasons = allLabels.filter(l =>
+        MetricsService.ROLLOVER_LABELS.includes(l)
+      );
+
+      // Count each reason
+      for (const reason of rolloverReasons) {
+        reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
+      }
+      if (rolloverReasons.length === 0) {
+        reasonBreakdown['unlabeled'] = (reasonBreakdown['unlabeled'] || 0) + 1;
+      }
+
+      return {
+        key: issue.key,
+        summary: issue.fields?.summary || '',
+        status: issue.fields?.status?.name || 'unknown',
+        type: issue.fields?.issuetype?.name || 'unknown',
+        reasons: rolloverReasons
+      };
+    });
+
     console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${rolledOverIssues.length}/${sprintIssues.length} issues = ${rate.toFixed(1)}%`);
-    if (rolledOverIssues.length > 0) {
-      rolledOverIssues.forEach(issue => {
-        const status = issue.fields?.status?.name || 'unknown';
-        console.log(`  → ${issue.key} - ${issue.fields?.summary || ''} [${status}]`);
+    if (issueDetails.length > 0) {
+      issueDetails.forEach(issue => {
+        const reasons = issue.reasons.length > 0 ? issue.reasons.join(', ') : 'no label';
+        console.log(`  → ${issue.key} - ${issue.summary} [${issue.status}] (${reasons})`);
       });
+      console.log(`  Breakdown: ${Object.entries(reasonBreakdown).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
     }
 
-    // Return both rate and issue details for display
-    const issueDetails = rolledOverIssues.map(issue => ({
-      key: issue.key,
-      summary: issue.fields?.summary || '',
-      status: issue.fields?.status?.name || 'unknown',
-      type: issue.fields?.issuetype?.name || 'unknown'
-    }));
-
-    return { rate, issues: issueDetails };
+    return { rate, issues: issueDetails, reasonBreakdown };
   }
 
   // Calculate Sprint Hit Rate

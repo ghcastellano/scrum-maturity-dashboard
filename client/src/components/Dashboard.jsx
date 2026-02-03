@@ -889,35 +889,48 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             📊 Pillar 1: Delivery Predictability
           </h2>
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             <div>
               <h3 className="font-semibold mb-4">Sprint Goal Attainment</h3>
               <div className="h-64">
                 <Line data={sprintGoalData} options={chartOptions} />
               </div>
             </div>
-            
             <div>
               <h3 className="font-semibold mb-4">Rollover Rate</h3>
               <div className="h-64">
                 <Line data={rolloverData} options={chartOptions} />
               </div>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-4">Sprint Hit Rate</h3>
+              <div className="h-64">
+                <Bar data={hitRateData} options={chartOptions} />
+              </div>
+            </div>
+          </div>
 
-              {/* Rollover Issues Detail */}
-              <div className="mt-4 space-y-2">
+          {/* Details Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Rollover Issues Detail */}
+            <div>
+              <h3 className="font-semibold mb-3 text-red-800">Rollover Issues by Sprint</h3>
+              <div className="space-y-2">
                 {metrics.sprintMetrics.slice().reverse().map(sprint => {
                   const issues = sprint.rolloverIssues || [];
                   const breakdown = sprint.rolloverReasonBreakdown || {};
                   if (issues.length === 0) return null;
                   return (
                     <details key={sprint.sprintId} className="bg-red-50 rounded-lg border border-red-100">
-                      <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-red-800 hover:bg-red-100 rounded-lg">
-                        {sprint.sprintName} — {issues.length} rolled over ({formatNumber(sprint.rolloverRate)}%)
+                      <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-red-800 hover:bg-red-100 rounded-lg flex justify-between items-center">
+                        <span className="truncate mr-2">{sprint.sprintName}</span>
+                        <span className="shrink-0">{issues.length} rolled over ({formatNumber(sprint.rolloverRate)}%)</span>
                       </summary>
                       <div className="px-3 pb-3">
                         {/* Reason Breakdown */}
                         {Object.keys(breakdown).length > 0 && (
-                          <div className="flex flex-wrap gap-2 py-2 mb-2 border-b border-red-200">
+                          <div className="flex flex-wrap gap-1.5 py-2 mb-2 border-b border-red-200">
                             {Object.entries(breakdown).map(([reason, count]) => (
                               <span key={reason} className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                 reason === 'external-blockers' ? 'bg-purple-100 text-purple-800' :
@@ -941,12 +954,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         )}
 
                         {/* Issue List */}
-                        <div className="space-y-1">
+                        <div className="space-y-0">
                           {issues.map(issue => (
-                            <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-red-100">
+                            <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-red-100">
                               <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-red-700 shrink-0 hover:underline">{issue.key}</a>
                               <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
-                              <span className="flex-1 truncate">{issue.summary}</span>
+                              <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
                               {(issue.reasons || []).map(r => (
                                 <span key={r} className={`px-1.5 py-0.5 rounded text-xs shrink-0 ${
                                   r === 'external-blockers' ? 'bg-purple-100 text-purple-700' :
@@ -967,40 +980,34 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 })}
               </div>
             </div>
-            
+
+            {/* Mid-Sprint Additions Detail */}
             <div>
-              <h3 className="font-semibold mb-4">Sprint Hit Rate</h3>
-              <div className="h-64">
-                <Bar data={hitRateData} options={chartOptions} />
-              </div>
-            </div>
-            
-            <div>
-              <h3 className="font-semibold mb-4">Mid-Sprint Additions</h3>
+              <h3 className="font-semibold mb-3 text-amber-800">Mid-Sprint Additions by Sprint</h3>
               <div className="space-y-2">
                 {metrics.sprintMetrics.slice().reverse().map(sprint => {
                   const msIssues = sprint.midSprintAdditions?.issues || [];
                   const msCount = sprint.midSprintAdditions?.count || 0;
                   if (msCount === 0) {
                     return (
-                      <div key={sprint.sprintId} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                        <span className="text-sm font-medium">{sprint.sprintName}</span>
-                        <span className="text-sm text-gray-500">0 issues (0.0%)</span>
+                      <div key={sprint.sprintId} className="flex justify-between items-center px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                        <span className="text-sm font-medium text-gray-600">{sprint.sprintName}</span>
+                        <span className="text-sm text-gray-400">0 issues (0.0%)</span>
                       </div>
                     );
                   }
                   return (
                     <details key={sprint.sprintId} className="bg-amber-50 rounded-lg border border-amber-100">
                       <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-amber-800 hover:bg-amber-100 rounded-lg flex justify-between items-center">
-                        <span>{sprint.sprintName}</span>
-                        <span>{msCount} issues ({formatNumber(sprint.midSprintAdditions?.percentage)}%)</span>
+                        <span className="truncate mr-2">{sprint.sprintName}</span>
+                        <span className="shrink-0">{msCount} issues ({formatNumber(sprint.midSprintAdditions?.percentage)}%)</span>
                       </summary>
-                      <div className="px-3 pb-3 space-y-1">
+                      <div className="px-3 pb-3 space-y-0">
                         {msIssues.map(issue => (
-                          <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-amber-100">
+                          <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-amber-100">
                             <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-amber-700 shrink-0 hover:underline">{issue.key}</a>
                             <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
-                            <span className="flex-1 truncate">{issue.summary}</span>
+                            <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
                           </div>
                         ))}
                       </div>

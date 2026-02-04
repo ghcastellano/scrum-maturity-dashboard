@@ -23,98 +23,25 @@ function App() {
 
   const initializeApp = async () => {
     try {
-      // 1. First check if there are saved metrics in the database
-      //    This works for ANY machine - no localStorage needed
+      // Pre-load database boards (used after login to decide dashboard vs team selection)
       const historyResponse = await fetch(`${API_URL}/history/boards`);
       if (historyResponse.ok) {
         const historyData = await historyResponse.json();
         if (historyData.success && historyData.boards?.length > 0) {
-          console.log('✅ Found saved metrics in database, going to dashboard');
-
-          // Convert history boards to board objects for Dashboard
           const boardsFromHistory = historyData.boards.map(b => ({
             id: b.board_id,
             name: b.board_name
           }));
-
           setSavedBoardsFromHistory(boardsFromHistory);
-
-          // Also try to load credentials (for refresh functionality)
-          await loadCredentials();
-
-          setSelectedBoards(boardsFromHistory);
-          setStep('dashboard');
-          setIsLoading(false);
-          return;
         }
       }
-
-      // 2. No saved metrics - need credentials to calculate
-      await loadCredentials();
-
-      // If we got credentials, go to team selection
-      if (credentials) {
-        setStep('teamSelection');
-      }
     } catch (err) {
-      console.error('Failed to initialize:', err);
-      // Try to load credentials as fallback
-      await loadCredentials();
+      console.error('Failed to check database:', err);
     }
 
+    // Always start at connection screen for security
+    setStep('connection');
     setIsLoading(false);
-  };
-
-  const loadCredentials = async () => {
-    try {
-      // Check localStorage first
-      const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
-      const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
-      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
-
-      if (savedUrl && savedEmail && savedToken) {
-        setCredentials({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken });
-
-        // If no saved boards from history, check localStorage for selected boards
-        if (savedBoardsFromHistory.length === 0) {
-          const savedBoards = localStorage.getItem(STORAGE_KEY_BOARDS);
-          if (savedBoards) {
-            const boards = JSON.parse(savedBoards);
-            if (boards.length > 0 && typeof boards[0] === 'object') {
-              setSelectedBoards(boards);
-              setStep('dashboard');
-              return;
-            }
-          }
-          setStep('teamSelection');
-        }
-        return;
-      }
-
-      // Try to fetch from backend
-      const response = await fetch(`${API_URL}/credentials`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.credentials) {
-          const { jiraUrl, email, apiToken } = data.credentials;
-          localStorage.setItem(STORAGE_KEY_JIRA_URL, jiraUrl);
-          localStorage.setItem(STORAGE_KEY_EMAIL, email);
-          localStorage.setItem(STORAGE_KEY_TOKEN, apiToken);
-          setCredentials({ jiraUrl, email, apiToken });
-
-          if (savedBoardsFromHistory.length === 0) {
-            setStep('teamSelection');
-          }
-          return;
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load credentials:', err);
-    }
-
-    if (savedBoardsFromHistory.length === 0) {
-      setStep('connection');
-    }
   };
 
   const handleConnectionSuccess = (creds) => {
@@ -127,7 +54,14 @@ function App() {
     }
 
     setCredentials(creds);
-    setStep('teamSelection');
+
+    // If boards already exist in database, go straight to dashboard
+    if (savedBoardsFromHistory.length > 0) {
+      setSelectedBoards(savedBoardsFromHistory);
+      setStep('dashboard');
+    } else {
+      setStep('teamSelection');
+    }
   };
 
   const handleTeamsSelected = (newBoards) => {

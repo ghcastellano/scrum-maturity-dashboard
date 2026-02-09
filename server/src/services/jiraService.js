@@ -391,6 +391,7 @@ class JiraService {
   }
 
   // Get issues in a specific version with changelog
+  // Note: Using POST /search instead of GET due to Jira Cloud API migration (CHANGE-2046)
   async getVersionIssues(projectKey, versionId, versionName) {
     try {
       let allIssues = [];
@@ -405,16 +406,14 @@ class JiraService {
 
       console.log(`[getVersionIssues] Trying JQL: ${jqlWithProject}`);
 
-      // Fetch all issues with pagination
+      // Fetch all issues with pagination using POST (new Jira Cloud API)
       while (true) {
-        const response = await this.api.get('/search', {
-          params: {
-            jql: jqlWithProject,
-            fields: 'summary,status,issuetype,priority,assignee,created,updated,fixVersions,issuelinks,customfield_10061',
-            expand: 'changelog',
-            startAt,
-            maxResults
-          }
+        const response = await this.api.post('/search', {
+          jql: jqlWithProject,
+          fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'created', 'updated', 'fixVersions', 'issuelinks', 'customfield_10061'],
+          expand: ['changelog'],
+          startAt,
+          maxResults
         });
 
         const issues = response.data.issues || [];
@@ -428,13 +427,11 @@ class JiraService {
       // If no issues found with project filter, try without it
       if (allIssues.length === 0) {
         console.log(`[getVersionIssues] No issues found with project filter, trying: ${jqlVersionOnly}`);
-        const response = await this.api.get('/search', {
-          params: {
-            jql: jqlVersionOnly,
-            fields: 'summary,status,issuetype,priority,assignee,created,updated,fixVersions,issuelinks,customfield_10061',
-            expand: 'changelog',
-            maxResults: 200
-          }
+        const response = await this.api.post('/search', {
+          jql: jqlVersionOnly,
+          fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'created', 'updated', 'fixVersions', 'issuelinks', 'customfield_10061'],
+          expand: ['changelog'],
+          maxResults: 200
         });
         allIssues = response.data.issues || [];
         console.log(`[getVersionIssues] Found ${allIssues.length} issues without project filter`);
@@ -548,12 +545,10 @@ class JiraService {
       console.log(`[getReleaseDetails] Attempting to fetch removed issues...`);
       try {
         const escapedVersionName = this.escapeJqlString(versionName);
-        const recentlyChangedResponse = await this.api.get('/search', {
-          params: {
-            jql: `project = "${projectKey}" AND fixVersion changed FROM "${escapedVersionName}" ORDER BY updated DESC`,
-            fields: 'summary,status,issuetype,fixVersions',
-            maxResults: 50
-          }
+        const recentlyChangedResponse = await this.api.post('/search', {
+          jql: `project = "${projectKey}" AND fixVersion changed FROM "${escapedVersionName}" ORDER BY updated DESC`,
+          fields: ['summary', 'status', 'issuetype', 'fixVersions'],
+          maxResults: 50
         });
 
         for (const issue of (recentlyChangedResponse.data.issues || [])) {

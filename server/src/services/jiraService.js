@@ -612,9 +612,11 @@ class JiraService {
       console.log(`[getVersionBurndown] Starting for version "${versionName}"`);
 
       const releaseStart = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      releaseStart.setHours(0, 0, 0, 0);
       const releaseEnd = endDate ? new Date(endDate) : new Date();
+      releaseEnd.setHours(0, 0, 0, 0);
       const today = new Date();
-      today.setHours(23, 59, 59, 999);
+      today.setHours(0, 0, 0, 0);
 
       // Chart logic:
       // - Never show future dates (we can't predict!)

@@ -615,12 +615,16 @@ class JiraService {
       const releaseEnd = endDate ? new Date(endDate) : new Date();
       const today = new Date();
 
+      // Extend chart to today if the release date has passed but we want to show
+      // what happened after (e.g., items completed after the official release date)
+      const chartEnd = today > releaseEnd ? today : releaseEnd;
+
       // Limit burndown to max 90 days to avoid very long calculations
       const maxDays = 90;
       const dayMs = 24 * 60 * 60 * 1000;
-      if ((releaseEnd - releaseStart) / dayMs > maxDays) {
+      if ((chartEnd - releaseStart) / dayMs > maxDays) {
         console.log(`[getVersionBurndown] Limiting burndown to last ${maxDays} days`);
-        releaseStart.setTime(releaseEnd.getTime() - (maxDays * dayMs));
+        releaseStart.setTime(chartEnd.getTime() - (maxDays * dayMs));
       }
 
       // Get all issues that were ever in this version
@@ -699,7 +703,7 @@ class JiraService {
       const burndownData = [];
       let currentDate = new Date(releaseStart);
 
-      while (currentDate <= releaseEnd) {
+      while (currentDate <= chartEnd) {
         let scopePoints = 0;
         let completedPoints = 0;
         const isToday = currentDate.toDateString() === today.toDateString();

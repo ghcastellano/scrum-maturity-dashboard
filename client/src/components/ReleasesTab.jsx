@@ -67,6 +67,7 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
   const [selectedRelease, setSelectedRelease] = useState(null);
   const [releaseDetails, setReleaseDetails] = useState(null);
   const [burndownData, setBurndownData] = useState(null);
+  const [burndownReleaseDate, setBurndownReleaseDate] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState('');
@@ -139,6 +140,7 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
       }
       if (burndownResult.success) {
         setBurndownData(burndownResult.burndown);
+        setBurndownReleaseDate(burndownResult.releaseDate);
       }
     } catch (err) {
       setError(`Failed to load release details: ${err.message}`);
@@ -160,17 +162,16 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
   const burndownChartData = useMemo(() => {
     if (!burndownData || burndownData.length === 0) return null;
 
-    return {
-      labels: burndownData.map(d => d.date),
-      datasets: [
-        {
-          label: 'Scope (Story Points)',
-          data: burndownData.map(d => d.scopePoints),
-          borderColor: 'rgba(156, 163, 175, 0.8)',
-          backgroundColor: 'rgba(156, 163, 175, 0.1)',
-          fill: true,
-          tension: 0.1
-        },
+    const labels = burndownData.map(d => d.date);
+    const datasets = [
+      {
+        label: 'Scope (Story Points)',
+        data: burndownData.map(d => d.scopePoints),
+        borderColor: 'rgba(156, 163, 175, 0.8)',
+        backgroundColor: 'rgba(156, 163, 175, 0.1)',
+        fill: true,
+        tension: 0.1
+      },
         {
           label: 'Remaining',
           data: burndownData.map(d => d.remainingPoints),
@@ -187,9 +188,34 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
           fill: true,
           tension: 0.1
         }
-      ]
-    };
-  }, [burndownData]);
+      ];
+
+    // Add release date marker if the chart extends beyond release date
+    if (burndownReleaseDate && labels.includes(burndownReleaseDate)) {
+      const releaseDateIndex = labels.indexOf(burndownReleaseDate);
+      const maxScope = Math.max(...burndownData.map(d => d.scopePoints));
+
+      // Create a vertical line at the release date
+      const releaseLine = new Array(labels.length).fill(null);
+      releaseLine[releaseDateIndex] = maxScope;
+
+      datasets.push({
+        label: 'Release Date',
+        data: releaseLine,
+        borderColor: 'rgba(239, 68, 68, 0.8)',
+        backgroundColor: 'rgba(239, 68, 68, 0.3)',
+        pointRadius: 8,
+        pointStyle: 'rectRot',
+        pointBackgroundColor: 'rgba(239, 68, 68, 0.8)',
+        pointBorderColor: 'rgba(239, 68, 68, 1)',
+        pointBorderWidth: 2,
+        showLine: false,
+        fill: false
+      });
+    }
+
+    return { labels, datasets };
+  }, [burndownData, burndownReleaseDate]);
 
   // Status distribution chart
   const statusChartData = useMemo(() => {

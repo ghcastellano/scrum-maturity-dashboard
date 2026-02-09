@@ -586,7 +586,9 @@ class DashboardController {
         success: true,
         burndown,
         projectKey,
-        versionName
+        versionName,
+        // Include release date for chart annotation
+        releaseDate: endDate ? new Date(endDate).toISOString().split('T')[0] : null
       });
     } catch (error) {
       console.error('Error fetching release burndown:', error);

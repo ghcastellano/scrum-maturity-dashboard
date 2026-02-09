@@ -158,56 +158,96 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
     }
   };
 
-  // Burndown chart data
+  // Burndown chart data - proper burndown: remaining goes DOWN from top
   const burndownChartData = useMemo(() => {
     if (!burndownData || burndownData.length === 0) return null;
 
     const labels = burndownData.map(d => d.date);
-    const datasets = [
-      {
-        label: 'Scope (Story Points)',
-        data: burndownData.map(d => d.scopePoints),
-        borderColor: 'rgba(156, 163, 175, 0.8)',
-        backgroundColor: 'rgba(156, 163, 175, 0.1)',
-        fill: true,
-        tension: 0.1
-      },
-        {
-          label: 'Remaining',
-          data: burndownData.map(d => d.remainingPoints),
-          borderColor: 'rgba(59, 130, 246, 1)',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          fill: true,
-          tension: 0.1
+    const releaseDateIndex = burndownReleaseDate ? labels.indexOf(burndownReleaseDate) : -1;
+
+    // Calculate ideal burndown line
+    // Goes from initial scope at start to 0 at release date (or end of chart)
+    const initialScope = burndownData[0]?.scopePoints || 0;
+    const idealEndIndex = releaseDateIndex >= 0 ? releaseDateIndex : labels.length - 1;
+    const idealBurndownData = burndownData.map((d, i) => {
+      if (idealEndIndex === 0) return initialScope;
+      if (i > idealEndIndex) return null; // No ideal line after release date
+      const progress = i / idealEndIndex;
+      return Math.max(0, Math.round((initialScope * (1 - progress)) * 10) / 10);
+    });
+
+    // Segment styling: dashed after release date
+    const getSegmentStyle = (baseColor, dashPattern = [5, 5]) => ({
+      segment: {
+        borderDash: ctx => {
+          if (releaseDateIndex < 0) return undefined;
+          return ctx.p0DataIndex >= releaseDateIndex ? dashPattern : undefined;
         },
-        {
-          label: 'Completed',
-          data: burndownData.map(d => d.completedPoints),
-          borderColor: 'rgba(34, 197, 94, 1)',
-          backgroundColor: 'rgba(34, 197, 94, 0.1)',
-          fill: true,
-          tension: 0.1
+        borderColor: ctx => {
+          if (releaseDateIndex < 0) return baseColor;
+          return ctx.p0DataIndex >= releaseDateIndex
+            ? baseColor.replace('1)', '0.5)').replace('0.8)', '0.4)')
+            : baseColor;
         }
-      ];
+      }
+    });
 
-    // Add release date marker if the chart extends beyond release date
-    if (burndownReleaseDate && labels.includes(burndownReleaseDate)) {
-      const releaseDateIndex = labels.indexOf(burndownReleaseDate);
-      const maxScope = Math.max(...burndownData.map(d => d.scopePoints));
+    const datasets = [
+      // Ideal burndown (guideline) - dashed gray line from initial scope to 0
+      {
+        label: 'Ideal Burndown',
+        data: idealBurndownData,
+        borderColor: 'rgba(156, 163, 175, 0.6)',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        pointHoverRadius: 3,
+        fill: false,
+        tension: 0
+      },
+      // Scope (total story points) - thin line showing scope changes
+      {
+        label: 'Scope',
+        data: burndownData.map(d => d.scopePoints),
+        borderColor: 'rgba(168, 85, 247, 0.7)',
+        backgroundColor: 'rgba(168, 85, 247, 0.05)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        fill: true,
+        tension: 0.1,
+        ...getSegmentStyle('rgba(168, 85, 247, 0.7)')
+      },
+      // Remaining (the actual burndown line) - thick blue, main focus
+      {
+        label: 'Remaining',
+        data: burndownData.map(d => d.remainingPoints),
+        borderColor: 'rgba(59, 130, 246, 1)',
+        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+        borderWidth: 3,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+        fill: true,
+        tension: 0.1,
+        ...getSegmentStyle('rgba(59, 130, 246, 1)')
+      }
+    ];
 
-      // Create a vertical line at the release date
-      const releaseLine = new Array(labels.length).fill(null);
-      releaseLine[releaseDateIndex] = maxScope;
+    // Add release date vertical annotation
+    if (releaseDateIndex >= 0) {
+      const maxScope = Math.max(...burndownData.map(d => d.scopePoints), 1);
 
+      // Release date marker (triangle pointing down)
       datasets.push({
-        label: 'Release Date',
-        data: releaseLine,
-        borderColor: 'rgba(239, 68, 68, 0.8)',
-        backgroundColor: 'rgba(239, 68, 68, 0.3)',
+        label: `Release Date (${burndownReleaseDate})`,
+        data: burndownData.map((d, i) => i === releaseDateIndex ? maxScope * 1.08 : null),
+        borderColor: 'rgba(239, 68, 68, 1)',
+        backgroundColor: 'rgba(239, 68, 68, 0.8)',
         pointRadius: 8,
-        pointStyle: 'rectRot',
-        pointBackgroundColor: 'rgba(239, 68, 68, 0.8)',
-        pointBorderColor: 'rgba(239, 68, 68, 1)',
+        pointStyle: 'triangle',
+        pointRotation: 180,
         pointBorderWidth: 2,
         showLine: false,
         fill: false
@@ -216,6 +256,55 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
 
     return { labels, datasets };
   }, [burndownData, burndownReleaseDate]);
+
+  // Burndown chart specific options
+  const burndownChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false
+    },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          usePointStyle: true,
+          padding: 15,
+          font: { size: 11 },
+          filter: (item) => item.text !== 'Release Date Marker'
+        }
+      },
+      tooltip: {
+        callbacks: {
+          title: (items) => {
+            const date = items[0]?.label;
+            if (!date) return '';
+            const isRelease = date === burndownReleaseDate;
+            return isRelease ? `${date} (Release Date)` : date;
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Story Points',
+          font: { size: 12, weight: 'bold' }
+        },
+        grid: { color: 'rgba(0, 0, 0, 0.06)' }
+      },
+      x: {
+        grid: { color: 'rgba(0, 0, 0, 0.06)' },
+        ticks: {
+          maxRotation: 45,
+          font: { size: 10 }
+        }
+      }
+    }
+  }), [burndownReleaseDate]);
 
   // Status distribution chart
   const statusChartData = useMemo(() => {
@@ -571,8 +660,8 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
             <div className="card">
               <h3 className="font-semibold text-gray-800 mb-4">Release Burndown</h3>
               {burndownChartData ? (
-                <div className="h-64">
-                  <Line data={burndownChartData} options={chartOptions} />
+                <div className="h-72">
+                  <Line data={burndownChartData} options={burndownChartOptions} />
                 </div>
               ) : (
                 <div className="h-64 flex items-center justify-center text-gray-400">

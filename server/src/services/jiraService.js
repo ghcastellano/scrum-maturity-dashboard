@@ -338,6 +338,10 @@ class JiraService {
       console.log(`[getProjectKeyFromBoard] Board ${boardId} location:`, config.location);
 
       // Try to get from board location first (most reliable)
+      if (config.location?.key) {
+        console.log(`[getProjectKeyFromBoard] Using location.key: ${config.location.key}`);
+        return config.location.key;
+      }
       if (config.location?.projectKey) {
         console.log(`[getProjectKeyFromBoard] Using location.projectKey: ${config.location.projectKey}`);
         return config.location.projectKey;
@@ -349,15 +353,19 @@ class JiraService {
       console.log(`[getProjectKeyFromBoard] Filter JQL: ${jql}`);
 
       // Try different patterns to extract project key
-      // Pattern 1: project = "KEY" or project = KEY or project = 'KEY'
-      let match = jql.match(/project\s*=\s*["']?([A-Za-z0-9_-]+)["']?/i);
+      // Pattern 1: project = "Quoted Name" or project = 'Quoted Name'
+      let match = jql.match(/project\s*=\s*"([^"]+)"/i) || jql.match(/project\s*=\s*'([^']+)'/i);
+      if (!match) {
+        // Pattern 2: project = KEY (unquoted, single word)
+        match = jql.match(/project\s*=\s*([A-Za-z0-9_-]+)/i);
+      }
       if (match) {
         console.log(`[getProjectKeyFromBoard] Extracted from JQL (=): ${match[1]}`);
         return match[1];
       }
 
-      // Pattern 2: project IN ("KEY") or project IN (KEY, KEY2)
-      match = jql.match(/project\s+IN\s*\(\s*["']?([A-Za-z0-9_-]+)["']?/i);
+      // Pattern 3: project IN ("KEY") or project IN (KEY, KEY2)
+      match = jql.match(/project\s+IN\s*\(\s*"([^"]+)"/i) || jql.match(/project\s+IN\s*\(\s*([A-Za-z0-9_-]+)/i);
       if (match) {
         console.log(`[getProjectKeyFromBoard] Extracted from JQL (IN): ${match[1]}`);
         return match[1];
@@ -378,6 +386,11 @@ class JiraService {
       const response = await this.api.get(`/project/${projectKey}/version`, { params });
       return response.data.values || response.data || [];
     } catch (error) {
+      // 404 means the project doesn't exist or has no versions endpoint
+      if (error.response?.status === 404) {
+        console.warn(`[getProjectVersions] Project ${projectKey} returned 404, returning empty list`);
+        return [];
+      }
       throw new Error(`Failed to fetch versions: ${error.message}`);
     }
   }

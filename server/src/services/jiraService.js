@@ -192,14 +192,13 @@ class JiraService {
   }
 
   // Search issues with JQL
+  // Note: Using /search/jql endpoint due to Jira Cloud API migration (CHANGE-2046)
   async searchIssues(jql, fields = [], maxResults = 100) {
     try {
-      const response = await this.api.get('/search', {
-        params: {
-          jql,
-          fields: fields.join(','),
-          maxResults
-        }
+      const response = await this.api.post('/search/jql', {
+        jql,
+        fields,
+        maxResults
       });
       return response.data.issues;
     } catch (error) {
@@ -391,46 +390,57 @@ class JiraService {
   }
 
   // Get issues in a specific version with changelog
-  // Note: Using POST /search instead of GET due to Jira Cloud API migration (CHANGE-2046)
+  // Note: Using /search/jql endpoint due to Jira Cloud API migration (CHANGE-2046)
+  // The old /search endpoint was fully removed and returns 410
   async getVersionIssues(projectKey, versionId, versionName) {
     try {
       let allIssues = [];
-      let startAt = 0;
       const maxResults = 100;
       const escapedVersionName = this.escapeJqlString(versionName);
 
-      // First, try without project filter (version name should be unique enough)
-      // This handles cases where board spans multiple projects
       const jqlWithProject = `project = "${projectKey}" AND fixVersion = "${escapedVersionName}"`;
       const jqlVersionOnly = `fixVersion = "${escapedVersionName}"`;
 
       console.log(`[getVersionIssues] Trying JQL: ${jqlWithProject}`);
 
-      // Fetch all issues with pagination using POST (new Jira Cloud API)
-      while (true) {
-        const response = await this.api.post('/search', {
+      // Fetch all issues with pagination using new /search/jql endpoint
+      // New API uses nextPageToken instead of startAt
+      let nextPageToken = null;
+
+      do {
+        const requestBody = {
           jql: jqlWithProject,
           fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'created', 'updated', 'fixVersions', 'issuelinks', 'customfield_10061'],
-          expand: ['changelog'],
-          startAt,
+          expand: 'changelog',
           maxResults
-        });
+        };
+
+        if (nextPageToken) {
+          requestBody.nextPageToken = nextPageToken;
+        }
+
+        const response = await this.api.post('/search/jql', requestBody);
 
         const issues = response.data.issues || [];
         allIssues = allIssues.concat(issues);
         console.log(`[getVersionIssues] Found ${issues.length} issues (total: ${allIssues.length})`);
 
-        if (issues.length < maxResults) break;
-        startAt += maxResults;
-      }
+        // New pagination: use nextPageToken, stop when isLast is true or no token
+        nextPageToken = response.data.nextPageToken;
+        const isLast = response.data.isLast;
+
+        if (isLast || !nextPageToken || issues.length < maxResults) {
+          break;
+        }
+      } while (true);
 
       // If no issues found with project filter, try without it
       if (allIssues.length === 0) {
         console.log(`[getVersionIssues] No issues found with project filter, trying: ${jqlVersionOnly}`);
-        const response = await this.api.post('/search', {
+        const response = await this.api.post('/search/jql', {
           jql: jqlVersionOnly,
           fields: ['summary', 'status', 'issuetype', 'priority', 'assignee', 'created', 'updated', 'fixVersions', 'issuelinks', 'customfield_10061'],
-          expand: ['changelog'],
+          expand: 'changelog',
           maxResults: 200
         });
         allIssues = response.data.issues || [];
@@ -545,7 +555,7 @@ class JiraService {
       console.log(`[getReleaseDetails] Attempting to fetch removed issues...`);
       try {
         const escapedVersionName = this.escapeJqlString(versionName);
-        const recentlyChangedResponse = await this.api.post('/search', {
+        const recentlyChangedResponse = await this.api.post('/search/jql', {
           jql: `project = "${projectKey}" AND fixVersion changed FROM "${escapedVersionName}" ORDER BY updated DESC`,
           fields: ['summary', 'status', 'issuetype', 'fixVersions'],
           maxResults: 50
@@ -603,6 +613,7 @@ class JiraService {
 
       const releaseStart = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const releaseEnd = endDate ? new Date(endDate) : new Date();
+      const today = new Date();
 
       // Limit burndown to max 90 days to avoid very long calculations
       const maxDays = 90;
@@ -622,6 +633,68 @@ class JiraService {
         return []; // Return empty burndown
       }
 
+      // Status names that indicate "done" category
+      const doneStatuses = ['done', 'closed', 'resolved', 'complete', 'completed', 'released', 'deployed'];
+      const isDoneStatus = (statusName) => {
+        if (!statusName) return false;
+        const lower = statusName.toLowerCase();
+        return doneStatuses.some(s => lower.includes(s));
+      };
+
+      // Pre-process issues to build timeline of status changes
+      const issueTimelines = issues.map(issue => {
+        const changelog = issue.changelog?.histories || [];
+        const storyPoints = issue.fields.customfield_10061 || 0;
+        const issueCreated = new Date(issue.fields.created);
+
+        // Current status from the issue fields
+        const currentStatus = issue.fields.status?.name || '';
+        const currentStatusCategory = issue.fields.status?.statusCategory?.key || '';
+        const isCurrentlyDone = currentStatusCategory === 'done' || isDoneStatus(currentStatus);
+
+        // Build timeline of version membership and status changes
+        const versionChanges = []; // { date, inVersion: true/false }
+        const statusChanges = []; // { date, isDone: true/false }
+
+        // Sort changelog by date
+        const sortedHistory = [...changelog].sort((a, b) =>
+          new Date(a.created) - new Date(b.created)
+        );
+
+        for (const history of sortedHistory) {
+          const historyDate = new Date(history.created);
+
+          for (const item of history.items) {
+            // Track version changes
+            if (item.field === 'Fix Version') {
+              if (item.toString?.includes(versionName)) {
+                versionChanges.push({ date: historyDate, inVersion: true });
+              }
+              if (item.fromString?.includes(versionName)) {
+                versionChanges.push({ date: historyDate, inVersion: false });
+              }
+            }
+
+            // Track status changes - check both the new status name and if it's a done transition
+            if (item.field === 'status') {
+              const newStatus = item.toString || '';
+              const wasDone = isDoneStatus(newStatus);
+              statusChanges.push({ date: historyDate, isDone: wasDone, status: newStatus });
+            }
+          }
+        }
+
+        return {
+          key: issue.key,
+          storyPoints,
+          issueCreated,
+          currentlyInVersion: issue.fields.fixVersions?.some(v => v.name === versionName) || false,
+          isCurrentlyDone,
+          versionChanges,
+          statusChanges
+        };
+      });
+
       // Build daily snapshots
       const burndownData = [];
       let currentDate = new Date(releaseStart);
@@ -629,50 +702,50 @@ class JiraService {
       while (currentDate <= releaseEnd) {
         let scopePoints = 0;
         let completedPoints = 0;
+        const isToday = currentDate.toDateString() === today.toDateString();
+        const isFutureDate = currentDate > today;
 
-        for (const issue of issues) {
-          const changelog = issue.changelog?.histories || [];
-          const storyPoints = issue.fields.customfield_10061 || 0;
+        for (const timeline of issueTimelines) {
+          // Skip if issue wasn't created yet
+          if (timeline.issueCreated > currentDate) continue;
 
-          // Check if issue was in scope at this date
+          // Determine if issue was in version at this date
           let inVersion = false;
-          let isCompleted = false;
-          const issueCreated = new Date(issue.fields.created);
 
-          // Start with assumption: if created before date and has version, it was in scope
-          if (issueCreated <= currentDate) {
-            // Check changelog for version changes
-            let lastVersionStatus = issue.fields.fixVersions?.some(v => v.name === versionName);
-
-            for (const history of changelog) {
-              const historyDate = new Date(history.created);
-              if (historyDate > currentDate) break;
-
-              for (const item of history.items) {
-                if (item.field === 'Fix Version') {
-                  if (item.toString?.includes(versionName)) {
-                    lastVersionStatus = true;
-                  } else if (item.fromString?.includes(versionName)) {
-                    lastVersionStatus = false;
-                  }
-                }
-                if (item.field === 'status') {
-                  // Check if moved to done category
-                  isCompleted = ['Done', 'Closed', 'Resolved'].some(s =>
-                    item.toString?.toLowerCase().includes(s.toLowerCase())
-                  );
-                }
-              }
-            }
-
-            inVersion = lastVersionStatus;
+          // Check version changes up to this date
+          const relevantVersionChanges = timeline.versionChanges.filter(vc => vc.date <= currentDate);
+          if (relevantVersionChanges.length > 0) {
+            // Use the last change
+            inVersion = relevantVersionChanges[relevantVersionChanges.length - 1].inVersion;
+          } else {
+            // No changes found - check if it's currently in version and was created before this date
+            // This handles issues that were added to version at creation
+            inVersion = timeline.currentlyInVersion;
           }
 
-          if (inVersion) {
-            scopePoints += storyPoints;
-            if (isCompleted) {
-              completedPoints += storyPoints;
+          if (!inVersion) continue;
+
+          // Add to scope
+          scopePoints += timeline.storyPoints;
+
+          // Determine if issue was completed at this date
+          let isDone = false;
+
+          if (isFutureDate || isToday) {
+            // For today/future, use current status
+            isDone = timeline.isCurrentlyDone;
+          } else {
+            // For past dates, check status changes
+            const relevantStatusChanges = timeline.statusChanges.filter(sc => sc.date <= currentDate);
+            if (relevantStatusChanges.length > 0) {
+              // Use the last status change
+              isDone = relevantStatusChanges[relevantStatusChanges.length - 1].isDone;
             }
+            // If no status changes found before this date, the issue wasn't done yet
+          }
+
+          if (isDone) {
+            completedPoints += timeline.storyPoints;
           }
         }
 
@@ -684,6 +757,12 @@ class JiraService {
         });
 
         currentDate = new Date(currentDate.getTime() + dayMs);
+      }
+
+      console.log(`[getVersionBurndown] Generated ${burndownData.length} data points`);
+      if (burndownData.length > 0) {
+        const last = burndownData[burndownData.length - 1];
+        console.log(`[getVersionBurndown] Final: scope=${last.scopePoints}, completed=${last.completedPoints}, remaining=${last.remainingPoints}`);
       }
 
       return burndownData;

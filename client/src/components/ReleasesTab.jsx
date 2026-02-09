@@ -16,6 +16,52 @@ const formatNumber = (num) => {
   return Number(num).toFixed(1).replace(/\.0$/, '');
 };
 
+// Status workflow order for sorting (early stages first)
+const STATUS_ORDER = {
+  // Early stages
+  'pending triage': 1,
+  'triage': 2,
+  'pending requirements': 3,
+  'requirements': 4,
+  'backlog': 5,
+  'to do': 6,
+  'todo': 6,
+  'open': 7,
+  'new': 8,
+  // In progress stages
+  'in development': 10,
+  'in progress': 11,
+  'development': 12,
+  'coding': 13,
+  'implementation': 14,
+  // Review stages
+  'pending review': 20,
+  'code review': 21,
+  'in review': 22,
+  'review': 23,
+  // Testing stages
+  'ready for qa': 30,
+  'in qa': 31,
+  'testing': 32,
+  'qa': 33,
+  // Final stages
+  'pending deployment': 40,
+  'ready for deployment': 41,
+  'deploying': 42,
+  'deployed': 43,
+  'done': 50,
+  'closed': 51,
+  'resolved': 52,
+  'complete': 53,
+  'completed': 54
+};
+
+const getStatusOrder = (status) => {
+  if (!status) return 999;
+  const normalized = status.toLowerCase().trim();
+  return STATUS_ORDER[normalized] ?? 25; // Default to middle of workflow
+};
+
 export default function ReleasesTab({ credentials, boardId, boardName }) {
   const [releases, setReleases] = useState([]);
   const [selectedRelease, setSelectedRelease] = useState(null);
@@ -189,6 +235,19 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
     };
   }, [releaseDetails]);
 
+  // Calculate percentages for executive summary
+  const statusPercentages = useMemo(() => {
+    if (!releaseDetails?.metrics) return { todo: 0, inProgress: 0, done: 0 };
+    const { totalIssues, completedIssues, inProgressIssues, todoIssues } = releaseDetails.metrics;
+    if (totalIssues === 0) return { todo: 0, inProgress: 0, done: 0 };
+
+    return {
+      todo: Math.round((todoIssues / totalIssues) * 100),
+      inProgress: Math.round((inProgressIssues / totalIssues) * 100),
+      done: Math.round((completedIssues / totalIssues) * 100)
+    };
+  }, [releaseDetails]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -271,7 +330,7 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
 
       {selectedRelease && releaseDetails && !loadingDetails && (
         <>
-          {/* Executive Summary Card */}
+          {/* Executive Summary Card - Enhanced */}
           <div className="card">
             <div className="flex items-start justify-between mb-6">
               <div>
@@ -293,36 +352,130 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
               </div>
             </div>
 
-            {/* Key Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-sm text-gray-600">Issues</div>
+            {/* Progress Bar - Visual Status Breakdown */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="font-medium text-gray-700">Overall Progress</span>
+                <span className="text-gray-500">
+                  {releaseDetails.metrics.completedIssues} of {releaseDetails.metrics.totalIssues} issues completed
+                </span>
+              </div>
+              <div className="h-4 bg-gray-100 rounded-full overflow-hidden flex">
+                {releaseDetails.metrics.totalIssues > 0 && (
+                  <>
+                    {/* Order: To Do (gray) → In Progress (blue) → Done (green) */}
+                    <div
+                      className="bg-gray-300 h-full transition-all duration-500"
+                      style={{ width: `${statusPercentages.todo}%` }}
+                      title={`To Do: ${statusPercentages.todo}%`}
+                    />
+                    <div
+                      className="bg-blue-500 h-full transition-all duration-500"
+                      style={{ width: `${statusPercentages.inProgress}%` }}
+                      title={`In Progress: ${statusPercentages.inProgress}%`}
+                    />
+                    <div
+                      className="bg-green-500 h-full transition-all duration-500"
+                      style={{ width: `${statusPercentages.done}%` }}
+                      title={`Done: ${statusPercentages.done}%`}
+                    />
+                  </>
+                )}
+              </div>
+              {/* Status Legend with Percentages */}
+              <div className="flex items-center justify-center gap-6 mt-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-gray-300"></div>
+                  <span className="text-sm text-gray-600">
+                    To Do <span className="font-semibold text-gray-900">{statusPercentages.todo}%</span>
+                    <span className="text-gray-400 ml-1">({releaseDetails.metrics.todoIssues})</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                  <span className="text-sm text-gray-600">
+                    In Progress <span className="font-semibold text-blue-600">{statusPercentages.inProgress}%</span>
+                    <span className="text-gray-400 ml-1">({releaseDetails.metrics.inProgressIssues})</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  <span className="text-sm text-gray-600">
+                    Done <span className="font-semibold text-green-600">{statusPercentages.done}%</span>
+                    <span className="text-gray-400 ml-1">({releaseDetails.metrics.completedIssues})</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Key Metrics Grid - Enhanced */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200">
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Issues</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {releaseDetails.executiveSummary.completion.issues}
+                  {releaseDetails.metrics.totalIssues}
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-sm text-gray-600">Story Points</div>
-                <div className="text-2xl font-bold text-primary-600">
-                  {releaseDetails.executiveSummary.completion.storyPoints}
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+                <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Story Points</div>
+                <div className="text-2xl font-bold text-blue-700">
+                  {releaseDetails.metrics.completedStoryPoints}/{releaseDetails.metrics.totalStoryPoints}
+                </div>
+                <div className="text-xs text-blue-500 mt-1">
+                  {releaseDetails.metrics.storyPointsCompletion}% complete
                 </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-sm text-gray-600">Scope Creep</div>
-                <div className={`text-2xl font-bold ${
+              <div className={`rounded-xl p-4 border ${
+                releaseDetails.executiveSummary.scopeChanges.scopeCreep > 20
+                  ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
+                  : releaseDetails.executiveSummary.scopeChanges.scopeCreep > 10
+                    ? 'bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200'
+                    : 'bg-gradient-to-br from-green-50 to-green-100 border-green-200'
+              }`}>
+                <div className={`text-xs uppercase tracking-wide mb-1 ${
                   releaseDetails.executiveSummary.scopeChanges.scopeCreep > 20 ? 'text-red-600' :
                   releaseDetails.executiveSummary.scopeChanges.scopeCreep > 10 ? 'text-yellow-600' :
                   'text-green-600'
+                }`}>Scope Creep</div>
+                <div className={`text-2xl font-bold ${
+                  releaseDetails.executiveSummary.scopeChanges.scopeCreep > 20 ? 'text-red-700' :
+                  releaseDetails.executiveSummary.scopeChanges.scopeCreep > 10 ? 'text-yellow-700' :
+                  'text-green-700'
                 }`}>
                   {releaseDetails.executiveSummary.scopeChanges.scopeCreep}%
                 </div>
+                <div className={`text-xs mt-1 ${
+                  releaseDetails.executiveSummary.scopeChanges.scopeCreep > 20 ? 'text-red-500' :
+                  releaseDetails.executiveSummary.scopeChanges.scopeCreep > 10 ? 'text-yellow-500' :
+                  'text-green-500'
+                }`}>
+                  +{releaseDetails.executiveSummary.scopeChanges.addedAfterStart} items added
+                </div>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="text-sm text-gray-600">Blocked Items</div>
-                <div className={`text-2xl font-bold ${
+              <div className={`rounded-xl p-4 border ${
+                releaseDetails.executiveSummary.blockedItems > 0
+                  ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
+                  : 'bg-gradient-to-br from-green-50 to-green-100 border-green-200'
+              }`}>
+                <div className={`text-xs uppercase tracking-wide mb-1 ${
                   releaseDetails.executiveSummary.blockedItems > 0 ? 'text-red-600' : 'text-green-600'
+                }`}>Blocked Items</div>
+                <div className={`text-2xl font-bold ${
+                  releaseDetails.executiveSummary.blockedItems > 0 ? 'text-red-700' : 'text-green-700'
                 }`}>
                   {releaseDetails.executiveSummary.blockedItems}
+                </div>
+                {releaseDetails.executiveSummary.blockedItems > 0 && (
+                  <div className="text-xs text-red-500 mt-1">Needs attention</div>
+                )}
+              </div>
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+                <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Removed</div>
+                <div className="text-2xl font-bold text-purple-700">
+                  {releaseDetails.executiveSummary.scopeChanges.removed}
+                </div>
+                <div className="text-xs text-purple-500 mt-1">
+                  items removed
                 </div>
               </div>
             </div>
@@ -330,7 +483,12 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
             {/* Risks */}
             {releaseDetails.executiveSummary.risks.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <h4 className="font-semibold text-red-800 mb-2">Risks & Concerns</h4>
+                <h4 className="font-semibold text-red-800 mb-2 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  Risks & Concerns
+                </h4>
                 <ul className="space-y-1">
                   {releaseDetails.executiveSummary.risks.map((risk, idx) => (
                     <li key={idx} className="flex items-start gap-2 text-sm text-red-700">
@@ -339,6 +497,44 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Quick Actions / Insights */}
+            {releaseDetails.metrics.totalIssues > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex flex-wrap gap-2">
+                  {releaseDetails.metrics.todoIssues > 0 && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                      <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                      {releaseDetails.metrics.todoIssues} not started
+                    </span>
+                  )}
+                  {releaseDetails.issues.filter(i => i.assignee === 'Unassigned').length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      {releaseDetails.issues.filter(i => i.assignee === 'Unassigned').length} unassigned
+                    </span>
+                  )}
+                  {releaseDetails.issues.filter(i => i.priority === 'Highest' || i.priority === 'High').length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
+                      {releaseDetails.issues.filter(i => i.priority === 'Highest' || i.priority === 'High').length} high priority
+                    </span>
+                  )}
+                  {releaseDetails.issues.filter(i => i.type === 'Bug').length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {releaseDetails.issues.filter(i => i.type === 'Bug').length} bugs
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -430,6 +626,8 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
                   credentials={credentials}
                   showDependencies
                   showAddedDate
+                  defaultSortField="status"
+                  defaultSortDir="asc"
                 />
               )}
 
@@ -440,6 +638,8 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
                   showDependencies
                   showAddedDate
                   emptyMessage="No issues were added before the release start date"
+                  defaultSortField="status"
+                  defaultSortDir="asc"
                 />
               )}
 
@@ -451,6 +651,8 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
                   showAddedDate
                   emptyMessage="No issues were added after the release start date"
                   highlightColor="yellow"
+                  defaultSortField="status"
+                  defaultSortDir="asc"
                 />
               )}
 
@@ -479,8 +681,68 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
   );
 }
 
-// Issue Table Component
-function IssueTable({ issues, credentials, showDependencies, showAddedDate, emptyMessage, highlightColor }) {
+// Sortable Issue Table Component
+function IssueTable({ issues, credentials, showDependencies, showAddedDate, emptyMessage, highlightColor, defaultSortField = 'status', defaultSortDir = 'asc' }) {
+  const [sortField, setSortField] = useState(defaultSortField);
+  const [sortDir, setSortDir] = useState(defaultSortDir);
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedIssues = useMemo(() => {
+    const sorted = [...issues].sort((a, b) => {
+      let aVal, bVal;
+
+      switch (sortField) {
+        case 'key':
+          // Sort by project key then number
+          const aMatch = a.key.match(/^([A-Z]+)-(\d+)$/);
+          const bMatch = b.key.match(/^([A-Z]+)-(\d+)$/);
+          if (aMatch && bMatch) {
+            if (aMatch[1] !== bMatch[1]) return aMatch[1].localeCompare(bMatch[1]);
+            return parseInt(aMatch[2]) - parseInt(bMatch[2]);
+          }
+          return a.key.localeCompare(b.key);
+        case 'summary':
+          return a.summary.localeCompare(b.summary);
+        case 'type':
+          return a.type.localeCompare(b.type);
+        case 'status':
+          // Use workflow order
+          aVal = getStatusOrder(a.status);
+          bVal = getStatusOrder(b.status);
+          return aVal - bVal;
+        case 'assignee':
+          aVal = a.assignee || 'ZZZZZ'; // Unassigned at end
+          bVal = b.assignee || 'ZZZZZ';
+          return aVal.localeCompare(bVal);
+        case 'storyPoints':
+          aVal = a.storyPoints || 0;
+          bVal = b.storyPoints || 0;
+          return aVal - bVal;
+        case 'addedDate':
+          aVal = new Date(a.addedToVersionDate || 0);
+          bVal = new Date(b.addedToVersionDate || 0);
+          return aVal - bVal;
+        case 'priority':
+          const priorityOrder = { 'Highest': 1, 'High': 2, 'Medium': 3, 'Low': 4, 'Lowest': 5 };
+          aVal = priorityOrder[a.priority] || 3;
+          bVal = priorityOrder[b.priority] || 3;
+          return aVal - bVal;
+        default:
+          return 0;
+      }
+    });
+
+    return sortDir === 'desc' ? sorted.reverse() : sorted;
+  }, [issues, sortField, sortDir]);
+
   if (issues.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -491,22 +753,41 @@ function IssueTable({ issues, credentials, showDependencies, showAddedDate, empt
 
   const bgColor = highlightColor === 'yellow' ? 'bg-yellow-50' : '';
 
+  const SortHeader = ({ field, children, className = '' }) => (
+    <th
+      className={`px-3 py-2 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none ${className}`}
+      onClick={() => handleSort(field)}
+    >
+      <div className="flex items-center gap-1">
+        {children}
+        <span className="text-gray-400">
+          {sortField === field ? (
+            sortDir === 'asc' ? '↑' : '↓'
+          ) : (
+            <span className="opacity-0 group-hover:opacity-50">↕</span>
+          )}
+        </span>
+      </div>
+    </th>
+  );
+
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-50">
         <tr>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Key</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Summary</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Assignee</th>
-          <th className="px-3 py-2 text-center font-medium text-gray-600">SP</th>
-          {showAddedDate && <th className="px-3 py-2 text-left font-medium text-gray-600">Added</th>}
+          <SortHeader field="key">Key</SortHeader>
+          <SortHeader field="summary">Summary</SortHeader>
+          <SortHeader field="type">Type</SortHeader>
+          <SortHeader field="status">Status</SortHeader>
+          <SortHeader field="priority">Priority</SortHeader>
+          <SortHeader field="assignee">Assignee</SortHeader>
+          <SortHeader field="storyPoints" className="text-center">SP</SortHeader>
+          {showAddedDate && <SortHeader field="addedDate">Added</SortHeader>}
           {showDependencies && <th className="px-3 py-2 text-left font-medium text-gray-600">Dependencies</th>}
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-100">
-        {issues.map(issue => (
+        {sortedIssues.map(issue => (
           <tr key={issue.key} className={`hover:bg-gray-50 ${bgColor}`}>
             <td className="px-3 py-2">
               <a
@@ -541,8 +822,21 @@ function IssueTable({ issues, credentials, showDependencies, showAddedDate, empt
                 {issue.status}
               </span>
             </td>
+            <td className="px-3 py-2">
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                issue.priority === 'Highest' ? 'bg-red-100 text-red-700' :
+                issue.priority === 'High' ? 'bg-orange-100 text-orange-700' :
+                issue.priority === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
+                issue.priority === 'Low' ? 'bg-green-100 text-green-700' :
+                'bg-gray-100 text-gray-600'
+              }`}>
+                {issue.priority || 'None'}
+              </span>
+            </td>
             <td className="px-3 py-2 text-gray-600">
-              {issue.assignee}
+              {issue.assignee === 'Unassigned' ? (
+                <span className="text-orange-500 italic">Unassigned</span>
+              ) : issue.assignee}
             </td>
             <td className="px-3 py-2 text-center font-medium">
               {issue.storyPoints || '-'}
@@ -588,8 +882,41 @@ function IssueTable({ issues, credentials, showDependencies, showAddedDate, empt
   );
 }
 
-// Removed Issues Table
+// Sortable Removed Issues Table
 function RemovedIssueTable({ issues, credentials, emptyMessage }) {
+  const [sortField, setSortField] = useState('key');
+  const [sortDir, setSortDir] = useState('asc');
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedIssues = useMemo(() => {
+    const sorted = [...issues].sort((a, b) => {
+      switch (sortField) {
+        case 'key':
+          return a.key.localeCompare(b.key);
+        case 'summary':
+          return a.summary.localeCompare(b.summary);
+        case 'type':
+          return a.type.localeCompare(b.type);
+        case 'status':
+          return getStatusOrder(a.status) - getStatusOrder(b.status);
+        case 'movedTo':
+          return (a.movedTo || '').localeCompare(b.movedTo || '');
+        default:
+          return 0;
+      }
+    });
+
+    return sortDir === 'desc' ? sorted.reverse() : sorted;
+  }, [issues, sortField, sortDir]);
+
   if (issues.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -598,19 +925,35 @@ function RemovedIssueTable({ issues, credentials, emptyMessage }) {
     );
   }
 
+  const SortHeader = ({ field, children }) => (
+    <th
+      className="px-3 py-2 text-left font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+      onClick={() => handleSort(field)}
+    >
+      <div className="flex items-center gap-1">
+        {children}
+        <span className="text-gray-400">
+          {sortField === field ? (
+            sortDir === 'asc' ? '↑' : '↓'
+          ) : ''}
+        </span>
+      </div>
+    </th>
+  );
+
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-50">
         <tr>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Key</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Summary</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
-          <th className="px-3 py-2 text-left font-medium text-gray-600">Moved To</th>
+          <SortHeader field="key">Key</SortHeader>
+          <SortHeader field="summary">Summary</SortHeader>
+          <SortHeader field="type">Type</SortHeader>
+          <SortHeader field="status">Status</SortHeader>
+          <SortHeader field="movedTo">Moved To</SortHeader>
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-100">
-        {issues.map(issue => (
+        {sortedIssues.map(issue => (
           <tr key={issue.key} className="hover:bg-gray-50 bg-red-50">
             <td className="px-3 py-2">
               <a

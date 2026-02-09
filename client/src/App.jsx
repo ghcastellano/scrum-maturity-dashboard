@@ -157,7 +157,7 @@ function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-6 py-4 text-center text-sm text-gray-600">
-          <p>Scrum Maturity Model v1.0 | Built with React + Chart.js</p>
+          <p>Scrum Maturity Model v4.0 | Built with React + Chart.js</p>
         </div>
       </footer>
     </div>

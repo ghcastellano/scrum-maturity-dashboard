@@ -500,20 +500,23 @@ class DashboardController {
       // Get all versions
       const versions = await jiraService.getProjectVersions(projectKey);
 
-      // Format and sort - unreleased first (by releaseDate), then released (by releaseDate desc)
-      const releases = versions.map(v => ({
-        id: v.id,
-        name: v.name,
-        description: v.description || '',
-        released: v.released || false,
-        archived: v.archived || false,
-        releaseDate: v.releaseDate || null,
-        startDate: v.startDate || null,
-        overdue: v.overdue || false,
-        projectId: v.projectId
-      }));
+      // Filter out archived releases and format
+      const releases = versions
+        .filter(v => !v.archived) // Exclude archived/deleted releases
+        .map(v => ({
+          id: v.id,
+          name: v.name,
+          description: v.description || '',
+          released: v.released || false,
+          archived: v.archived || false,
+          releaseDate: v.releaseDate || null,
+          startDate: v.startDate || null,
+          overdue: v.overdue || false,
+          projectId: v.projectId
+        }));
 
       // Sort: unreleased by date (closest first), then released by date (most recent first)
+      // For released versions, only show the 10 most recent
       releases.sort((a, b) => {
         if (a.released !== b.released) return a.released ? 1 : -1;
         const dateA = a.releaseDate ? new Date(a.releaseDate) : new Date('9999-12-31');
@@ -521,11 +524,16 @@ class DashboardController {
         return a.released ? dateB - dateA : dateA - dateB;
       });
 
+      // Limit released versions to 10 most recent
+      const unreleased = releases.filter(r => !r.released);
+      const released = releases.filter(r => r.released).slice(0, 10);
+      const filteredReleases = [...unreleased, ...released];
+
       res.json({
         success: true,
-        releases,
+        releases: filteredReleases,
         projectKey,
-        message: `Found ${releases.length} releases`
+        message: `Found ${filteredReleases.length} releases (${unreleased.length} unreleased, ${released.length} released)`
       });
     } catch (error) {
       console.error('Error fetching releases:', error);

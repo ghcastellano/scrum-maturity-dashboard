@@ -76,6 +76,19 @@ app.post('/api/diagnostics', (req, res) =>
   dashboardController.diagnostics(req, res)
 );
 
+// Releases / Versions endpoints
+app.post('/api/releases', (req, res) =>
+  dashboardController.getReleases(req, res)
+);
+
+app.post('/api/releases/details', (req, res) =>
+  dashboardController.getReleaseDetails(req, res)
+);
+
+app.post('/api/releases/burndown', (req, res) =>
+  dashboardController.getReleaseBurndown(req, res)
+);
+
 // Metrics History endpoints
 app.get('/api/history/boards', async (req, res) => {
   try {

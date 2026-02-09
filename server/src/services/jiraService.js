@@ -327,6 +327,280 @@ class JiraService {
       throw new Error(`Failed to get sample issue: ${error.message}`);
     }
   }
+
+  // =====================
+  // RELEASES / VERSIONS
+  // =====================
+
+  // Get project key from board
+  async getProjectKeyFromBoard(boardId) {
+    try {
+      const config = await this.getBoardConfiguration(boardId);
+      // Board filter contains project info
+      const filterResponse = await this.api.get(`/filter/${config.filter.id}`);
+      const jql = filterResponse.data.jql || '';
+      // Extract project from JQL (e.g., "project = PROJ")
+      const match = jql.match(/project\s*=\s*["']?(\w+)["']?/i);
+      if (match) {
+        return match[1];
+      }
+      // Fallback: get from board location
+      if (config.location?.projectKey) {
+        return config.location.projectKey;
+      }
+      throw new Error('Could not determine project key from board');
+    } catch (error) {
+      throw new Error(`Failed to get project key: ${error.message}`);
+    }
+  }
+
+  // Get all versions/releases for a project
+  async getProjectVersions(projectKey, status = null) {
+    try {
+      const params = { maxResults: 100, orderBy: '-releaseDate' };
+      if (status) params.status = status;
+
+      const response = await this.api.get(`/project/${projectKey}/version`, { params });
+      return response.data.values || response.data || [];
+    } catch (error) {
+      throw new Error(`Failed to fetch versions: ${error.message}`);
+    }
+  }
+
+  // Get issues in a specific version with changelog
+  async getVersionIssues(projectKey, versionId, versionName) {
+    try {
+      let allIssues = [];
+      let startAt = 0;
+      const maxResults = 100;
+
+      // Fetch all issues with pagination
+      while (true) {
+        const response = await this.api.get('/search', {
+          params: {
+            jql: `project = "${projectKey}" AND fixVersion = "${versionName}"`,
+            fields: 'summary,status,issuetype,priority,assignee,created,updated,fixVersions,issuelinks,customfield_10061',
+            expand: 'changelog',
+            startAt,
+            maxResults
+          }
+        });
+
+        const issues = response.data.issues || [];
+        allIssues = allIssues.concat(issues);
+
+        if (issues.length < maxResults) break;
+        startAt += maxResults;
+      }
+
+      return allIssues;
+    } catch (error) {
+      throw new Error(`Failed to fetch version issues: ${error.message}`);
+    }
+  }
+
+  // Get detailed release data with issue history analysis
+  async getReleaseDetails(projectKey, versionId, versionName, startDate) {
+    try {
+      const issues = await this.getVersionIssues(projectKey, versionId, versionName);
+      const releaseStartDate = startDate ? new Date(startDate) : null;
+
+      const issueDetails = [];
+      const addedBeforeStart = [];
+      const addedAfterStart = [];
+      const removedIssues = [];
+
+      for (const issue of issues) {
+        const changelog = issue.changelog?.histories || [];
+
+        // Find when issue was added to this version
+        let addedToVersionDate = null;
+        let wasAddedToVersion = false;
+
+        for (const history of changelog) {
+          for (const item of history.items) {
+            if (item.field === 'Fix Version' && item.toString?.includes(versionName)) {
+              addedToVersionDate = new Date(history.created);
+              wasAddedToVersion = true;
+              break;
+            }
+          }
+          if (wasAddedToVersion) break;
+        }
+
+        // If no changelog entry found, assume it was added at creation
+        if (!addedToVersionDate) {
+          addedToVersionDate = new Date(issue.fields.created);
+        }
+
+        // Get dependencies (issue links)
+        const dependencies = (issue.fields.issuelinks || []).map(link => ({
+          type: link.type?.name || 'Related',
+          direction: link.inwardIssue ? 'inward' : 'outward',
+          linkedIssue: link.inwardIssue || link.outwardIssue,
+          description: link.inwardIssue ? link.type?.inward : link.type?.outward
+        }));
+
+        const detail = {
+          key: issue.key,
+          summary: issue.fields.summary,
+          status: issue.fields.status?.name || 'Unknown',
+          statusCategory: issue.fields.status?.statusCategory?.key || 'undefined',
+          type: issue.fields.issuetype?.name || 'Unknown',
+          priority: issue.fields.priority?.name || 'None',
+          assignee: issue.fields.assignee?.displayName || 'Unassigned',
+          storyPoints: issue.fields.customfield_10061 || 0,
+          addedToVersionDate: addedToVersionDate.toISOString(),
+          dependencies,
+          created: issue.fields.created,
+          updated: issue.fields.updated
+        };
+
+        issueDetails.push(detail);
+
+        // Categorize by when added
+        if (releaseStartDate) {
+          if (addedToVersionDate < releaseStartDate) {
+            addedBeforeStart.push(detail);
+          } else {
+            addedAfterStart.push(detail);
+          }
+        }
+      }
+
+      // Find issues that were removed from this version (search changelog of all project issues)
+      // This is expensive, so we limit to recent changes
+      try {
+        const recentlyChangedResponse = await this.api.get('/search', {
+          params: {
+            jql: `project = "${projectKey}" AND fixVersion changed FROM "${versionName}" ORDER BY updated DESC`,
+            fields: 'summary,status,issuetype,fixVersions',
+            maxResults: 50
+          }
+        });
+
+        for (const issue of (recentlyChangedResponse.data.issues || [])) {
+          const currentVersions = (issue.fields.fixVersions || []).map(v => v.name);
+          removedIssues.push({
+            key: issue.key,
+            summary: issue.fields.summary,
+            status: issue.fields.status?.name || 'Unknown',
+            type: issue.fields.issuetype?.name || 'Unknown',
+            movedTo: currentVersions.length > 0 ? currentVersions.join(', ') : 'No version'
+          });
+        }
+      } catch (err) {
+        console.warn('Could not fetch removed issues:', err.message);
+      }
+
+      // Calculate metrics
+      const totalIssues = issueDetails.length;
+      const completedIssues = issueDetails.filter(i => i.statusCategory === 'done').length;
+      const inProgressIssues = issueDetails.filter(i => i.statusCategory === 'indeterminate').length;
+      const todoIssues = issueDetails.filter(i => i.statusCategory === 'new' || i.statusCategory === 'undefined').length;
+      const totalStoryPoints = issueDetails.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+      const completedStoryPoints = issueDetails.filter(i => i.statusCategory === 'done').reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+
+      return {
+        issues: issueDetails,
+        addedBeforeStart,
+        addedAfterStart,
+        removedIssues,
+        metrics: {
+          totalIssues,
+          completedIssues,
+          inProgressIssues,
+          todoIssues,
+          completionPercentage: totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0,
+          totalStoryPoints,
+          completedStoryPoints,
+          storyPointsCompletion: totalStoryPoints > 0 ? Math.round((completedStoryPoints / totalStoryPoints) * 100) : 0
+        }
+      };
+    } catch (error) {
+      throw new Error(`Failed to get release details: ${error.message}`);
+    }
+  }
+
+  // Get burndown data for a version
+  async getVersionBurndown(projectKey, versionName, startDate, endDate) {
+    try {
+      const releaseStart = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const releaseEnd = endDate ? new Date(endDate) : new Date();
+
+      // Get all issues that were ever in this version
+      const issues = await this.getVersionIssues(projectKey, null, versionName);
+
+      // Build daily snapshots
+      const burndownData = [];
+      const dayMs = 24 * 60 * 60 * 1000;
+      let currentDate = new Date(releaseStart);
+
+      while (currentDate <= releaseEnd) {
+        let scopePoints = 0;
+        let completedPoints = 0;
+
+        for (const issue of issues) {
+          const changelog = issue.changelog?.histories || [];
+          const storyPoints = issue.fields.customfield_10061 || 0;
+
+          // Check if issue was in scope at this date
+          let inVersion = false;
+          let isCompleted = false;
+          const issueCreated = new Date(issue.fields.created);
+
+          // Start with assumption: if created before date and has version, it was in scope
+          if (issueCreated <= currentDate) {
+            // Check changelog for version changes
+            let lastVersionStatus = issue.fields.fixVersions?.some(v => v.name === versionName);
+
+            for (const history of changelog) {
+              const historyDate = new Date(history.created);
+              if (historyDate > currentDate) break;
+
+              for (const item of history.items) {
+                if (item.field === 'Fix Version') {
+                  if (item.toString?.includes(versionName)) {
+                    lastVersionStatus = true;
+                  } else if (item.fromString?.includes(versionName)) {
+                    lastVersionStatus = false;
+                  }
+                }
+                if (item.field === 'status') {
+                  // Check if moved to done category
+                  isCompleted = ['Done', 'Closed', 'Resolved'].some(s =>
+                    item.toString?.toLowerCase().includes(s.toLowerCase())
+                  );
+                }
+              }
+            }
+
+            inVersion = lastVersionStatus;
+          }
+
+          if (inVersion) {
+            scopePoints += storyPoints;
+            if (isCompleted) {
+              completedPoints += storyPoints;
+            }
+          }
+        }
+
+        burndownData.push({
+          date: currentDate.toISOString().split('T')[0],
+          scopePoints,
+          completedPoints,
+          remainingPoints: scopePoints - completedPoints
+        });
+
+        currentDate = new Date(currentDate.getTime() + dayMs);
+      }
+
+      return burndownData;
+    } catch (error) {
+      throw new Error(`Failed to get version burndown: ${error.message}`);
+    }
+  }
 }
 
 export default JiraService;

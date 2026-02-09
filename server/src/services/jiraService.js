@@ -614,10 +614,13 @@ class JiraService {
       const releaseStart = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const releaseEnd = endDate ? new Date(endDate) : new Date();
       const today = new Date();
+      today.setHours(23, 59, 59, 999);
 
-      // Extend chart to today if the release date has passed but we want to show
-      // what happened after (e.g., items completed after the official release date)
-      const chartEnd = today > releaseEnd ? today : releaseEnd;
+      // Chart logic:
+      // - Never show future dates (we can't predict!)
+      // - If release already passed, extend to today to show post-release work
+      // - If release is in the future, only show up to today
+      const chartEnd = today; // Always end at today - no predictions!
 
       // Limit burndown to max 90 days to avoid very long calculations
       const maxDays = 90;

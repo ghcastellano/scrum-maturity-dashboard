@@ -336,19 +336,35 @@ class JiraService {
   async getProjectKeyFromBoard(boardId) {
     try {
       const config = await this.getBoardConfiguration(boardId);
-      // Board filter contains project info
-      const filterResponse = await this.api.get(`/filter/${config.filter.id}`);
-      const jql = filterResponse.data.jql || '';
-      // Extract project from JQL (e.g., "project = PROJ")
-      const match = jql.match(/project\s*=\s*["']?(\w+)["']?/i);
-      if (match) {
-        return match[1];
-      }
-      // Fallback: get from board location
+      console.log(`[getProjectKeyFromBoard] Board ${boardId} location:`, config.location);
+
+      // Try to get from board location first (most reliable)
       if (config.location?.projectKey) {
+        console.log(`[getProjectKeyFromBoard] Using location.projectKey: ${config.location.projectKey}`);
         return config.location.projectKey;
       }
-      throw new Error('Could not determine project key from board');
+
+      // Fallback: Board filter contains project info
+      const filterResponse = await this.api.get(`/filter/${config.filter.id}`);
+      const jql = filterResponse.data.jql || '';
+      console.log(`[getProjectKeyFromBoard] Filter JQL: ${jql}`);
+
+      // Try different patterns to extract project key
+      // Pattern 1: project = "KEY" or project = KEY or project = 'KEY'
+      let match = jql.match(/project\s*=\s*["']?([A-Za-z0-9_-]+)["']?/i);
+      if (match) {
+        console.log(`[getProjectKeyFromBoard] Extracted from JQL (=): ${match[1]}`);
+        return match[1];
+      }
+
+      // Pattern 2: project IN ("KEY") or project IN (KEY, KEY2)
+      match = jql.match(/project\s+IN\s*\(\s*["']?([A-Za-z0-9_-]+)["']?/i);
+      if (match) {
+        console.log(`[getProjectKeyFromBoard] Extracted from JQL (IN): ${match[1]}`);
+        return match[1];
+      }
+
+      throw new Error(`Could not determine project key from board. JQL: ${jql}`);
     } catch (error) {
       throw new Error(`Failed to get project key: ${error.message}`);
     }
@@ -382,11 +398,18 @@ class JiraService {
       const maxResults = 100;
       const escapedVersionName = this.escapeJqlString(versionName);
 
+      // First, try without project filter (version name should be unique enough)
+      // This handles cases where board spans multiple projects
+      const jqlWithProject = `project = "${projectKey}" AND fixVersion = "${escapedVersionName}"`;
+      const jqlVersionOnly = `fixVersion = "${escapedVersionName}"`;
+
+      console.log(`[getVersionIssues] Trying JQL: ${jqlWithProject}`);
+
       // Fetch all issues with pagination
       while (true) {
         const response = await this.api.get('/search', {
           params: {
-            jql: `project = "${projectKey}" AND fixVersion = "${escapedVersionName}"`,
+            jql: jqlWithProject,
             fields: 'summary,status,issuetype,priority,assignee,created,updated,fixVersions,issuelinks,customfield_10061',
             expand: 'changelog',
             startAt,
@@ -396,14 +419,30 @@ class JiraService {
 
         const issues = response.data.issues || [];
         allIssues = allIssues.concat(issues);
+        console.log(`[getVersionIssues] Found ${issues.length} issues (total: ${allIssues.length})`);
 
         if (issues.length < maxResults) break;
         startAt += maxResults;
       }
 
+      // If no issues found with project filter, try without it
+      if (allIssues.length === 0) {
+        console.log(`[getVersionIssues] No issues found with project filter, trying: ${jqlVersionOnly}`);
+        const response = await this.api.get('/search', {
+          params: {
+            jql: jqlVersionOnly,
+            fields: 'summary,status,issuetype,priority,assignee,created,updated,fixVersions,issuelinks,customfield_10061',
+            expand: 'changelog',
+            maxResults: 200
+          }
+        });
+        allIssues = response.data.issues || [];
+        console.log(`[getVersionIssues] Found ${allIssues.length} issues without project filter`);
+      }
+
       return allIssues;
     } catch (error) {
-      console.error(`JQL query failed for version "${versionName}":`, error.response?.data || error.message);
+      console.error(`[getVersionIssues] JQL query failed for version "${versionName}":`, error.response?.data || error.message);
       throw new Error(`Failed to fetch version issues: ${error.message}`);
     }
   }

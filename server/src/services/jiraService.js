@@ -411,7 +411,33 @@ class JiraService {
   // Get detailed release data with issue history analysis
   async getReleaseDetails(projectKey, versionId, versionName, startDate) {
     try {
-      const issues = await this.getVersionIssues(projectKey, versionId, versionName);
+      console.log(`[getReleaseDetails] Starting for version "${versionName}" (project: ${projectKey})`);
+
+      let issues = [];
+      try {
+        issues = await this.getVersionIssues(projectKey, versionId, versionName);
+        console.log(`[getReleaseDetails] Found ${issues.length} issues in version`);
+      } catch (issueErr) {
+        console.error(`[getReleaseDetails] Failed to fetch issues:`, issueErr.message);
+        // Return empty result instead of throwing
+        return {
+          issues: [],
+          addedBeforeStart: [],
+          addedAfterStart: [],
+          removedIssues: [],
+          metrics: {
+            totalIssues: 0,
+            completedIssues: 0,
+            inProgressIssues: 0,
+            todoIssues: 0,
+            completionPercentage: 0,
+            totalStoryPoints: 0,
+            completedStoryPoints: 0,
+            storyPointsCompletion: 0
+          }
+        };
+      }
+
       const releaseStartDate = startDate ? new Date(startDate) : null;
 
       const issueDetails = [];
@@ -478,9 +504,11 @@ class JiraService {
       }
 
       // Find issues that were removed from this version (search changelog of all project issues)
-      // This is expensive, so we limit to recent changes
-      const escapedVersionName = this.escapeJqlString(versionName);
+      // This is expensive and the JQL syntax may not be supported in all Jira instances
+      // So we make this completely optional - errors here won't break the response
+      console.log(`[getReleaseDetails] Attempting to fetch removed issues...`);
       try {
+        const escapedVersionName = this.escapeJqlString(versionName);
         const recentlyChangedResponse = await this.api.get('/search', {
           params: {
             jql: `project = "${projectKey}" AND fixVersion changed FROM "${escapedVersionName}" ORDER BY updated DESC`,
@@ -499,8 +527,10 @@ class JiraService {
             movedTo: currentVersions.length > 0 ? currentVersions.join(', ') : 'No version'
           });
         }
+        console.log(`[getReleaseDetails] Found ${removedIssues.length} removed issues`);
       } catch (err) {
-        console.warn('Could not fetch removed issues:', err.message);
+        // JQL "fixVersion changed FROM" may not be supported - this is OK
+        console.warn('[getReleaseDetails] Could not fetch removed issues (this is OK):', err.message);
       }
 
       // Calculate metrics
@@ -535,15 +565,31 @@ class JiraService {
   // Get burndown data for a version
   async getVersionBurndown(projectKey, versionName, startDate, endDate) {
     try {
+      console.log(`[getVersionBurndown] Starting for version "${versionName}"`);
+
       const releaseStart = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const releaseEnd = endDate ? new Date(endDate) : new Date();
 
+      // Limit burndown to max 90 days to avoid very long calculations
+      const maxDays = 90;
+      const dayMs = 24 * 60 * 60 * 1000;
+      if ((releaseEnd - releaseStart) / dayMs > maxDays) {
+        console.log(`[getVersionBurndown] Limiting burndown to last ${maxDays} days`);
+        releaseStart.setTime(releaseEnd.getTime() - (maxDays * dayMs));
+      }
+
       // Get all issues that were ever in this version
-      const issues = await this.getVersionIssues(projectKey, null, versionName);
+      let issues = [];
+      try {
+        issues = await this.getVersionIssues(projectKey, null, versionName);
+        console.log(`[getVersionBurndown] Found ${issues.length} issues`);
+      } catch (err) {
+        console.error(`[getVersionBurndown] Failed to fetch issues:`, err.message);
+        return []; // Return empty burndown
+      }
 
       // Build daily snapshots
       const burndownData = [];
-      const dayMs = 24 * 60 * 60 * 1000;
       let currentDate = new Date(releaseStart);
 
       while (currentDate <= releaseEnd) {

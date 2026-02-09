@@ -91,6 +91,43 @@ class ApiService {
     const response = await this.client.delete(`/history/board/${boardId}`);
     return response.data;
   }
+
+  // Releases / Versions endpoints
+  async getReleases(jiraUrl, email, apiToken, boardId) {
+    const response = await this.client.post('/releases', {
+      jiraUrl,
+      email,
+      apiToken,
+      boardId
+    });
+    return response.data;
+  }
+
+  async getReleaseDetails(jiraUrl, email, apiToken, boardId, versionId, versionName, startDate) {
+    const response = await this.client.post('/releases/details', {
+      jiraUrl,
+      email,
+      apiToken,
+      boardId,
+      versionId,
+      versionName,
+      startDate
+    });
+    return response.data;
+  }
+
+  async getReleaseBurndown(jiraUrl, email, apiToken, boardId, versionName, startDate, endDate) {
+    const response = await this.client.post('/releases/burndown', {
+      jiraUrl,
+      email,
+      apiToken,
+      boardId,
+      versionName,
+      startDate,
+      endDate
+    });
+    return response.data;
+  }
 }
 
 export default new ApiService();

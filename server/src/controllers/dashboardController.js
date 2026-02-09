@@ -482,6 +482,181 @@ class DashboardController {
       });
     }
   }
+
+  // =====================
+  // RELEASES / VERSIONS
+  // =====================
+
+  // Get releases/versions for a board's project
+  async getReleases(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardId } = req.body;
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      // Get project key from board
+      const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
+      console.log(`📦 Fetching releases for project ${projectKey} (board ${boardId})`);
+
+      // Get all versions
+      const versions = await jiraService.getProjectVersions(projectKey);
+
+      // Format and sort - unreleased first (by releaseDate), then released (by releaseDate desc)
+      const releases = versions.map(v => ({
+        id: v.id,
+        name: v.name,
+        description: v.description || '',
+        released: v.released || false,
+        archived: v.archived || false,
+        releaseDate: v.releaseDate || null,
+        startDate: v.startDate || null,
+        overdue: v.overdue || false,
+        projectId: v.projectId
+      }));
+
+      // Sort: unreleased by date (closest first), then released by date (most recent first)
+      releases.sort((a, b) => {
+        if (a.released !== b.released) return a.released ? 1 : -1;
+        const dateA = a.releaseDate ? new Date(a.releaseDate) : new Date('9999-12-31');
+        const dateB = b.releaseDate ? new Date(b.releaseDate) : new Date('9999-12-31');
+        return a.released ? dateB - dateA : dateA - dateB;
+      });
+
+      res.json({
+        success: true,
+        releases,
+        projectKey,
+        message: `Found ${releases.length} releases`
+      });
+    } catch (error) {
+      console.error('Error fetching releases:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get detailed release data
+  async getReleaseDetails(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardId, versionId, versionName, startDate } = req.body;
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      // Get project key from board
+      const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
+      console.log(`📦 Fetching release details for ${versionName} (project ${projectKey})`);
+
+      const details = await jiraService.getReleaseDetails(projectKey, versionId, versionName, startDate);
+
+      // Generate executive summary
+      const executiveSummary = this.generateExecutiveSummary(details, versionName, startDate);
+
+      res.json({
+        success: true,
+        details: {
+          ...details,
+          executiveSummary
+        },
+        projectKey,
+        versionName
+      });
+    } catch (error) {
+      console.error('Error fetching release details:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get release burndown data
+  async getReleaseBurndown(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardId, versionName, startDate, endDate } = req.body;
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
+      console.log(`📊 Fetching burndown for ${versionName} (project ${projectKey})`);
+
+      const burndown = await jiraService.getVersionBurndown(projectKey, versionName, startDate, endDate);
+
+      res.json({
+        success: true,
+        burndown,
+        projectKey,
+        versionName
+      });
+    } catch (error) {
+      console.error('Error fetching release burndown:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Helper: Generate executive summary for a release
+  generateExecutiveSummary(details, versionName, startDate) {
+    const { metrics, issues, addedAfterStart, removedIssues } = details;
+
+    // Determine health status
+    let healthStatus = 'On Track';
+    let healthColor = 'green';
+    const risks = [];
+
+    if (metrics.completionPercentage < 50) {
+      healthStatus = 'At Risk';
+      healthColor = 'red';
+      risks.push('Less than 50% of issues completed');
+    } else if (metrics.completionPercentage < 75) {
+      healthStatus = 'Needs Attention';
+      healthColor = 'yellow';
+    }
+
+    if (addedAfterStart.length > metrics.totalIssues * 0.2) {
+      risks.push(`Significant scope creep: ${addedAfterStart.length} items added after release start`);
+      if (healthColor === 'green') {
+        healthStatus = 'Needs Attention';
+        healthColor = 'yellow';
+      }
+    }
+
+    if (removedIssues.length > 5) {
+      risks.push(`${removedIssues.length} items removed from release`);
+    }
+
+    // Count blocked items (items with blocking dependencies)
+    const blockedItems = issues.filter(i =>
+      i.dependencies.some(d => d.type === 'Blocks' && d.direction === 'inward')
+    );
+    if (blockedItems.length > 0) {
+      risks.push(`${blockedItems.length} items have blocking dependencies`);
+    }
+
+    // Key statistics
+    const byStatus = {
+      done: issues.filter(i => i.statusCategory === 'done').length,
+      inProgress: issues.filter(i => i.statusCategory === 'indeterminate').length,
+      todo: issues.filter(i => i.statusCategory === 'new' || i.statusCategory === 'undefined').length
+    };
+
+    const byType = {};
+    issues.forEach(i => {
+      byType[i.type] = (byType[i.type] || 0) + 1;
+    });
+
+    return {
+      releaseName: versionName,
+      healthStatus,
+      healthColor,
+      completion: {
+        issues: `${metrics.completedIssues}/${metrics.totalIssues} (${metrics.completionPercentage}%)`,
+        storyPoints: `${metrics.completedStoryPoints}/${metrics.totalStoryPoints} (${metrics.storyPointsCompletion}%)`
+      },
+      scopeChanges: {
+        addedAfterStart: addedAfterStart.length,
+        removed: removedIssues.length,
+        scopeCreep: metrics.totalIssues > 0 ? Math.round((addedAfterStart.length / metrics.totalIssues) * 100) : 0
+      },
+      breakdown: {
+        byStatus,
+        byType
+      },
+      risks,
+      blockedItems: blockedItems.length
+    };
+  }
 }
 
 export default DashboardController;

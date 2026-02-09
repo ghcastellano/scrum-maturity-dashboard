@@ -17,6 +17,7 @@ import {
 import api from '../services/api';
 import MaturityBadge from './MaturityBadge';
 import MaturityLevelsReference from './MaturityLevelsReference';
+import ReleasesTab from './ReleasesTab';
 
 ChartJS.register(
   CategoryScale,
@@ -48,6 +49,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [selectedSprintIds, setSelectedSprintIds] = useState([]);
   const [showSprintSelector, setShowSprintSelector] = useState(false);
   const [loadingSprints, setLoadingSprints] = useState(false);
+  const [activeTab, setActiveTab] = useState('metrics');
 
   // Use prop credentials or locally fetched ones
   const credentials = credentialsProp || localCredentials;
@@ -764,8 +766,43 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               )}
             </div>
           )}
+
+          {/* Tab Navigation */}
+          <div className="flex border-b border-gray-200 mt-6">
+            <button
+              onClick={() => setActiveTab('metrics')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'metrics'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Metrics
+            </button>
+            <button
+              onClick={() => setActiveTab('releases')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'releases'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Releases
+            </button>
+          </div>
         </div>
 
+        {/* Releases Tab */}
+        {activeTab === 'releases' && (
+          <ReleasesTab
+            credentials={credentials}
+            boardId={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
+          />
+        )}
+
+        {/* Metrics Tab Content */}
+        {activeTab === 'metrics' && (
+        <>
         {/* Maturity Level Card */}
         <div className="card mb-8">
           {/* Header row */}
@@ -1200,6 +1237,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             })}
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

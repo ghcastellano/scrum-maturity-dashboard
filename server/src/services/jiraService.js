@@ -367,18 +367,26 @@ class JiraService {
     }
   }
 
+  // Escape version name for JQL queries
+  escapeJqlString(str) {
+    if (!str) return str;
+    // Escape special JQL characters
+    return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
   // Get issues in a specific version with changelog
   async getVersionIssues(projectKey, versionId, versionName) {
     try {
       let allIssues = [];
       let startAt = 0;
       const maxResults = 100;
+      const escapedVersionName = this.escapeJqlString(versionName);
 
       // Fetch all issues with pagination
       while (true) {
         const response = await this.api.get('/search', {
           params: {
-            jql: `project = "${projectKey}" AND fixVersion = "${versionName}"`,
+            jql: `project = "${projectKey}" AND fixVersion = "${escapedVersionName}"`,
             fields: 'summary,status,issuetype,priority,assignee,created,updated,fixVersions,issuelinks,customfield_10061',
             expand: 'changelog',
             startAt,
@@ -395,6 +403,7 @@ class JiraService {
 
       return allIssues;
     } catch (error) {
+      console.error(`JQL query failed for version "${versionName}":`, error.response?.data || error.message);
       throw new Error(`Failed to fetch version issues: ${error.message}`);
     }
   }
@@ -470,10 +479,11 @@ class JiraService {
 
       // Find issues that were removed from this version (search changelog of all project issues)
       // This is expensive, so we limit to recent changes
+      const escapedVersionName = this.escapeJqlString(versionName);
       try {
         const recentlyChangedResponse = await this.api.get('/search', {
           params: {
-            jql: `project = "${projectKey}" AND fixVersion changed FROM "${versionName}" ORDER BY updated DESC`,
+            jql: `project = "${projectKey}" AND fixVersion changed FROM "${escapedVersionName}" ORDER BY updated DESC`,
             fields: 'summary,status,issuetype,fixVersions',
             maxResults: 50
           }

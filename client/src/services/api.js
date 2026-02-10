@@ -100,6 +100,14 @@ class ApiService {
     return response.data;
   }
 
+  // Capacity metrics
+  async getCapacityMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false, sprintIds = null) {
+    const body = { jiraUrl, email, apiToken, boardId, sprintCount, forceRefresh };
+    if (sprintIds) body.sprintIds = sprintIds;
+    const response = await this.client.post('/metrics/capacity', body);
+    return response.data;
+  }
+
   // Releases / Versions endpoints
   async getReleases(jiraUrl, email, apiToken, boardId) {
     const response = await this.client.post('/releases', {

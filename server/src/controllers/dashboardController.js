@@ -599,10 +599,21 @@ class DashboardController {
       const released = releases.filter(r => r.released).slice(0, 10);
       const filteredReleases = [...unreleased, ...released];
 
+      const responseData = {
+        releases: filteredReleases,
+        projectKey
+      };
+
+      // Save releases list to Supabase (merge into latest board record)
+      try {
+        await database.updateLatestWithReleases(boardId, responseData);
+      } catch (dbError) {
+        console.warn('Failed to save releases to database:', dbError.message);
+      }
+
       res.json({
         success: true,
-        releases: filteredReleases,
-        projectKey,
+        ...responseData,
         message: `Found ${filteredReleases.length} releases (${unreleased.length} unreleased, ${released.length} released)`
       });
     } catch (error) {
@@ -662,6 +673,180 @@ class DashboardController {
       });
     } catch (error) {
       console.error('Error fetching release burndown:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // =====================
+  // CAPACITY MANAGEMENT
+  // =====================
+
+  async getCapacityMetrics(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false, sprintIds = null } = req.body;
+
+      // Check cache first
+      if (!forceRefresh && !sprintIds) {
+        const cacheKey = cacheService.generateKey(boardId, 'capacity-metrics');
+        const cachedData = cacheService.get(cacheKey);
+        if (cachedData) {
+          return res.json({ success: true, data: cachedData, cached: true });
+        }
+      }
+
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      // Get board name for sprint filtering (same logic as getTeamMetrics)
+      const board = await jiraService.getBoard(boardId);
+      const boardName = board?.name || `Board ${boardId}`;
+      const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
+
+      const allSprints = await jiraService.getSprints(boardId, 'closed');
+
+      // Filter sprints by board naming convention
+      const filteredSprints = allSprints.filter(sprint => {
+        const sprintNameUpper = sprint.name.toUpperCase();
+        const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
+        if (prefixMatch) {
+          const sprintPrefix = prefixMatch[1].toUpperCase();
+          return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+        }
+        return sprintNameUpper.includes(boardKey);
+      });
+      const matchedSprints = filteredSprints.length > 0 ? filteredSprints : allSprints;
+
+      let recentSprints;
+      if (sprintIds && sprintIds.length > 0) {
+        const idSet = new Set(sprintIds);
+        recentSprints = matchedSprints.filter(s => idSet.has(s.id));
+        recentSprints.sort((a, b) => {
+          const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
+          const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
+          return dateB - dateA;
+        });
+      } else {
+        recentSprints = matchedSprints.slice(0, sprintCount);
+      }
+
+      console.log(`\n📊 Capacity Metrics for board ${boardId} (${boardName}) - ${recentSprints.length} sprints`);
+
+      const storyPointsField = 'customfield_10061';
+      const sprintCapacity = [];
+      const assigneeMap = {};
+
+      for (const sprint of recentSprints) {
+        const issues = await jiraService.getSprintIssues(sprint.id);
+
+        let committedPoints = 0;
+        let completedPoints = 0;
+        let totalIssues = issues.length;
+        let completedIssues = 0;
+        const sprintAssignees = new Set();
+
+        for (const issue of issues) {
+          const points = issue.fields[storyPointsField] || 0;
+          const assignee = issue.fields.assignee?.displayName || 'Unassigned';
+          const isDone = issue.fields.status.statusCategory.key === 'done';
+          const issueType = issue.fields.issuetype.name;
+
+          committedPoints += points;
+          if (isDone) {
+            completedPoints += points;
+            completedIssues++;
+          }
+
+          sprintAssignees.add(assignee);
+
+          // Track per-assignee data
+          if (!assigneeMap[assignee]) {
+            assigneeMap[assignee] = { committed: 0, completed: 0, issuesAssigned: 0, issuesCompleted: 0, types: {} };
+          }
+          assigneeMap[assignee].committed += points;
+          if (isDone) {
+            assigneeMap[assignee].completed += points;
+            assigneeMap[assignee].issuesCompleted++;
+          }
+          assigneeMap[assignee].issuesAssigned++;
+          assigneeMap[assignee].types[issueType] = (assigneeMap[assignee].types[issueType] || 0) + 1;
+        }
+
+        sprintCapacity.push({
+          sprintId: sprint.id,
+          sprintName: sprint.name,
+          startDate: sprint.startDate,
+          endDate: sprint.endDate,
+          committedPoints,
+          completedPoints,
+          totalIssues,
+          completedIssues,
+          teamSize: sprintAssignees.size,
+          velocity: completedPoints,
+          throughput: completedIssues
+        });
+      }
+
+      // Calculate aggregated capacity metrics
+      const velocities = sprintCapacity.map(s => s.velocity);
+      const throughputs = sprintCapacity.map(s => s.throughput);
+      const teamSizes = sprintCapacity.map(s => s.teamSize);
+      const commitments = sprintCapacity.map(s => s.committedPoints);
+
+      const avg = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      const stdDev = arr => {
+        if (arr.length < 2) return 0;
+        const mean = avg(arr);
+        return Math.sqrt(arr.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (arr.length - 1));
+      };
+
+      // Work distribution by assignee (sorted by completed points)
+      const workDistribution = Object.entries(assigneeMap)
+        .map(([name, data]) => ({
+          name,
+          committed: data.committed,
+          completed: data.completed,
+          issuesAssigned: data.issuesAssigned,
+          issuesCompleted: data.issuesCompleted,
+          types: data.types
+        }))
+        .sort((a, b) => b.completed - a.completed);
+
+      // Focus factor: completed / committed ratio per sprint
+      const focusFactors = sprintCapacity.map(s =>
+        s.committedPoints > 0 ? (s.completedPoints / s.committedPoints) * 100 : 0
+      );
+
+      const summary = {
+        avgVelocity: avg(velocities),
+        velocityStdDev: stdDev(velocities),
+        avgThroughput: avg(throughputs),
+        throughputStdDev: stdDev(throughputs),
+        avgTeamSize: avg(teamSizes),
+        avgCommitment: avg(commitments),
+        avgFocusFactor: avg(focusFactors),
+        velocityTrend: velocities.length >= 2 ? velocities[0] - velocities[velocities.length - 1] : 0,
+        sprintsAnalyzed: sprintCapacity.length
+      };
+
+      const responseData = {
+        sprintCapacity: sprintCapacity.reverse(), // chronological order
+        workDistribution,
+        summary
+      };
+
+      // Cache
+      const cacheKey = cacheService.generateKey(boardId, 'capacity-metrics');
+      cacheService.set(cacheKey, responseData);
+
+      // Save to Supabase
+      try {
+        await database.updateLatestWithCapacity(boardId, responseData);
+      } catch (dbError) {
+        console.warn('Failed to save capacity metrics to database:', dbError.message);
+      }
+
+      res.json({ success: true, data: responseData, cached: false });
+    } catch (error) {
+      console.error('Error fetching capacity metrics:', error);
       res.status(500).json({ success: false, message: error.message });
     }
   }

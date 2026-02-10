@@ -5,7 +5,7 @@ const STORAGE_KEY = 'scrum-dashboard-selected-boards';
 const BOARDS_CACHE_KEY = 'scrum-dashboard-boards-cache';
 const BOARDS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
 
-export default function TeamSelector({ credentials, onTeamsSelected, existingBoards = [] }) {
+export default function TeamSelector({ credentials, onTeamsSelected, existingBoards = [], onBack }) {
   const [boards, setBoards] = useState([]);
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -161,7 +161,20 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
   return (
     <div className="max-w-4xl mx-auto card">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Select Boards to Analyze</h2>
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Back to Dashboard"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+          <h2 className="text-2xl font-bold text-gray-800">Select Boards to Analyze</h2>
+        </div>
         <button
           onClick={() => loadBoards(true)}
           className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"

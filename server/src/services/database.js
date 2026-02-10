@@ -262,6 +262,52 @@ class DatabaseService {
     }
   }
 
+  // Update latest metrics record with releases data
+  async updateLatestWithReleases(boardId, releasesData) {
+    if (!this.client) return false;
+
+    try {
+      const latest = await this.getLatestMetrics(boardId);
+      if (!latest) return false;
+
+      const updatedData = { ...latest.metrics_data, releasesData };
+      const { error } = await this.client
+        .from('metrics_history')
+        .update({ metrics_data: updatedData })
+        .eq('id', latest.id);
+
+      if (error) throw error;
+      console.log(`✓ Releases data saved for board ${boardId}`);
+      return true;
+    } catch (err) {
+      console.warn('Failed to update with releases data:', err.message);
+      return false;
+    }
+  }
+
+  // Update latest metrics record with capacity data
+  async updateLatestWithCapacity(boardId, capacityData) {
+    if (!this.client) return false;
+
+    try {
+      const latest = await this.getLatestMetrics(boardId);
+      if (!latest) return false;
+
+      const updatedData = { ...latest.metrics_data, capacityData };
+      const { error } = await this.client
+        .from('metrics_history')
+        .update({ metrics_data: updatedData })
+        .eq('id', latest.id);
+
+      if (error) throw error;
+      console.log(`✓ Capacity data saved for board ${boardId}`);
+      return true;
+    } catch (err) {
+      console.warn('Failed to update with capacity data:', err.message);
+      return false;
+    }
+  }
+
   // Delete all metrics for a board
   async deleteBoardMetrics(boardId) {
     if (!this.client) return 0;

@@ -165,6 +165,7 @@ function App() {
             credentials={credentials}
             onTeamsSelected={handleTeamsSelected}
             existingBoards={selectedBoards}
+            onBack={selectedBoards.length > 0 ? () => setStep('dashboard') : null}
           />
         )}
 

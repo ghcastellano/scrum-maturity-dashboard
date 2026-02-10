@@ -234,9 +234,35 @@ class MetricsService {
       status: issue.fields?.status?.name || 'unknown'
     });
 
+    // Regex patterns for Acceptance Criteria keywords in description
+    const acPatterns = [
+      /acceptance\s*criteria/i,
+      /\bAC\b\s*[:;\-\n]/,
+      /\bacc\s*criteria/i,
+      /\bcriteria\s*de\s*aceita/i,
+      /\bcritérios?\s*de\s*aceite/i,
+      /\bgiven\b.*\bwhen\b.*\bthen\b/is,
+      /\bdefinition\s*of\s*done\b/i,
+      /\bexpected\s*result/i,
+      /\bexpected\s*outcome/i,
+      /\bexpected\s*behavio/i
+    ];
+
+    const hasAcceptanceCriteria = (description) => {
+      if (!description || typeof description !== 'string') return false;
+      // Handle Jira's ADF (Atlassian Document Format) JSON description
+      let textContent = description;
+      if (typeof description === 'object') {
+        textContent = JSON.stringify(description);
+      }
+      return acPatterns.some(pattern => pattern.test(textContent));
+    };
+
     issues.forEach(issue => {
-      // Check for AC (assuming description length > 50 chars indicates AC)
-      if (issue.fields.description && issue.fields.description.length > 50) {
+      // Check for AC keywords in description
+      const desc = issue.fields.description;
+      const descText = typeof desc === 'object' ? JSON.stringify(desc) : desc;
+      if (hasAcceptanceCriteria(descText)) {
         withAcceptanceCriteria++;
       } else {
         missingAC.push(makeDetail(issue));
@@ -260,7 +286,7 @@ class MetricsService {
     const total = issues.length;
 
     console.log(`\n  Results:`);
-    console.log(`    With Acceptance Criteria (desc > 50): ${withAcceptanceCriteria}/${total}`);
+    console.log(`    With Acceptance Criteria (keyword match): ${withAcceptanceCriteria}/${total}`);
     console.log(`    With Estimates: ${withEstimates}/${total}`);
     console.log(`    Linked to Goals: ${linkedToGoals}/${total}`);
 

@@ -16,6 +16,7 @@ function App() {
   const [credentials, setCredentials] = useState(null);
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [savedBoardsFromHistory, setSavedBoardsFromHistory] = useState([]);
+  const [newlyAddedBoard, setNewlyAddedBoard] = useState(null);
 
   useEffect(() => {
     initializeApp();
@@ -82,6 +83,10 @@ function App() {
     }
 
     setSelectedBoards(merged);
+    // Track newly added boards so Dashboard can auto-select and load them
+    if (newBoards.length > 0) {
+      setNewlyAddedBoard(newBoards[0]);
+    }
     setStep('dashboard');
   };
 
@@ -150,6 +155,8 @@ function App() {
           <Dashboard
             credentials={credentials}
             selectedBoards={selectedBoards}
+            newlyAddedBoard={newlyAddedBoard}
+            onNewBoardHandled={() => setNewlyAddedBoard(null)}
           />
         )}
       </main>

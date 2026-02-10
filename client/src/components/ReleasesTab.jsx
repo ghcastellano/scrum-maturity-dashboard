@@ -73,8 +73,17 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
   const [error, setError] = useState('');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
 
-  // Load releases when board changes
+  // Reset all state and reload when board changes
   useEffect(() => {
+    // Reset all release data to prevent stale data from showing
+    setReleases([]);
+    setSelectedRelease(null);
+    setReleaseDetails(null);
+    setBurndownData(null);
+    setBurndownReleaseDate(null);
+    setError('');
+    setActiveDetailTab('overview');
+
     if (credentials && boardId) {
       loadReleases();
     }

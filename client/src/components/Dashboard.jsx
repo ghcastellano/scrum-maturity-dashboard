@@ -882,7 +882,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
               const metricItems = [
                 { icon: '📉', label: 'Rollover Rate', value: rollover, blocking: thresholds ? rollover > thresholds.rollover.max : false, target: thresholds?.rollover.label, current: `${formatNumber(rollover)}%` },
-                { icon: '🎯', label: 'Sprint Goal Attainment', value: sprintGoal, blocking: thresholds ? sprintGoal < thresholds.sprintGoal.min : false, target: thresholds?.sprintGoal.label, current: `${formatNumber(sprintGoal)}%` },
+                { icon: '🎯', label: 'Sprint Commitment Completion', value: sprintGoal, blocking: thresholds ? sprintGoal < thresholds.sprintGoal.min : false, target: thresholds?.sprintGoal.label, current: `${formatNumber(sprintGoal)}%` },
                 { icon: '📋', label: 'Backlog Health', value: backlog, blocking: thresholds ? backlog < thresholds.backlog.min : false, target: thresholds?.backlog.label, current: `${formatNumber(backlog)}%` },
                 { icon: '🔄', label: 'Mid-Sprint Additions', value: midSprint, blocking: thresholds ? midSprint > thresholds.midSprint.max : false, target: thresholds?.midSprint.label, current: `${formatNumber(midSprint)}%` }
               ];

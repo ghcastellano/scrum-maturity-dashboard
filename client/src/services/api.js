@@ -66,6 +66,12 @@ class ApiService {
     return response.data;
   }
 
+  // Cached boards (fast, no credentials needed)
+  async getCachedBoards() {
+    const response = await this.client.get('/jira/boards/cached');
+    return response.data;
+  }
+
   // History endpoints
   async getBoardsWithHistory() {
     const response = await this.client.get('/history/boards');

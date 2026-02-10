@@ -89,6 +89,20 @@ app.post('/api/releases/burndown', (req, res) =>
   dashboardController.getReleaseBurndown(req, res)
 );
 
+// Cached boards endpoint (fast, no credentials needed)
+app.get('/api/jira/boards/cached', async (req, res) => {
+  try {
+    const cachedBoards = await database.getCachedBoards(24 * 3600 * 1000); // 24h TTL
+    if (cachedBoards && cachedBoards.length > 0) {
+      res.json({ success: true, boards: cachedBoards, source: 'cache' });
+    } else {
+      res.json({ success: false, boards: [], message: 'No cached boards available' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Metrics History endpoints
 app.get('/api/history/boards', async (req, res) => {
   try {

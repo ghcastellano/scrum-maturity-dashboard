@@ -35,8 +35,9 @@ class DashboardController {
       const { jiraUrl, email, apiToken, forceRefresh = false } = req.body;
 
       // Check database cache first (persists for all users, survives restarts)
+      // 24-hour TTL since boards rarely change
       if (!forceRefresh) {
-        const cachedBoards = await database.getCachedBoards(3600 * 1000); // 1 hour
+        const cachedBoards = await database.getCachedBoards(24 * 3600 * 1000); // 24 hours
         if (cachedBoards) {
           return res.json({
             success: true,

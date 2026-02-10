@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Line, Bar, Radar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -105,47 +105,24 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     loadAllMetrics();
   }, []);
 
-  // When a new board is added from TeamSelector, auto-select and load it
+  // When a new board is added from TeamSelector, auto-select it
   useEffect(() => {
-    if (newlyAddedBoard && credentials) {
+    if (newlyAddedBoard) {
       const boardId = typeof newlyAddedBoard === 'object' ? newlyAddedBoard.id : newlyAddedBoard;
-      const boardName = typeof newlyAddedBoard === 'object' ? newlyAddedBoard.name : `Board ${boardId}`;
       setSelectedBoard(newlyAddedBoard);
       setActiveTab('metrics');
       onNewBoardHandled?.();
-      // If board has no cached data, auto-refresh from Jira
-      if (!allBoardsData[String(boardId)]) {
-        (async () => {
-          try {
-            setRefreshing(true);
-            setLoading(true);
-            setError(`Loading ${boardName} from Jira...`);
-            const teamData = await api.getTeamMetrics(
-              credentials.jiraUrl, credentials.email, credentials.apiToken,
-              boardId, 6, true
-            );
-            if (teamData.success) {
-              setMetrics(teamData.data);
-              setFlowMetrics(null);
-              setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
-              setDbBoards(prev => {
-                if (prev.some(b => b.id === boardId)) return prev;
-                return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
-              });
-              setError('');
-              loadBoardHistory(boardId);
-            }
-          } catch (err) {
-            setError(`Failed to load ${boardName}: ${err.message}`);
-          } finally {
-            setRefreshing(false);
-            setLoading(false);
-          }
-        })();
-      } else {
+
+      // If board has cached data, use it immediately
+      if (allBoardsData[String(boardId)]) {
         setMetrics(allBoardsData[String(boardId)]);
         setFlowMetrics(allFlowData[String(boardId)] || allBoardsData[String(boardId)]?.flowMetrics || null);
         loadBoardHistory(boardId);
+      } else {
+        // Clear metrics so the auto-refresh useEffect triggers
+        setMetrics(null);
+        setFlowMetrics(null);
+        setError('');
       }
     }
   }, [newlyAddedBoard]);
@@ -182,15 +159,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           loadBoardHistory(firstBoardId);
           setLoading(false);
         } else {
-          // Selected board has no data yet - check if any board in selectedBoards needs refresh
+          // Selected board has no data yet - use first available board with data
           const firstWithData = result.boards[0];
           setMetrics(firstWithData.metrics_data);
           setFlowMetrics(firstWithData.metrics_data?.flowMetrics || null);
           setSelectedBoard({ id: firstWithData.board_id, name: firstWithData.board_name });
           loadBoardHistory(firstWithData.board_id);
           setLoading(false);
-          // Auto-refresh the new board if credentials available
-          await autoRefreshNewBoards(dataMap);
         }
         return;
       }
@@ -198,8 +173,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       console.warn('Failed to load metrics from database:', err.message);
     }
 
-    // No saved data - show message
-    setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
+    // No saved data - auto-refresh will kick in via useEffect
     setLoading(false);
   };
 
@@ -217,7 +191,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       const boardName = typeof board === 'object' ? board.name : `Board ${board}`;
       try {
         setRefreshing(true);
-        setError(`Loading ${boardName} from Jira...`);
 
         const teamData = await api.getTeamMetrics(
           credentials.jiraUrl, credentials.email, credentials.apiToken,
@@ -263,36 +236,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       setSelectedHistoryId(null);
       setError('');
       loadBoardHistory(boardId);
-    } else if (credentials) {
-      // Board has no data - auto-refresh from Jira
-      const boardName = typeof board === 'object' ? board.name : `Board ${boardId}`;
-      try {
-        setRefreshing(true);
-        setLoading(true);
-        setError(`Loading ${boardName} from Jira...`);
-
-        const teamData = await api.getTeamMetrics(
-          credentials.jiraUrl, credentials.email, credentials.apiToken,
-          boardId, 6, true
-        );
-
-        if (teamData.success) {
-          setMetrics(teamData.data);
-          setFlowMetrics(null);
-          setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
-          setDbBoards(prev => {
-            if (prev.some(b => b.id === boardId)) return prev;
-            return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
-          });
-          setError('');
-          loadBoardHistory(boardId);
-        }
-      } catch (err) {
-        setError(`Failed to load ${boardName}: ${err.message}`);
-      } finally {
-        setRefreshing(false);
-        setLoading(false);
-      }
+    } else {
+      // Board has no data - clear metrics so auto-refresh useEffect triggers
+      setMetrics(null);
+      setFlowMetrics(null);
+      setError('');
     }
   };
 
@@ -479,71 +427,95 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 text-lg">Analyzing team metrics...</p>
-          <p className="mt-2 text-sm text-gray-500">This may take a minute...</p>
-        </div>
-      </div>
-    );
-  }
+  // Auto-refresh when no metrics and credentials available
+  const autoRefreshingRef = useRef(false);
+  useEffect(() => {
+    if (!loading && !metrics && !refreshing && !autoRefreshingRef.current && credentials && selectedBoard) {
+      const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+      const boardName = typeof selectedBoard === 'object' ? selectedBoard.name : `Board ${boardId}`;
+      autoRefreshingRef.current = true;
+      (async () => {
+        try {
+          setRefreshing(true);
+          const [teamData, flowData] = await Promise.all([
+            api.getTeamMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
+            api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 3, true)
+          ]);
+          if (teamData.success) {
+            setMetrics(teamData.data);
+            setFlowMetrics(flowData.data || null);
+            setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+            if (flowData.data) {
+              setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
+            }
+            setDbBoards(prev => {
+              if (prev.some(b => b.id === boardId)) return prev;
+              return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
+            });
+            setError('');
+            loadBoardHistory(boardId);
+          }
+        } catch (err) {
+          setError(`Failed to load ${boardName}: ${err.message}`);
+        } finally {
+          setRefreshing(false);
+          autoRefreshingRef.current = false;
+        }
+      })();
+    }
+  }, [loading, metrics, credentials, selectedBoard]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-2xl card">
+  // Loading/no-data inline component (shown inside the main layout instead of blocking)
+  const renderLoadingOrEmpty = () => {
+    if (loading || refreshing) {
+      const boardName = typeof selectedBoard === 'object' ? selectedBoard.name : `Board ${selectedBoard || ''}`;
+      return (
+        <div className="flex items-center justify-center py-24">
           <div className="text-center">
-            <div className="text-yellow-500 text-5xl mb-4">📊</div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">No Metrics Data Yet</h2>
-            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg mb-6">
-              <p className="text-sm">{error}</p>
-            </div>
-            <div className="flex gap-3 justify-center">
-              {credentials && (
-                <button
-                  onClick={() => refreshFromJira()}
-                  disabled={refreshing}
-                  className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  <span>🔄</span>
-                  {refreshing ? 'Refreshing...' : 'Refresh from Jira'}
-                </button>
-              )}
-              <button
-                onClick={() => window.location.reload()}
-                className="btn-secondary"
-              >
-                Reload Page
-              </button>
-            </div>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600 text-lg">
+              {refreshing ? `Loading ${boardName} from Jira...` : 'Loading metrics...'}
+            </p>
+            <p className="mt-2 text-sm text-gray-500">This may take a minute...</p>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (!metrics) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">No metrics data available</p>
+    if (error && !metrics) {
+      return (
+        <div className="flex items-center justify-center py-24">
+          <div className="text-center max-w-lg">
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg mb-4">
+              <p className="text-sm">{error}</p>
+            </div>
+            {credentials && (
+              <button
+                onClick={() => refreshFromJira()}
+                disabled={refreshing}
+                className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <span>🔄</span>
+                {refreshing ? 'Refreshing...' : 'Refresh from Jira'}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  // Prepare chart data
-  const sprintLabels = metrics.sprintMetrics.map(s => s.sprintName).reverse();
+    return null;
+  };
+
+  // Prepare chart data (safe even if metrics is null)
+  const sprintLabels = metrics ? metrics.sprintMetrics.map(s => s.sprintName).reverse() : [];
   
   const sprintGoalData = {
     labels: sprintLabels,
     datasets: [
       {
         label: 'Commitment Completion (%)',
-        data: metrics.sprintMetrics.map(s => s.sprintGoalAttainment).reverse(),
+        data: metrics ? metrics.sprintMetrics.map(s => s.sprintGoalAttainment).reverse() : [],
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
         tension: 0.3,
@@ -575,7 +547,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     datasets: [
       {
         label: 'Rollover Rate (%)',
-        data: metrics.sprintMetrics.map(s => s.rolloverRate).reverse(),
+        data: metrics ? metrics.sprintMetrics.map(s => s.rolloverRate).reverse() : [],
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         tension: 0.3,
@@ -606,11 +578,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     labels: ['With AC', 'With Estimates', 'Linked to Fix Versions'],
     datasets: [{
       label: 'Backlog Health (%)',
-      data: [
+      data: metrics ? [
         metrics.backlogHealth.withAcceptanceCriteria,
         metrics.backlogHealth.withEstimates,
         metrics.backlogHealth.linkedToGoals
-      ],
+      ] : [0, 0, 0],
       backgroundColor: [
         'rgba(59, 130, 246, 0.7)',
         'rgba(34, 197, 94, 0.7)',
@@ -619,7 +591,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     }]
   };
 
-  const defectData = metrics.sprintMetrics[0]?.defectDistribution || { preMerge: 0, inQA: 0, postRelease: 0 };
+  const defectData = metrics?.sprintMetrics?.[0]?.defectDistribution || { preMerge: 0, inQA: 0, postRelease: 0 };
   const defectDistributionData = {
     labels: ['Pre-Merge', 'In QA', 'Post-Release'],
     datasets: [{
@@ -840,20 +812,23 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         </div>
 
         {/* Flow Metrics Tab */}
-        {activeTab === 'flow' && (
+        {activeTab === 'flow' && metrics && (
           <FlowMetricsTab flowMetrics={flowMetrics} />
         )}
 
         {/* Releases Tab */}
-        {activeTab === 'releases' && (
+        {activeTab === 'releases' && metrics && (
           <ReleasesTab
             credentials={credentials}
             boardId={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
           />
         )}
 
+        {/* Inline loading/empty state when no metrics available */}
+        {!metrics && renderLoadingOrEmpty()}
+
         {/* Metrics Tab Content */}
-        {activeTab === 'metrics' && (
+        {activeTab === 'metrics' && metrics && (
         <>
         {/* Maturity Level Card */}
         <div className="card mb-8">

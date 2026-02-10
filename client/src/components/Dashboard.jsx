@@ -19,6 +19,7 @@ import MaturityBadge from './MaturityBadge';
 import MaturityLevelsReference from './MaturityLevelsReference';
 import ReleasesTab from './ReleasesTab';
 import FlowMetricsTab from './FlowMetricsTab';
+import CapacityTab from './CapacityTab';
 
 ChartJS.register(
   CategoryScale,
@@ -37,12 +38,16 @@ ChartJS.register(
 export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled, onBoardDeleted }) {
   const [metrics, setMetrics] = useState(null);
   const [flowMetrics, setFlowMetrics] = useState(null);
+  const [capacityData, setCapacityData] = useState(null);
+  const [releasesData, setReleasesData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
   const [allBoardsData, setAllBoardsData] = useState({});
   const [allFlowData, setAllFlowData] = useState({});
+  const [allCapacityData, setAllCapacityData] = useState({});
+  const [allReleasesData, setAllReleasesData] = useState({});
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
   const [localCredentials, setLocalCredentials] = useState(credentialsProp);
@@ -117,11 +122,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       if (allBoardsData[String(boardId)]) {
         setMetrics(allBoardsData[String(boardId)]);
         setFlowMetrics(allFlowData[String(boardId)] || allBoardsData[String(boardId)]?.flowMetrics || null);
+        setCapacityData(allCapacityData[String(boardId)] || allBoardsData[String(boardId)]?.capacityData || null);
+        setReleasesData(allReleasesData[String(boardId)] || allBoardsData[String(boardId)]?.releasesData || null);
         loadBoardHistory(boardId);
       } else {
         // Clear metrics so the auto-refresh useEffect triggers
         setMetrics(null);
         setFlowMetrics(null);
+        setCapacityData(null);
+        setReleasesData(null);
         setError('');
       }
     }
@@ -137,16 +146,26 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         // Build lookup: boardId -> metrics_data (use String keys for consistency)
         const dataMap = {};
         const flowMap = {};
+        const capMap = {};
+        const relMap = {};
         const boardsList = [];
         for (const board of result.boards) {
           dataMap[String(board.board_id)] = board.metrics_data;
           if (board.metrics_data?.flowMetrics) {
             flowMap[String(board.board_id)] = board.metrics_data.flowMetrics;
           }
+          if (board.metrics_data?.capacityData) {
+            capMap[String(board.board_id)] = board.metrics_data.capacityData;
+          }
+          if (board.metrics_data?.releasesData) {
+            relMap[String(board.board_id)] = board.metrics_data.releasesData;
+          }
           boardsList.push({ id: board.board_id, name: board.board_name });
         }
         setAllBoardsData(dataMap);
         setAllFlowData(flowMap);
+        setAllCapacityData(capMap);
+        setAllReleasesData(relMap);
         setDbBoards(boardsList);
 
         // Find the first board that has data
@@ -155,14 +174,19 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
         if (firstData) {
           setMetrics(firstData);
-          setFlowMetrics(firstData.flowMetrics || null);
+          setFlowMetrics(flowMap[String(firstBoardId)] || firstData.flowMetrics || null);
+          setCapacityData(capMap[String(firstBoardId)] || firstData.capacityData || null);
+          setReleasesData(relMap[String(firstBoardId)] || firstData.releasesData || null);
           loadBoardHistory(firstBoardId);
           setLoading(false);
         } else {
           // Selected board has no data yet - use first available board with data
           const firstWithData = result.boards[0];
-          setMetrics(firstWithData.metrics_data);
-          setFlowMetrics(firstWithData.metrics_data?.flowMetrics || null);
+          const md = firstWithData.metrics_data;
+          setMetrics(md);
+          setFlowMetrics(flowMap[String(firstWithData.board_id)] || md?.flowMetrics || null);
+          setCapacityData(capMap[String(firstWithData.board_id)] || md?.capacityData || null);
+          setReleasesData(relMap[String(firstWithData.board_id)] || md?.releasesData || null);
           setSelectedBoard({ id: firstWithData.board_id, name: firstWithData.board_name });
           loadBoardHistory(firstWithData.board_id);
           setLoading(false);
@@ -233,6 +257,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       // Board has data - instant switch
       setMetrics(boardData);
       setFlowMetrics(allFlowData[String(boardId)] || boardData.flowMetrics || null);
+      setCapacityData(allCapacityData[String(boardId)] || boardData.capacityData || null);
+      setReleasesData(allReleasesData[String(boardId)] || boardData.releasesData || null);
       setSelectedHistoryId(null);
       setError('');
       loadBoardHistory(boardId);
@@ -240,6 +266,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       // Board has no data - clear metrics so auto-refresh useEffect triggers
       setMetrics(null);
       setFlowMetrics(null);
+      setCapacityData(null);
+      setReleasesData(null);
       setError('');
     }
   };
@@ -299,12 +327,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      const [teamData, flowData] = await Promise.all([
+      const [teamData, flowData, capData] = await Promise.all([
         api.getTeamMetrics(
           credentials.jiraUrl, credentials.email, credentials.apiToken,
           boardId, selectedSprintIds.length, true, selectedSprintIds
         ),
         api.getFlowMetrics(
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, selectedSprintIds.length, true, selectedSprintIds
+        ),
+        api.getCapacityMetrics(
           credentials.jiraUrl, credentials.email, credentials.apiToken,
           boardId, selectedSprintIds.length, true, selectedSprintIds
         )
@@ -313,9 +345,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       if (teamData.success) {
         setMetrics(teamData.data);
         setFlowMetrics(flowData.data || null);
+        setCapacityData(capData.data || null);
         setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
         if (flowData.data) {
           setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
+        }
+        if (capData.data) {
+          setAllCapacityData(prev => ({ ...prev, [String(boardId)]: capData.data }));
         }
         setError('');
         await loadBoardHistory(boardId);
@@ -349,6 +385,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         delete next[String(boardId)];
         return next;
       });
+      setAllCapacityData(prev => {
+        const next = { ...prev };
+        delete next[String(boardId)];
+        return next;
+      });
+      setAllReleasesData(prev => {
+        const next = { ...prev };
+        delete next[String(boardId)];
+        return next;
+      });
       setDbBoards(prev => prev.filter(b => b.id !== boardId));
 
       // Notify parent to remove from selectedBoards
@@ -368,10 +414,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         if (nextData) {
           setMetrics(nextData);
           setFlowMetrics(allFlowData[String(nextId)] || nextData.flowMetrics || null);
+          setCapacityData(allCapacityData[String(nextId)] || nextData.capacityData || null);
+          setReleasesData(allReleasesData[String(nextId)] || nextData.releasesData || null);
           loadBoardHistory(nextId);
         }
       } else {
         setMetrics(null);
+        setFlowMetrics(null);
+        setCapacityData(null);
+        setReleasesData(null);
         setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
       }
     } catch (err) {
@@ -386,8 +437,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       setSelectedHistoryId(historyId);
       const result = await api.getHistoricalMetrics(historyId);
       if (result.success && result.data) {
-        setMetrics(result.data.metrics_data);
-        setFlowMetrics(result.data.metrics_data?.flowMetrics || null);
+        const md = result.data.metrics_data;
+        setMetrics(md);
+        setFlowMetrics(md?.flowMetrics || null);
+        setCapacityData(md?.capacityData || null);
+        setReleasesData(md?.releasesData || null);
       }
     } catch (err) {
       console.error('Failed to load historical metrics:', err);
@@ -406,7 +460,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      const [teamData, flowData] = await Promise.all([
+      const [teamData, flowData, capData] = await Promise.all([
         api.getTeamMetrics(
           credentials.jiraUrl,
           credentials.email,
@@ -422,15 +476,27 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           boardId,
           6,
           true
+        ),
+        api.getCapacityMetrics(
+          credentials.jiraUrl,
+          credentials.email,
+          credentials.apiToken,
+          boardId,
+          6,
+          true
         )
       ]);
 
       setMetrics(teamData.data);
       setFlowMetrics(flowData.data);
+      setCapacityData(capData.data || null);
 
       // Update cache with new data
       setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
       setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
+      if (capData.data) {
+        setAllCapacityData(prev => ({ ...prev, [String(boardId)]: capData.data }));
+      }
 
       // Reload history to include the new entry
       await loadBoardHistory(boardId);
@@ -454,16 +520,21 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       (async () => {
         try {
           setRefreshing(true);
-          const [teamData, flowData] = await Promise.all([
+          const [teamData, flowData, capData] = await Promise.all([
             api.getTeamMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
-            api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true)
+            api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
+            api.getCapacityMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true)
           ]);
           if (teamData.success) {
             setMetrics(teamData.data);
             setFlowMetrics(flowData.data || null);
+            setCapacityData(capData.data || null);
             setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
             if (flowData.data) {
               setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
+            }
+            if (capData.data) {
+              setAllCapacityData(prev => ({ ...prev, [String(boardId)]: capData.data }));
             }
             setDbBoards(prev => {
               if (prev.some(b => b.id === boardId)) return prev;
@@ -825,6 +896,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             >
               Releases
             </button>
+            <button
+              onClick={() => setActiveTab('capacity')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'capacity'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Capacity
+            </button>
           </div>
         </div>
 
@@ -838,7 +919,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <ReleasesTab
             credentials={credentials}
             boardId={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
+            cachedReleasesData={releasesData}
           />
+        )}
+
+        {/* Capacity Tab */}
+        {activeTab === 'capacity' && metrics && (
+          <CapacityTab capacityData={capacityData} />
         )}
 
         {/* Inline loading/empty state when no metrics available */}

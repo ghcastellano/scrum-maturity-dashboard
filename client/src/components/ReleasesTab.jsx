@@ -62,7 +62,7 @@ const getStatusOrder = (status) => {
   return STATUS_ORDER[normalized] ?? 25; // Default to middle of workflow
 };
 
-export default function ReleasesTab({ credentials, boardId, boardName }) {
+export default function ReleasesTab({ credentials, boardId, boardName, cachedReleasesData }) {
   const [releases, setReleases] = useState([]);
   const [selectedRelease, setSelectedRelease] = useState(null);
   const [releaseDetails, setReleaseDetails] = useState(null);
@@ -84,10 +84,19 @@ export default function ReleasesTab({ credentials, boardId, boardName }) {
     setError('');
     setActiveDetailTab('overview');
 
-    if (credentials && boardId) {
+    // Try cached data first, then fall back to API
+    if (cachedReleasesData?.releases?.length > 0) {
+      setReleases(cachedReleasesData.releases);
+      const unreleased = cachedReleasesData.releases.find(r => !r.released);
+      if (unreleased) {
+        setSelectedRelease(unreleased);
+      } else if (cachedReleasesData.releases.length > 0) {
+        setSelectedRelease(cachedReleasesData.releases[0]);
+      }
+    } else if (credentials && boardId) {
       loadReleases();
     }
-  }, [boardId, credentials]);
+  }, [boardId, credentials, cachedReleasesData]);
 
   const loadReleases = async () => {
     setLoading(true);

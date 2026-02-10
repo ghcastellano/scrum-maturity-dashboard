@@ -15,7 +15,23 @@ class DatabaseService {
     }
 
     this.client = createClient(supabaseUrl, supabaseKey);
+    // In-memory locks to prevent concurrent read-modify-write on the same board
+    this._updateLocks = new Map();
     console.log('✓ Supabase database initialized');
+  }
+
+  // Acquire a per-board lock to serialize JSONB merges
+  async _withLock(boardId, fn) {
+    const key = String(boardId);
+    while (this._updateLocks.get(key)) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    this._updateLocks.set(key, true);
+    try {
+      return await fn();
+    } finally {
+      this._updateLocks.delete(key);
+    }
   }
 
   // Save calculated metrics
@@ -239,73 +255,62 @@ class DatabaseService {
     }
   }
 
-  // Update latest metrics record with flow data
-  async updateLatestWithFlow(boardId, flowData) {
+  // Generic locked merge: read latest record, add/overwrite a key, write back
+  // The lock ensures concurrent calls for the same board don't overwrite each other
+  async _mergeIntoLatest(boardId, dataKey, data, retries = 3) {
     if (!this.client) return false;
 
-    try {
-      const latest = await this.getLatestMetrics(boardId);
-      if (!latest) return false;
+    return this._withLock(boardId, async () => {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const latest = await this.getLatestMetrics(boardId);
+          if (!latest) {
+            if (attempt < retries) {
+              // Record might not exist yet (team metrics still saving) — wait and retry
+              console.log(`⏳ No record for board ${boardId} yet, retrying in 2s... (${attempt}/${retries})`);
+              await new Promise(r => setTimeout(r, 2000));
+              continue;
+            }
+            console.warn(`✗ No record found for board ${boardId} after ${retries} attempts`);
+            return false;
+          }
 
-      const updatedData = { ...latest.metrics_data, flowMetrics: flowData };
-      const { error } = await this.client
-        .from('metrics_history')
-        .update({ metrics_data: updatedData })
-        .eq('id', latest.id);
+          const updatedData = { ...latest.metrics_data, [dataKey]: data };
+          const { error } = await this.client
+            .from('metrics_history')
+            .update({ metrics_data: updatedData })
+            .eq('id', latest.id);
 
-      if (error) throw error;
-      console.log(`✓ Flow metrics saved for board ${boardId}`);
-      return true;
-    } catch (err) {
-      console.warn('Failed to update with flow metrics:', err.message);
+          if (error) throw error;
+          console.log(`✓ ${dataKey} saved for board ${boardId}`);
+          return true;
+        } catch (err) {
+          if (attempt < retries) {
+            console.warn(`Retry ${attempt}/${retries} for ${dataKey} on board ${boardId}: ${err.message}`);
+            await new Promise(r => setTimeout(r, 1000));
+          } else {
+            console.warn(`Failed to save ${dataKey} for board ${boardId}:`, err.message);
+            return false;
+          }
+        }
+      }
       return false;
-    }
+    });
+  }
+
+  // Update latest metrics record with flow data
+  async updateLatestWithFlow(boardId, flowData) {
+    return this._mergeIntoLatest(boardId, 'flowMetrics', flowData);
   }
 
   // Update latest metrics record with releases data
   async updateLatestWithReleases(boardId, releasesData) {
-    if (!this.client) return false;
-
-    try {
-      const latest = await this.getLatestMetrics(boardId);
-      if (!latest) return false;
-
-      const updatedData = { ...latest.metrics_data, releasesData };
-      const { error } = await this.client
-        .from('metrics_history')
-        .update({ metrics_data: updatedData })
-        .eq('id', latest.id);
-
-      if (error) throw error;
-      console.log(`✓ Releases data saved for board ${boardId}`);
-      return true;
-    } catch (err) {
-      console.warn('Failed to update with releases data:', err.message);
-      return false;
-    }
+    return this._mergeIntoLatest(boardId, 'releasesData', releasesData);
   }
 
   // Update latest metrics record with capacity data
   async updateLatestWithCapacity(boardId, capacityData) {
-    if (!this.client) return false;
-
-    try {
-      const latest = await this.getLatestMetrics(boardId);
-      if (!latest) return false;
-
-      const updatedData = { ...latest.metrics_data, capacityData };
-      const { error } = await this.client
-        .from('metrics_history')
-        .update({ metrics_data: updatedData })
-        .eq('id', latest.id);
-
-      if (error) throw error;
-      console.log(`✓ Capacity data saved for board ${boardId}`);
-      return true;
-    } catch (err) {
-      console.warn('Failed to update with capacity data:', err.message);
-      return false;
-    }
+    return this._mergeIntoLatest(boardId, 'capacityData', capacityData);
   }
 
   // Delete all metrics for a board

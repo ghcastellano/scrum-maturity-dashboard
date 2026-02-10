@@ -327,11 +327,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      const [teamData, flowData, capData] = await Promise.all([
-        api.getTeamMetrics(
-          credentials.jiraUrl, credentials.email, credentials.apiToken,
-          boardId, selectedSprintIds.length, true, selectedSprintIds
-        ),
+      // Step 1: Team metrics FIRST (creates the DB record)
+      const teamData = await api.getTeamMetrics(
+        credentials.jiraUrl, credentials.email, credentials.apiToken,
+        boardId, selectedSprintIds.length, true, selectedSprintIds
+      );
+
+      // Step 2: Flow + Capacity in parallel (update the DB record)
+      const [flowData, capData] = await Promise.all([
         api.getFlowMetrics(
           credentials.jiraUrl, credentials.email, credentials.apiToken,
           boardId, selectedSprintIds.length, true, selectedSprintIds
@@ -460,30 +463,21 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      const [teamData, flowData, capData] = await Promise.all([
-        api.getTeamMetrics(
-          credentials.jiraUrl,
-          credentials.email,
-          credentials.apiToken,
-          boardId,
-          6,
-          true
-        ),
+      // Step 1: Team metrics FIRST (creates the DB record)
+      const teamData = await api.getTeamMetrics(
+        credentials.jiraUrl, credentials.email, credentials.apiToken,
+        boardId, 6, true
+      );
+
+      // Step 2: Flow + Capacity in parallel (update the DB record)
+      const [flowData, capData] = await Promise.all([
         api.getFlowMetrics(
-          credentials.jiraUrl,
-          credentials.email,
-          credentials.apiToken,
-          boardId,
-          6,
-          true
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, 6, true
         ),
         api.getCapacityMetrics(
-          credentials.jiraUrl,
-          credentials.email,
-          credentials.apiToken,
-          boardId,
-          6,
-          true
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, 6, true
         )
       ]);
 
@@ -520,11 +514,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       (async () => {
         try {
           setRefreshing(true);
-          const [teamData, flowData, capData] = await Promise.all([
-            api.getTeamMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
+          // Step 1: Team metrics FIRST (creates the DB record)
+          const teamData = await api.getTeamMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true);
+
+          // Step 2: Flow + Capacity in parallel (update the DB record)
+          const [flowData, capData] = await Promise.all([
             api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
             api.getCapacityMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true)
           ]);
+
           if (teamData.success) {
             setMetrics(teamData.data);
             setFlowMetrics(flowData.data || null);

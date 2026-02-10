@@ -235,7 +235,7 @@ export default function CapacityTab({ capacityData }) {
           <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Avg Throughput</div>
           <div className="text-2xl font-bold text-purple-700">{formatNumber(summary.avgThroughput)}</div>
           <div className="text-xs text-purple-500 mt-1">
-            issues/sprint &plusmn;{formatNumber(summary.throughputStdDev)}
+            completed issues/sprint &plusmn;{formatNumber(summary.throughputStdDev)}
           </div>
         </div>
         <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">

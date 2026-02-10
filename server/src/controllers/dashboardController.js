@@ -404,12 +404,18 @@ class DashboardController {
       };
 
       // Scatter plot data points: each completed issue with its completion date and cycle time
+      // Track seen issue keys to avoid duplicates across sprints
+      const seenIssueKeys = new Set();
       const scatterData = [];
 
       for (const sprint of recentSprints) {
         const issues = await jiraService.getSprintIssues(sprint.id);
 
         for (const issue of issues) {
+          // Skip issues already processed from another sprint
+          if (seenIssueKeys.has(issue.key)) continue;
+          seenIssueKeys.add(issue.key);
+
           const issueType = issue.fields.issuetype.name;
 
           try {
@@ -733,6 +739,8 @@ class DashboardController {
       const storyPointsField = 'customfield_10061';
       const sprintCapacity = [];
       const assigneeMap = {};
+      // Track issues globally to avoid double-counting in work distribution
+      const seenIssueKeysGlobal = new Set();
 
       for (const sprint of recentSprints) {
         const issues = await jiraService.getSprintIssues(sprint.id);
@@ -757,17 +765,20 @@ class DashboardController {
 
           sprintAssignees.add(assignee);
 
-          // Track per-assignee data
-          if (!assigneeMap[assignee]) {
-            assigneeMap[assignee] = { committed: 0, completed: 0, issuesAssigned: 0, issuesCompleted: 0, types: {} };
+          // Track per-assignee data (deduplicated across sprints)
+          if (!seenIssueKeysGlobal.has(issue.key)) {
+            seenIssueKeysGlobal.add(issue.key);
+            if (!assigneeMap[assignee]) {
+              assigneeMap[assignee] = { committed: 0, completed: 0, issuesAssigned: 0, issuesCompleted: 0, types: {} };
+            }
+            assigneeMap[assignee].committed += points;
+            if (isDone) {
+              assigneeMap[assignee].completed += points;
+              assigneeMap[assignee].issuesCompleted++;
+            }
+            assigneeMap[assignee].issuesAssigned++;
+            assigneeMap[assignee].types[issueType] = (assigneeMap[assignee].types[issueType] || 0) + 1;
           }
-          assigneeMap[assignee].committed += points;
-          if (isDone) {
-            assigneeMap[assignee].completed += points;
-            assigneeMap[assignee].issuesCompleted++;
-          }
-          assigneeMap[assignee].issuesAssigned++;
-          assigneeMap[assignee].types[issueType] = (assigneeMap[assignee].types[issueType] || 0) + 1;
         }
 
         sprintCapacity.push({
@@ -823,7 +834,17 @@ class DashboardController {
         avgTeamSize: avg(teamSizes),
         avgCommitment: avg(commitments),
         avgFocusFactor: avg(focusFactors),
-        velocityTrend: velocities.length >= 2 ? velocities[0] - velocities[velocities.length - 1] : 0,
+        velocityTrend: (() => {
+          if (velocities.length < 2) return 0;
+          // Compare average of recent half vs older half for a smoother trend
+          // velocities are in most-recent-first order (before .reverse())
+          const mid = Math.ceil(velocities.length / 2);
+          const recentHalf = velocities.slice(0, mid);
+          const olderHalf = velocities.slice(mid);
+          const avgRecent = avg(recentHalf);
+          const avgOlder = avg(olderHalf);
+          return Math.round((avgRecent - avgOlder) * 10) / 10;
+        })(),
         sprintsAnalyzed: sprintCapacity.length
       };
 

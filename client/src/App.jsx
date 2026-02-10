@@ -90,6 +90,23 @@ function App() {
     setStep('dashboard');
   };
 
+  const handleBoardDeleted = (boardId) => {
+    setSelectedBoards(prev => prev.filter(b => {
+      const id = typeof b === 'object' ? b.id : b;
+      return id !== boardId;
+    }));
+    setSavedBoardsFromHistory(prev => prev.filter(b => b.id !== boardId));
+    try {
+      const updated = selectedBoards.filter(b => {
+        const id = typeof b === 'object' ? b.id : b;
+        return id !== boardId;
+      });
+      localStorage.setItem(STORAGE_KEY_BOARDS, JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to update saved boards:', err);
+    }
+  };
+
   const handleReset = () => {
     try {
       localStorage.removeItem(STORAGE_KEY_TOKEN);
@@ -157,6 +174,7 @@ function App() {
             selectedBoards={selectedBoards}
             newlyAddedBoard={newlyAddedBoard}
             onNewBoardHandled={() => setNewlyAddedBoard(null)}
+            onBoardDeleted={handleBoardDeleted}
           />
         )}
       </main>

@@ -34,7 +34,7 @@ ChartJS.register(
   Filler
 );
 
-export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled }) {
+export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled, onBoardDeleted }) {
   const [metrics, setMetrics] = useState(null);
   const [flowMetrics, setFlowMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -344,7 +344,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         delete next[String(boardId)];
         return next;
       });
+      setAllFlowData(prev => {
+        const next = { ...prev };
+        delete next[String(boardId)];
+        return next;
+      });
       setDbBoards(prev => prev.filter(b => b.id !== boardId));
+
+      // Notify parent to remove from selectedBoards
+      onBoardDeleted?.(boardId);
 
       // Switch to the next available board
       const remaining = displayBoards.filter(b => {

@@ -365,34 +365,59 @@ class DashboardController {
         cycleTimeByType: { Story: [], Bug: [], Task: [] },
         leadTimeByType: { Story: [], Bug: [], Task: [] }
       };
-      
+
+      // Scatter plot data points: each completed issue with its completion date and cycle time
+      const scatterData = [];
+
       for (const sprint of recentSprints) {
         const issues = await jiraService.getSprintIssues(sprint.id);
-        
+
         for (const issue of issues) {
           const issueType = issue.fields.issuetype.name;
-          
+
           try {
             const changelog = await jiraService.getIssueChangelog(issue.key);
             const cycleTime = this.metricsService.calculateCycleTime(issue, changelog);
             const leadTime = this.metricsService.calculateLeadTime(issue);
-            
+
             if (cycleTime && flowMetrics.cycleTimeByType[issueType]) {
               flowMetrics.cycleTimeByType[issueType].push(cycleTime);
             }
-            
+
             if (leadTime && flowMetrics.leadTimeByType[issueType]) {
               flowMetrics.leadTimeByType[issueType].push(leadTime);
+            }
+
+            // Add to scatter data if issue is resolved
+            if (cycleTime && issue.fields.resolutiondate) {
+              scatterData.push({
+                key: issue.key,
+                summary: issue.fields.summary || '',
+                type: issueType,
+                completionDate: issue.fields.resolutiondate.split('T')[0],
+                cycleTime: Math.round(cycleTime * 10) / 10
+              });
             }
           } catch (err) {
             console.warn(`Could not fetch changelog for ${issue.key}`);
           }
         }
       }
-      
+
+      // Sort scatter data by completion date
+      scatterData.sort((a, b) => a.completionDate.localeCompare(b.completionDate));
+
+      // Calculate percentiles for cycle time (like Actionable Agile Metrics)
+      const allCycleTimes = scatterData.map(d => d.cycleTime).sort((a, b) => a - b);
+      const percentile = (arr, p) => {
+        if (arr.length === 0) return 0;
+        const idx = Math.ceil(arr.length * p / 100) - 1;
+        return arr[Math.max(0, idx)];
+      };
+
       // Calculate averages
       const calculateAvg = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-      
+
       const summary = {
         avgCycleTime: {
           Story: calculateAvg(flowMetrics.cycleTimeByType.Story),
@@ -403,12 +428,20 @@ class DashboardController {
           Story: calculateAvg(flowMetrics.leadTimeByType.Story),
           Bug: calculateAvg(flowMetrics.leadTimeByType.Bug),
           Task: calculateAvg(flowMetrics.leadTimeByType.Task)
-        }
+        },
+        percentiles: {
+          p50: percentile(allCycleTimes, 50),
+          p70: percentile(allCycleTimes, 70),
+          p85: percentile(allCycleTimes, 85),
+          p95: percentile(allCycleTimes, 95)
+        },
+        totalItems: scatterData.length
       };
 
       // Prepare response data
       const responseData = {
         flowMetrics,
+        scatterData,
         summary
       };
 

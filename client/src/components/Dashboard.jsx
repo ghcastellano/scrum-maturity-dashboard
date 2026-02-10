@@ -18,6 +18,7 @@ import api from '../services/api';
 import MaturityBadge from './MaturityBadge';
 import MaturityLevelsReference from './MaturityLevelsReference';
 import ReleasesTab from './ReleasesTab';
+import FlowMetricsTab from './FlowMetricsTab';
 
 ChartJS.register(
   CategoryScale,
@@ -33,7 +34,7 @@ ChartJS.register(
   Filler
 );
 
-export default function Dashboard({ credentials: credentialsProp, selectedBoards }) {
+export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled }) {
   const [metrics, setMetrics] = useState(null);
   const [flowMetrics, setFlowMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +104,51 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   useEffect(() => {
     loadAllMetrics();
   }, []);
+
+  // When a new board is added from TeamSelector, auto-select and load it
+  useEffect(() => {
+    if (newlyAddedBoard && credentials) {
+      const boardId = typeof newlyAddedBoard === 'object' ? newlyAddedBoard.id : newlyAddedBoard;
+      const boardName = typeof newlyAddedBoard === 'object' ? newlyAddedBoard.name : `Board ${boardId}`;
+      setSelectedBoard(newlyAddedBoard);
+      setActiveTab('metrics');
+      onNewBoardHandled?.();
+      // If board has no cached data, auto-refresh from Jira
+      if (!allBoardsData[String(boardId)]) {
+        (async () => {
+          try {
+            setRefreshing(true);
+            setLoading(true);
+            setError(`Loading ${boardName} from Jira...`);
+            const teamData = await api.getTeamMetrics(
+              credentials.jiraUrl, credentials.email, credentials.apiToken,
+              boardId, 6, true
+            );
+            if (teamData.success) {
+              setMetrics(teamData.data);
+              setFlowMetrics(null);
+              setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+              setDbBoards(prev => {
+                if (prev.some(b => b.id === boardId)) return prev;
+                return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
+              });
+              setError('');
+              loadBoardHistory(boardId);
+            }
+          } catch (err) {
+            setError(`Failed to load ${boardName}: ${err.message}`);
+          } finally {
+            setRefreshing(false);
+            setLoading(false);
+          }
+        })();
+      } else {
+        setMetrics(allBoardsData[String(boardId)]);
+        setFlowMetrics(allFlowData[String(boardId)] || allBoardsData[String(boardId)]?.flowMetrics || null);
+        loadBoardHistory(boardId);
+      }
+    }
+  }, [newlyAddedBoard]);
 
   const loadAllMetrics = async () => {
     setLoading(true);
@@ -496,7 +542,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     labels: sprintLabels,
     datasets: [
       {
-        label: 'Sprint Goal Attainment (%)',
+        label: 'Commitment Completion (%)',
         data: metrics.sprintMetrics.map(s => s.sprintGoalAttainment).reverse(),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -554,15 +600,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         fill: false
       }
     ]
-  };
-
-  const hitRateData = {
-    labels: sprintLabels,
-    datasets: [{
-      label: 'Sprint Hit Rate (%)',
-      data: metrics.sprintMetrics.map(s => s.sprintHitRate).reverse(),
-      backgroundColor: 'rgba(34, 197, 94, 0.7)'
-    }]
   };
 
   const backlogHealthData = {
@@ -780,6 +817,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               Metrics
             </button>
             <button
+              onClick={() => setActiveTab('flow')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'flow'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Flow Metrics
+            </button>
+            <button
               onClick={() => setActiveTab('releases')}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'releases'
@@ -791,6 +838,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </button>
           </div>
         </div>
+
+        {/* Flow Metrics Tab */}
+        {activeTab === 'flow' && (
+          <FlowMetricsTab flowMetrics={flowMetrics} />
+        )}
 
         {/* Releases Tab */}
         {activeTab === 'releases' && (
@@ -919,7 +971,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         </div>
 
         {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Avg Rollover Rate</div>
             <div className="text-3xl font-bold text-red-600">
@@ -930,7 +982,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </div>
           </div>
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Sprint Goal Attainment</div>
+            <div className="text-sm text-gray-600 mb-1">Avg Commitment Completion</div>
             <div className="text-3xl font-bold text-primary-600">
               {formatNumber(metrics.aggregated?.avgSprintGoalAttainment)}%
             </div>
@@ -956,15 +1008,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               Target Level 3: &lt;10%
             </div>
           </div>
-          <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Hit Rate</div>
-            <div className="text-3xl font-bold text-green-600">
-              {formatNumber(metrics.aggregated?.avgSprintHitRate)}%
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Higher is better
-            </div>
-          </div>
         </div>
 
         {/* Maturity Levels Reference */}
@@ -977,16 +1020,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </h2>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Sprint Goal Attainment */}
+            {/* Sprint Commitment Completion */}
             <div>
-              <h3 className="font-semibold mb-4">Sprint Goal Attainment</h3>
+              <h3 className="font-semibold mb-2">Sprint Commitment Completion</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                % of all sprint items completed (includes mid-sprint additions and rollovers)
+              </p>
               <div className="h-80">
                 <Line data={sprintGoalData} options={chartOptions} />
-              </div>
-              {/* Sprint Hit Rate below Sprint Goal */}
-              <h3 className="font-semibold mb-4 mt-8">Sprint Hit Rate</h3>
-              <div className="h-80">
-                <Bar data={hitRateData} options={chartOptions} />
               </div>
             </div>
 
@@ -1096,38 +1137,10 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </div>
         </div>
 
-        {/* Pillar 2: Flow & Quality */}
+        {/* Pillar 2: Team Ownership */}
         <div className="card mb-8">
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
-            ⚡ Pillar 2: Flow & Quality
-          </h2>
-
-          {flowMetrics ? (
-            <div>
-              <h3 className="font-semibold mb-4">Average Cycle Time (days)</h3>
-              <div className="space-y-3">
-                {Object.entries(flowMetrics.summary.avgCycleTime).map(([type, time]) => (
-                  <div key={type} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="font-medium">{type}</span>
-                    <span className="text-lg font-bold text-primary-600">
-                      {time > 0 ? formatNumber(time) : 'N/A'} days
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg text-gray-500">
-              <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <span className="text-sm">Click "Refresh from Jira" to load cycle time and flow metrics.</span>
-            </div>
-          )}
-        </div>
-
-        {/* Pillar 3: Team Ownership */}
-        <div className="card mb-8">
-          <h2 className="text-2xl font-bold mb-6 text-gray-800">
-            👥 Pillar 3: Team Ownership & Execution
+            👥 Pillar 2: Team Ownership & Execution
           </h2>
 
           {/* Overall Backlog Health Score */}

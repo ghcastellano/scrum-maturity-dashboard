@@ -27,8 +27,21 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
     try {
       setLoading(true);
 
-      // Try localStorage cache first
+      // 1) Try DB cache first (fast, no API call to Jira)
       if (!forceRefresh) {
+        try {
+          const cacheResult = await api.getCachedBoards();
+          if (cacheResult.success && cacheResult.boards?.length > 0) {
+            console.log('✅ Boards loaded from DB cache');
+            setBoards(cacheResult.boards);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('DB cache miss, falling back to API');
+        }
+
+        // 2) Try localStorage cache
         const cached = localStorage.getItem(BOARDS_CACHE_KEY);
         if (cached) {
           const { boards: cachedBoards, timestamp } = JSON.parse(cached);
@@ -41,7 +54,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         }
       }
 
-      // Fetch from API
+      // 3) Fetch from Jira API (slow)
       const result = await api.getBoards(
         credentials.jiraUrl,
         credentials.email,

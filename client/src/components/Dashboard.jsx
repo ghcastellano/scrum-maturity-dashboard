@@ -299,15 +299,24 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      const teamData = await api.getTeamMetrics(
-        credentials.jiraUrl, credentials.email, credentials.apiToken,
-        boardId, selectedSprintIds.length, true, selectedSprintIds
-      );
+      const [teamData, flowData] = await Promise.all([
+        api.getTeamMetrics(
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, selectedSprintIds.length, true, selectedSprintIds
+        ),
+        api.getFlowMetrics(
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, selectedSprintIds.length, true, selectedSprintIds
+        )
+      ]);
 
       if (teamData.success) {
         setMetrics(teamData.data);
-        setFlowMetrics(null);
+        setFlowMetrics(flowData.data || null);
         setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+        if (flowData.data) {
+          setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
+        }
         setError('');
         await loadBoardHistory(boardId);
       }
@@ -403,7 +412,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           credentials.email,
           credentials.apiToken,
           boardId,
-          3,
+          6,
           true
         )
       ]);
@@ -439,7 +448,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           setRefreshing(true);
           const [teamData, flowData] = await Promise.all([
             api.getTeamMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
-            api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 3, true)
+            api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true)
           ]);
           if (teamData.success) {
             setMetrics(teamData.data);

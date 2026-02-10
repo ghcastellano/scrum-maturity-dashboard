@@ -341,10 +341,10 @@ class DashboardController {
   // Get detailed flow metrics (cycle time, lead time)
   async getFlowMetrics(req, res) {
     try {
-      const { jiraUrl, email, apiToken, boardId, sprintCount = 3, forceRefresh = false } = req.body;
+      const { jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false, sprintIds = null } = req.body;
 
-      // Check cache first (unless force refresh)
-      if (!forceRefresh) {
+      // Check cache first (unless force refresh or custom sprint IDs)
+      if (!forceRefresh && !sprintIds) {
         const cacheKey = cacheService.generateKey(boardId, 'flow-metrics');
         const cachedData = cacheService.get(cacheKey);
 
@@ -359,8 +359,44 @@ class DashboardController {
       }
 
       const jiraService = new JiraService(jiraUrl, email, apiToken);
-      const sprints = await jiraService.getSprints(boardId, 'closed');
-      const recentSprints = sprints.slice(0, sprintCount);
+
+      // Get board name for sprint filtering (same logic as getTeamMetrics)
+      const board = await jiraService.getBoard(boardId);
+      const boardName = board?.name || `Board ${boardId}`;
+      const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
+
+      const allSprints = await jiraService.getSprints(boardId, 'closed');
+
+      // Filter sprints by board naming convention
+      const filteredSprints = allSprints.filter(sprint => {
+        const sprintNameUpper = sprint.name.toUpperCase();
+        const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
+        if (prefixMatch) {
+          const sprintPrefix = prefixMatch[1].toUpperCase();
+          return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+        }
+        return sprintNameUpper.includes(boardKey);
+      });
+      const matchedSprints = filteredSprints.length > 0 ? filteredSprints : allSprints;
+
+      // If specific sprint IDs were provided, use those; otherwise take most recent N
+      let recentSprints;
+      if (sprintIds && sprintIds.length > 0) {
+        const idSet = new Set(sprintIds);
+        recentSprints = matchedSprints.filter(s => idSet.has(s.id));
+        recentSprints.sort((a, b) => {
+          const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
+          const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
+          return dateB - dateA;
+        });
+      } else {
+        recentSprints = matchedSprints.slice(0, sprintCount);
+      }
+
+      console.log(`\n📊 Flow Metrics for board ${boardId} (${boardName}) - ${recentSprints.length} sprints:`);
+      recentSprints.forEach((s, idx) => {
+        console.log(`  ${idx + 1}. ${s.name} (${s.startDate?.split('T')[0]} to ${s.endDate?.split('T')[0]})`);
+      });
       
       const flowMetrics = {
         cycleTimeByType: { Story: [], Bug: [], Task: [] },

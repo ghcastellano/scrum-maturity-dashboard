@@ -918,6 +918,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             credentials={credentials}
             boardId={typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard}
             cachedReleasesData={releasesData}
+            onReleasesDataUpdated={(updatedData) => {
+              const bid = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+              setReleasesData(updatedData);
+              setAllReleasesData(prev => ({ ...prev, [String(bid)]: updatedData }));
+            }}
           />
         )}
 

@@ -93,6 +93,17 @@ app.post('/api/releases/burndown', (req, res) =>
   dashboardController.getReleaseBurndown(req, res)
 );
 
+// Save releases cache (details + burndown) to DB
+app.post('/api/releases/save-cache', async (req, res) => {
+  try {
+    const { boardId, releasesData } = req.body;
+    const success = await database.updateLatestWithReleases(parseInt(boardId), releasesData);
+    res.json({ success });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Cached boards endpoint (fast, no credentials needed)
 app.get('/api/jira/boards/cached', async (req, res) => {
   try {

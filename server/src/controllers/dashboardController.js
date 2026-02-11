@@ -205,7 +205,7 @@ class DashboardController {
       
       for (let i = 0; i < recentSprints.length; i++) {
         const sprint = recentSprints[i];
-        const issues = await jiraService.getSprintIssues(sprint.id);
+        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
 
         // Log sample issues on first sprint to help identify story points field
         if (i === 0 && issues.length > 0) {
@@ -235,13 +235,13 @@ class DashboardController {
         const nextSprint = recentSprints[i - 1];
         let nextSprintIssues = [];
         if (nextSprint) {
-          nextSprintIssues = await jiraService.getSprintIssues(nextSprint.id);
+          nextSprintIssues = await jiraService.getSprintIssues(nextSprint.id, boardId);
         }
 
         // Calculate metrics
         const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
         const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name);
-        const sprintHitRate = this.metricsService.calculateSprintHitRate(issues);
+        const sprintHitRate = this.metricsService.calculateSprintHitRate(issues, sprint.endDate);
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
         const defectDistribution = this.metricsService.calculateDefectDistribution(issues);
 
@@ -409,7 +409,7 @@ class DashboardController {
       const scatterData = [];
 
       for (const sprint of recentSprints) {
-        const issues = await jiraService.getSprintIssues(sprint.id);
+        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
 
         for (const issue of issues) {
           // Skip sub-tasks and already-processed issues
@@ -748,7 +748,8 @@ class DashboardController {
       const seenIssueKeysGlobal = new Set();
 
       for (const sprint of recentSprints) {
-        const issues = await jiraService.getSprintIssues(sprint.id);
+        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+        const sprintEnd = sprint.endDate ? new Date(sprint.endDate) : null;
 
         let committedPoints = 0;
         let completedPoints = 0;
@@ -762,8 +763,12 @@ class DashboardController {
 
           const points = issue.fields[storyPointsField] || 0;
           const assignee = issue.fields.assignee?.displayName || 'Unassigned';
-          const isDone = issue.fields.status.statusCategory.key === 'done';
           const issueType = issue.fields.issuetype.name;
+
+          // Only count as completed if resolved before/on sprint end date
+          const statusDone = issue.fields.status.statusCategory.key === 'done';
+          const resolutionDate = issue.fields.resolutiondate ? new Date(issue.fields.resolutiondate) : null;
+          const isDone = statusDone && (!sprintEnd || (resolutionDate && resolutionDate <= sprintEnd));
 
           totalIssues++;
           committedPoints += points;

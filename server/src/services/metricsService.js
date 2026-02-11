@@ -10,8 +10,15 @@ class MetricsService {
     let completedPoints = 0;
     let issuesWithPoints = 0;
     let issuesWithoutPoints = 0;
+    let skippedSubtasks = 0;
 
     issues.forEach(issue => {
+      // Skip sub-tasks to avoid double-counting story points with their parent
+      if (issue.fields.issuetype.subtask) {
+        skippedSubtasks++;
+        return;
+      }
+
       const points = issue.fields[storyPointsField] || 0;
 
       if (points > 0) {
@@ -27,7 +34,7 @@ class MetricsService {
     });
 
     console.log(`\n📊 Sprint Goal Attainment - ${sprint.name}:`);
-    console.log(`  Total issues: ${issues.length}`);
+    console.log(`  Total issues: ${issues.length} (${skippedSubtasks} sub-tasks excluded from SP count)`);
     console.log(`  Issues with story points: ${issuesWithPoints}`);
     console.log(`  Issues without story points: ${issuesWithoutPoints}`);
     console.log(`  Committed points: ${committedPoints}`);
@@ -62,15 +69,20 @@ class MetricsService {
   };
 
   // Calculate Rollover Rate - returns { rate, issues[], reasonBreakdown }
+  // Excludes sub-tasks to avoid inflating denominator
   calculateRolloverRate(sprintIssues, nextSprintIssues, sprintName = '') {
     if (!nextSprintIssues || nextSprintIssues.length === 0) {
       console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: no next sprint data, rollover = 0%`);
       return { rate: 0, issues: [], reasonBreakdown: {} };
     }
 
-    const currentSprintKeys = new Set(sprintIssues.map(i => i.key));
+    // Filter out sub-tasks for consistent counting
+    const parentIssues = sprintIssues.filter(i => !i.fields?.issuetype?.subtask);
+    const parentNextIssues = nextSprintIssues.filter(i => !i.fields?.issuetype?.subtask);
+
+    const currentSprintKeys = new Set(parentIssues.map(i => i.key));
     // An issue is a rollover only if it appears in both sprints AND has a rollover label
-    const candidateIssues = nextSprintIssues.filter(issue => currentSprintKeys.has(issue.key));
+    const candidateIssues = parentNextIssues.filter(issue => currentSprintKeys.has(issue.key));
 
     // Extract rollover reason labels and keep only labeled issues
     const reasonBreakdown = {};
@@ -98,9 +110,9 @@ class MetricsService {
       });
     }
 
-    const rate = sprintIssues.length > 0 ? (issueDetails.length / sprintIssues.length) * 100 : 0;
+    const rate = parentIssues.length > 0 ? (issueDetails.length / parentIssues.length) * 100 : 0;
 
-    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${issueDetails.length}/${sprintIssues.length} issues = ${rate.toFixed(1)}% (${candidateIssues.length} in both sprints, ${issueDetails.length} with rollover labels)`);
+    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${issueDetails.length}/${parentIssues.length} issues = ${rate.toFixed(1)}% (${candidateIssues.length} in both sprints, ${issueDetails.length} with rollover labels)`);
     if (issueDetails.length > 0) {
       issueDetails.forEach(issue => {
         console.log(`  → ${issue.key} - ${issue.summary} [${issue.status}] (${issue.reasons.join(', ')})`);
@@ -111,19 +123,21 @@ class MetricsService {
     return { rate, issues: issueDetails, reasonBreakdown };
   }
 
-  // Calculate Sprint Hit Rate
+  // Calculate Sprint Hit Rate (excludes sub-tasks)
   calculateSprintHitRate(issues) {
-    const total = issues.length;
-    const completed = issues.filter(i => i.fields.status.statusCategory.key === 'done').length;
-    
+    const parentIssues = issues.filter(i => !i.fields.issuetype.subtask);
+    const total = parentIssues.length;
+    const completed = parentIssues.filter(i => i.fields.status.statusCategory.key === 'done').length;
+
     return total > 0 ? (completed / total) * 100 : 0;
   }
 
-  // Calculate Mid-Sprint Additions
+  // Calculate Mid-Sprint Additions (excludes sub-tasks)
   calculateMidSprintAdditions(issues, sprintStartDate) {
     const sprintStart = parseISO(sprintStartDate);
+    const parentIssues = issues.filter(i => !i.fields.issuetype.subtask);
 
-    const addedDuringSprint = issues.filter(issue => {
+    const addedDuringSprint = parentIssues.filter(issue => {
       const created = parseISO(issue.fields.created);
       return created > sprintStart;
     });
@@ -138,7 +152,7 @@ class MetricsService {
 
     return {
       count: addedDuringSprint.length,
-      percentage: issues.length > 0 ? (addedDuringSprint.length / issues.length) * 100 : 0,
+      percentage: parentIssues.length > 0 ? (addedDuringSprint.length / parentIssues.length) * 100 : 0,
       issues: issueDetails
     };
   }

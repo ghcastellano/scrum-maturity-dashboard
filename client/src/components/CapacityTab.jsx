@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Line, Bar } from 'react-chartjs-2';
 
 const formatNumber = (num, decimals = 1) => {
@@ -20,6 +20,24 @@ export default function CapacityTab({ capacityData }) {
   }
 
   const { sprintCapacity = [], workDistribution = [], summary = {} } = capacityData;
+
+  // Capacity Calculator state
+  const [calcTeamSize, setCalcTeamSize] = useState(Math.round(summary.avgTeamSize || 5));
+  const [calcSprintDays, setCalcSprintDays] = useState(10);
+  const [calcPtoDays, setCalcPtoDays] = useState(0);
+  const [calcHolidays, setCalcHolidays] = useState(0);
+
+  const calcResults = useMemo(() => {
+    const normalPersonDays = (summary.avgTeamSize || calcTeamSize) * calcSprintDays;
+    const availablePersonDays = (calcTeamSize * calcSprintDays) - calcPtoDays - (calcHolidays * calcTeamSize);
+    const capacityRatio = normalPersonDays > 0 ? Math.max(0, availablePersonDays / normalPersonDays) : 0;
+    const estimatedVelocity = (summary.avgVelocity || 0) * capacityRatio;
+    const estimatedThroughput = (summary.avgThroughput || 0) * capacityRatio;
+    const velocityPerPerson = (summary.avgTeamSize || 0) > 0
+      ? (summary.avgVelocity || 0) / summary.avgTeamSize
+      : 0;
+    return { availablePersonDays, capacityRatio, estimatedVelocity, estimatedThroughput, velocityPerPerson };
+  }, [calcTeamSize, calcSprintDays, calcPtoDays, calcHolidays, summary]);
 
   // Velocity chart
   const velocityChartData = useMemo(() => {
@@ -265,6 +283,101 @@ export default function CapacityTab({ capacityData }) {
           </div>
           <div className="text-xs text-gray-500 mt-1">
             {summary.sprintsAnalyzed} sprints analyzed
+          </div>
+        </div>
+      </div>
+
+      {/* Sprint Capacity Calculator */}
+      <div className="card">
+        <h2 className="text-xl font-bold mb-2 text-gray-800">Sprint Capacity Calculator</h2>
+        <p className="text-sm text-gray-500 mb-5">
+          Estimate next sprint capacity based on team availability and historical velocity.
+        </p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Team Size</label>
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={calcTeamSize}
+              onChange={e => setCalcTeamSize(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+            <span className="text-xs text-gray-400 mt-0.5 block">people in sprint</span>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Sprint Duration</label>
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={calcSprintDays}
+              onChange={e => setCalcSprintDays(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+            <span className="text-xs text-gray-400 mt-0.5 block">working days</span>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">PTO Days</label>
+            <input
+              type="number"
+              min="0"
+              max="200"
+              value={calcPtoDays}
+              onChange={e => setCalcPtoDays(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+            <span className="text-xs text-gray-400 mt-0.5 block">total person-days off</span>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Holidays</label>
+            <input
+              type="number"
+              min="0"
+              max="10"
+              value={calcHolidays}
+              onChange={e => setCalcHolidays(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+            <span className="text-xs text-gray-400 mt-0.5 block">days (applies to all)</span>
+          </div>
+        </div>
+
+        {/* Results */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+            <div className="text-xs text-blue-600 uppercase tracking-wide mb-1">Estimated Velocity</div>
+            <div className="text-2xl font-bold text-blue-700">{formatNumber(calcResults.estimatedVelocity)} SP</div>
+            <div className="text-xs text-blue-500 mt-1">
+              {formatNumber(calcResults.velocityPerPerson)} SP/person
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+            <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Estimated Throughput</div>
+            <div className="text-2xl font-bold text-purple-700">{formatNumber(calcResults.estimatedThroughput)}</div>
+            <div className="text-xs text-purple-500 mt-1">issues</div>
+          </div>
+          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
+            <div className="text-xs text-orange-600 uppercase tracking-wide mb-1">Available Person-Days</div>
+            <div className="text-2xl font-bold text-orange-700">{formatNumber(calcResults.availablePersonDays, 0)}</div>
+            <div className="text-xs text-orange-500 mt-1">
+              of {calcTeamSize * calcSprintDays} total
+            </div>
+          </div>
+          <div className={`rounded-xl p-4 border ${
+            calcResults.capacityRatio >= 0.9 ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200'
+            : calcResults.capacityRatio >= 0.7 ? 'bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200'
+            : 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
+          }`}>
+            <div className={`text-xs uppercase tracking-wide mb-1 ${
+              calcResults.capacityRatio >= 0.9 ? 'text-green-600' : calcResults.capacityRatio >= 0.7 ? 'text-yellow-600' : 'text-red-600'
+            }`}>Capacity Ratio</div>
+            <div className={`text-2xl font-bold ${
+              calcResults.capacityRatio >= 0.9 ? 'text-green-700' : calcResults.capacityRatio >= 0.7 ? 'text-yellow-700' : 'text-red-700'
+            }`}>{formatNumber(calcResults.capacityRatio * 100)}%</div>
+            <div className="text-xs text-gray-500 mt-1">vs historical avg</div>
           </div>
         </div>
       </div>

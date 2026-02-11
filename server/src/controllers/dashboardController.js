@@ -399,8 +399,8 @@ class DashboardController {
       });
       
       const flowMetrics = {
-        cycleTimeByType: { Story: [], Bug: [], Task: [] },
-        leadTimeByType: { Story: [], Bug: [], Task: [] }
+        cycleTimeByType: {},
+        leadTimeByType: {}
       };
 
       // Scatter plot data points: each completed issue with its completion date and cycle time
@@ -423,11 +423,13 @@ class DashboardController {
             const cycleTime = this.metricsService.calculateCycleTime(issue, changelog);
             const leadTime = this.metricsService.calculateLeadTime(issue);
 
-            if (cycleTime && flowMetrics.cycleTimeByType[issueType]) {
+            if (cycleTime) {
+              if (!flowMetrics.cycleTimeByType[issueType]) flowMetrics.cycleTimeByType[issueType] = [];
               flowMetrics.cycleTimeByType[issueType].push(cycleTime);
             }
 
-            if (leadTime && flowMetrics.leadTimeByType[issueType]) {
+            if (leadTime) {
+              if (!flowMetrics.leadTimeByType[issueType]) flowMetrics.leadTimeByType[issueType] = [];
               flowMetrics.leadTimeByType[issueType].push(leadTime);
             }
 
@@ -461,17 +463,19 @@ class DashboardController {
       // Calculate averages
       const calculateAvg = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
+      // Build averages dynamically for all discovered issue types
+      const avgCycleTime = {};
+      for (const [type, times] of Object.entries(flowMetrics.cycleTimeByType)) {
+        avgCycleTime[type] = calculateAvg(times);
+      }
+      const avgLeadTime = {};
+      for (const [type, times] of Object.entries(flowMetrics.leadTimeByType)) {
+        avgLeadTime[type] = calculateAvg(times);
+      }
+
       const summary = {
-        avgCycleTime: {
-          Story: calculateAvg(flowMetrics.cycleTimeByType.Story),
-          Bug: calculateAvg(flowMetrics.cycleTimeByType.Bug),
-          Task: calculateAvg(flowMetrics.cycleTimeByType.Task)
-        },
-        avgLeadTime: {
-          Story: calculateAvg(flowMetrics.leadTimeByType.Story),
-          Bug: calculateAvg(flowMetrics.leadTimeByType.Bug),
-          Task: calculateAvg(flowMetrics.leadTimeByType.Task)
-        },
+        avgCycleTime,
+        avgLeadTime,
         percentiles: {
           p50: percentile(allCycleTimes, 50),
           p70: percentile(allCycleTimes, 70),

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import api from '../services/api';
 
@@ -62,7 +62,7 @@ const getStatusOrder = (status) => {
   return STATUS_ORDER[normalized] ?? 25; // Default to middle of workflow
 };
 
-export default function ReleasesTab({ credentials, boardId, boardName, cachedReleasesData }) {
+export default function ReleasesTab({ credentials, boardId, boardName, cachedReleasesData, onReleasesDataUpdated }) {
   const [releases, setReleases] = useState([]);
   const [selectedRelease, setSelectedRelease] = useState(null);
   const [releaseDetails, setReleaseDetails] = useState(null);
@@ -72,6 +72,9 @@ export default function ReleasesTab({ credentials, boardId, boardName, cachedRel
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState('');
   const [activeDetailTab, setActiveDetailTab] = useState('overview');
+
+  // Local cache for release details (persisted to DB)
+  const detailsCacheRef = useRef(cachedReleasesData?.releaseDetailsCache || {});
 
   // Reset all state and reload when board changes
   useEffect(() => {
@@ -83,15 +86,30 @@ export default function ReleasesTab({ credentials, boardId, boardName, cachedRel
     setBurndownReleaseDate(null);
     setError('');
     setActiveDetailTab('overview');
+    detailsCacheRef.current = cachedReleasesData?.releaseDetailsCache || {};
 
     // Try cached data first, then fall back to API
     if (cachedReleasesData?.releases?.length > 0) {
-      setReleases(cachedReleasesData.releases);
-      const unreleased = cachedReleasesData.releases.find(r => !r.released);
-      if (unreleased) {
-        setSelectedRelease(unreleased);
-      } else if (cachedReleasesData.releases.length > 0) {
-        setSelectedRelease(cachedReleasesData.releases[0]);
+      const cachedReleases = cachedReleasesData.releases;
+      setReleases(cachedReleases);
+      const unreleased = cachedReleases.find(r => !r.released);
+      const autoSelect = unreleased || cachedReleases[0];
+
+      if (autoSelect) {
+        const cached = detailsCacheRef.current[autoSelect.id];
+        if (cached?.details) {
+          // Full cache hit — load instantly without API
+          setSelectedRelease(autoSelect);
+          setReleaseDetails(cached.details);
+          setBurndownData(cached.burndown || null);
+          setBurndownReleaseDate(cached.burndownReleaseDate || null);
+        } else if (credentials && boardId) {
+          // Release list cached but details not — fetch details from API
+          setSelectedRelease(autoSelect);
+          fetchAndCacheDetails(autoSelect, cachedReleases);
+        } else {
+          setSelectedRelease(autoSelect);
+        }
       }
     } else if (credentials && boardId) {
       loadReleases();
@@ -112,10 +130,11 @@ export default function ReleasesTab({ credentials, boardId, boardName, cachedRel
         setReleases(result.releases);
         // Auto-select first unreleased release if available
         const unreleased = result.releases.find(r => !r.released);
-        if (unreleased) {
-          handleReleaseSelect(unreleased);
-        } else if (result.releases.length > 0) {
-          handleReleaseSelect(result.releases[0]);
+        const autoSelect = unreleased || result.releases[0];
+        if (autoSelect) {
+          setSelectedRelease(autoSelect);
+          // Pass releases directly since state may not be updated yet
+          await fetchAndCacheDetails(autoSelect, result.releases);
         }
       }
     } catch (err) {
@@ -125,31 +144,20 @@ export default function ReleasesTab({ credentials, boardId, boardName, cachedRel
     }
   };
 
-  const handleReleaseSelect = async (release) => {
-    setSelectedRelease(release);
+  // Fetch details from API and save to local cache + DB
+  const fetchAndCacheDetails = async (release, currentReleases) => {
     setLoadingDetails(true);
     setError('');
 
     try {
-      // Load details and burndown in parallel
       const [detailsResult, burndownResult] = await Promise.all([
         api.getReleaseDetails(
-          credentials.jiraUrl,
-          credentials.email,
-          credentials.apiToken,
-          boardId,
-          release.id,
-          release.name,
-          release.startDate
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, release.id, release.name, release.startDate
         ),
         api.getReleaseBurndown(
-          credentials.jiraUrl,
-          credentials.email,
-          credentials.apiToken,
-          boardId,
-          release.name,
-          release.startDate,
-          release.releaseDate
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, release.name, release.startDate, release.releaseDate
         )
       ]);
 
@@ -160,11 +168,46 @@ export default function ReleasesTab({ credentials, boardId, boardName, cachedRel
         setBurndownData(burndownResult.burndown);
         setBurndownReleaseDate(burndownResult.releaseDate);
       }
+
+      // Save to local cache and persist to DB
+      if (detailsResult.success || burndownResult.success) {
+        detailsCacheRef.current[release.id] = {
+          details: detailsResult.success ? detailsResult.details : null,
+          burndown: burndownResult.success ? burndownResult.burndown : null,
+          burndownReleaseDate: burndownResult.success ? burndownResult.releaseDate : null
+        };
+
+        const updatedReleasesData = {
+          releases: currentReleases,
+          releaseDetailsCache: detailsCacheRef.current
+        };
+
+        onReleasesDataUpdated?.(updatedReleasesData);
+        api.saveReleasesCache(boardId, updatedReleasesData).catch(err => {
+          console.warn('Failed to save releases cache:', err.message);
+        });
+      }
     } catch (err) {
       setError(`Failed to load release details: ${err.message}`);
     } finally {
       setLoadingDetails(false);
     }
+  };
+
+  const handleReleaseSelect = async (release) => {
+    setSelectedRelease(release);
+
+    // Check local cache first
+    const cached = detailsCacheRef.current[release.id];
+    if (cached?.details) {
+      setReleaseDetails(cached.details);
+      setBurndownData(cached.burndown || null);
+      setBurndownReleaseDate(cached.burndownReleaseDate || null);
+      return;
+    }
+
+    // Cache miss — fetch from API
+    await fetchAndCacheDetails(release, releases);
   };
 
   // Chart configurations

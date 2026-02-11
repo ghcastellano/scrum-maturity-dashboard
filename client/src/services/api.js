@@ -144,6 +144,11 @@ class ApiService {
     });
     return response.data;
   }
+
+  async saveReleasesCache(boardId, releasesData) {
+    const response = await this.client.post('/releases/save-cache', { boardId, releasesData });
+    return response.data;
+  }
 }
 
 export default new ApiService();

@@ -145,11 +145,14 @@ class JiraService {
   }
 
   // Get issues for a sprint
-  async getSprintIssues(sprintId) {
+  // When boardId is provided, uses the board-scoped endpoint which respects the board's
+  // JQL filter — this matches what the Jira Sprint Report shows.
+  async getSprintIssues(sprintId, boardId = null) {
     try {
-      // Use Agile API endpoint for sprint issues
-      // Request ALL fields using '*all' to include all custom fields
-      const response = await this.agileApi.get(`/sprint/${sprintId}/issue`, {
+      const endpoint = boardId
+        ? `/board/${boardId}/sprint/${sprintId}/issue`
+        : `/sprint/${sprintId}/issue`;
+      const response = await this.agileApi.get(endpoint, {
         params: {
           maxResults: 1000,
           fields: '*all'

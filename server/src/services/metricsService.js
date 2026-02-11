@@ -3,14 +3,17 @@ import { differenceInDays, differenceInHours, parseISO } from 'date-fns';
 class MetricsService {
   
   // Calculate Sprint Goal Attainment
+  // Only counts issues as "completed" if resolved before/on sprint end date
   calculateSprintGoalAttainment(sprint, issues) {
     const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
+    const sprintEnd = sprint.endDate ? new Date(sprint.endDate) : null;
 
     let committedPoints = 0;
     let completedPoints = 0;
     let issuesWithPoints = 0;
     let issuesWithoutPoints = 0;
     let skippedSubtasks = 0;
+    let completedAfterSprint = 0;
 
     issues.forEach(issue => {
       // Skip sub-tasks to avoid double-counting story points with their parent
@@ -26,7 +29,12 @@ class MetricsService {
         committedPoints += points;
 
         if (issue.fields.status.statusCategory.key === 'done') {
-          completedPoints += points;
+          const resolutionDate = issue.fields.resolutiondate ? new Date(issue.fields.resolutiondate) : null;
+          if (!sprintEnd || (resolutionDate && resolutionDate <= sprintEnd)) {
+            completedPoints += points;
+          } else {
+            completedAfterSprint++;
+          }
         }
       } else {
         issuesWithoutPoints++;
@@ -38,7 +46,7 @@ class MetricsService {
     console.log(`  Issues with story points: ${issuesWithPoints}`);
     console.log(`  Issues without story points: ${issuesWithoutPoints}`);
     console.log(`  Committed points: ${committedPoints}`);
-    console.log(`  Completed points: ${completedPoints}`);
+    console.log(`  Completed points: ${completedPoints}${completedAfterSprint > 0 ? ` (${completedAfterSprint} issues completed after sprint end excluded)` : ''}`);
     console.log(`  Attainment: ${committedPoints > 0 ? ((completedPoints / committedPoints) * 100).toFixed(1) : 0}%`);
 
     if (issuesWithoutPoints > 0 && issues.length <= 5) {
@@ -123,11 +131,17 @@ class MetricsService {
     return { rate, issues: issueDetails, reasonBreakdown };
   }
 
-  // Calculate Sprint Hit Rate (excludes sub-tasks)
-  calculateSprintHitRate(issues) {
+  // Calculate Sprint Hit Rate (excludes sub-tasks, only counts completed before sprint end)
+  calculateSprintHitRate(issues, sprintEndDate = null) {
     const parentIssues = issues.filter(i => !i.fields.issuetype.subtask);
     const total = parentIssues.length;
-    const completed = parentIssues.filter(i => i.fields.status.statusCategory.key === 'done').length;
+    const sprintEnd = sprintEndDate ? new Date(sprintEndDate) : null;
+    const completed = parentIssues.filter(i => {
+      if (i.fields.status.statusCategory.key !== 'done') return false;
+      if (!sprintEnd) return true;
+      const resolved = i.fields.resolutiondate ? new Date(i.fields.resolutiondate) : null;
+      return resolved && resolved <= sprintEnd;
+    }).length;
 
     return total > 0 ? (completed / total) * 100 : 0;
   }

@@ -75,10 +75,20 @@ export default function ReleasesTab({ credentials, boardId, boardName, cachedRel
 
   // Local cache for release details (persisted to DB)
   const detailsCacheRef = useRef(cachedReleasesData?.releaseDetailsCache || {});
+  const lastBoardIdRef = useRef(null);
 
-  // Reset all state and reload when board changes
+  // Reset and reload when board changes or initial data arrives
   useEffect(() => {
-    // Reset all release data to prevent stale data from showing
+    const boardChanged = lastBoardIdRef.current !== boardId;
+    lastBoardIdRef.current = boardId;
+
+    // If board didn't change, just update the details cache ref (don't reset UI)
+    if (!boardChanged && releases.length > 0) {
+      detailsCacheRef.current = cachedReleasesData?.releaseDetailsCache || detailsCacheRef.current;
+      return;
+    }
+
+    // Full reset for board change or initial load
     setReleases([]);
     setSelectedRelease(null);
     setReleaseDetails(null);

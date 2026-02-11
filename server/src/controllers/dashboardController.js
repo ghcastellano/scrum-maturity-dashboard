@@ -257,7 +257,7 @@ class DashboardController {
           sprintHitRate,
           midSprintAdditions,
           defectDistribution,
-          totalIssues: issues.length
+          totalIssues: issues.filter(i => !i.fields.issuetype.subtask).length
         });
       }
       
@@ -751,16 +751,20 @@ class DashboardController {
 
         let committedPoints = 0;
         let completedPoints = 0;
-        let totalIssues = issues.length;
+        let totalIssues = 0;
         let completedIssues = 0;
         const sprintAssignees = new Set();
 
         for (const issue of issues) {
+          // Skip sub-tasks to avoid double-counting story points with their parent
+          if (issue.fields.issuetype.subtask) continue;
+
           const points = issue.fields[storyPointsField] || 0;
           const assignee = issue.fields.assignee?.displayName || 'Unassigned';
           const isDone = issue.fields.status.statusCategory.key === 'done';
           const issueType = issue.fields.issuetype.name;
 
+          totalIssues++;
           committedPoints += points;
           if (isDone) {
             completedPoints += points;

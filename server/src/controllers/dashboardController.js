@@ -412,7 +412,8 @@ class DashboardController {
         const issues = await jiraService.getSprintIssues(sprint.id);
 
         for (const issue of issues) {
-          // Skip issues already processed from another sprint
+          // Skip sub-tasks and already-processed issues
+          if (issue.fields.issuetype.subtask) continue;
           if (seenIssueKeys.has(issue.key)) continue;
           seenIssueKeys.add(issue.key);
 
@@ -882,7 +883,11 @@ class DashboardController {
 
   // Helper: Generate executive summary for a release
   generateExecutiveSummary(details, versionName, startDate) {
-    const { metrics, issues, addedAfterStart, removedIssues } = details;
+    const { metrics, issues: allIssues, addedAfterStart: allAddedAfterStart, removedIssues } = details;
+
+    // Exclude sub-tasks from counts to avoid double-counting with parent issues
+    const issues = allIssues.filter(i => !i._isSubtask && i.type !== 'Sub-task');
+    const addedAfterStart = allAddedAfterStart.filter(i => !i._isSubtask && i.type !== 'Sub-task');
 
     // Determine health status
     let healthStatus = 'On Track';

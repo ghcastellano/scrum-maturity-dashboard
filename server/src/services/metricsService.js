@@ -216,8 +216,11 @@ class MetricsService {
     return null;
   }
 
-  // Calculate Backlog Health Score
+  // Calculate Backlog Health Score (excludes sub-tasks)
   calculateBacklogHealth(issues) {
+    // Filter out sub-tasks - backlog health should only evaluate parent-level items
+    const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
+
     let withAcceptanceCriteria = 0;
     let withEstimates = 0;
     let linkedToGoals = 0;
@@ -228,12 +231,12 @@ class MetricsService {
     const missingFixVersions = [];
 
     console.log(`\n📋 Backlog Health Analysis:`);
-    console.log(`  Total backlog issues: ${issues.length}`);
+    console.log(`  Total backlog issues: ${parentIssues.length} (${issues.length - parentIssues.length} sub-tasks excluded)`);
 
     // Log first 3 issues for debugging
-    if (issues.length > 0) {
+    if (parentIssues.length > 0) {
       console.log(`\n  Sample backlog issues (first 3):`);
-      issues.slice(0, 3).forEach((issue, idx) => {
+      parentIssues.slice(0, 3).forEach((issue, idx) => {
         console.log(`  ${idx + 1}. ${issue.key}`);
         console.log(`     Description length: ${issue.fields.description?.length || 0} chars`);
         console.log(`     Story Points (${storyPointsField}): ${issue.fields[storyPointsField] || 'null'}`);
@@ -272,7 +275,7 @@ class MetricsService {
       return acPatterns.some(pattern => pattern.test(textContent));
     };
 
-    issues.forEach(issue => {
+    parentIssues.forEach(issue => {
       // Check for AC keywords in description
       const desc = issue.fields.description;
       const descText = typeof desc === 'object' ? JSON.stringify(desc) : desc;
@@ -297,7 +300,7 @@ class MetricsService {
       }
     });
 
-    const total = issues.length;
+    const total = parentIssues.length;
 
     console.log(`\n  Results:`);
     console.log(`    With Acceptance Criteria (keyword match): ${withAcceptanceCriteria}/${total}`);
@@ -330,9 +333,9 @@ class MetricsService {
     };
   }
 
-  // Calculate Defect Distribution
+  // Calculate Defect Distribution (excludes sub-tasks)
   calculateDefectDistribution(issues) {
-    const bugs = issues.filter(i => i.fields.issuetype.name === 'Bug');
+    const bugs = issues.filter(i => i.fields.issuetype.name === 'Bug' && !i.fields.issuetype.subtask);
     
     let preMerge = 0;
     let inQA = 0;
@@ -353,10 +356,10 @@ class MetricsService {
     return { preMerge, inQA, postRelease, total: bugs.length };
   }
 
-  // Calculate WIP Aging
+  // Calculate WIP Aging (excludes sub-tasks)
   calculateWIPAging(issues, changelog) {
-    const wipIssues = issues.filter(i => 
-      i.fields.status.statusCategory.key === 'indeterminate'
+    const wipIssues = issues.filter(i =>
+      !i.fields.issuetype.subtask && i.fields.status.statusCategory.key === 'indeterminate'
     );
 
     const aged = wipIssues.map(issue => {

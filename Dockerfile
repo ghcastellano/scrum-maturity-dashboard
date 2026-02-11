@@ -1,8 +1,7 @@
 # Multi-stage build for production
-# Uses Indeed Harbor Docker Hub proxy to avoid rate limits
 
 # Stage 1: Build frontend
-FROM docker.indeed.tech/node:18-alpine AS frontend-builder
+FROM node:18-alpine AS frontend-builder
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm install
@@ -10,14 +9,14 @@ COPY client/ ./
 RUN npm run build
 
 # Stage 2: Backend
-FROM docker.indeed.tech/node:18-alpine AS backend
+FROM node:18-alpine AS backend
 WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm install --only=production
 COPY server/ ./
 
 # Stage 3: Production
-FROM docker.indeed.tech/node:18-alpine
+FROM node:18-alpine
 WORKDIR /app
 
 # Copy backend

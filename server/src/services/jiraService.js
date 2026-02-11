@@ -541,6 +541,7 @@ class JiraService {
           status: issue.fields.status?.name || 'Unknown',
           statusCategory: issue.fields.status?.statusCategory?.key || 'undefined',
           type: issue.fields.issuetype?.name || 'Unknown',
+          _isSubtask: issue.fields.issuetype?.subtask || false,
           priority: issue.fields.priority?.name || 'None',
           assignee: issue.fields.assignee?.displayName || 'Unassigned',
           storyPoints: issue.fields.customfield_10061 || 0,
@@ -590,13 +591,14 @@ class JiraService {
         console.warn('[getReleaseDetails] Could not fetch removed issues (this is OK):', err.message);
       }
 
-      // Calculate metrics
-      const totalIssues = issueDetails.length;
-      const completedIssues = issueDetails.filter(i => i.statusCategory === 'done').length;
-      const inProgressIssues = issueDetails.filter(i => i.statusCategory === 'indeterminate').length;
-      const todoIssues = issueDetails.filter(i => i.statusCategory === 'new' || i.statusCategory === 'undefined').length;
-      const totalStoryPoints = issueDetails.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
-      const completedStoryPoints = issueDetails.filter(i => i.statusCategory === 'done').reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+      // Calculate metrics (exclude sub-tasks from SP counts to avoid double-counting)
+      const parentIssues = issueDetails.filter(i => i.type !== 'Sub-task' && !i._isSubtask);
+      const totalIssues = parentIssues.length;
+      const completedIssues = parentIssues.filter(i => i.statusCategory === 'done').length;
+      const inProgressIssues = parentIssues.filter(i => i.statusCategory === 'indeterminate').length;
+      const todoIssues = parentIssues.filter(i => i.statusCategory === 'new' || i.statusCategory === 'undefined').length;
+      const totalStoryPoints = parentIssues.reduce((sum, i) => sum + (i.storyPoints || 0), 0);
+      const completedStoryPoints = parentIssues.filter(i => i.statusCategory === 'done').reduce((sum, i) => sum + (i.storyPoints || 0), 0);
 
       return {
         issues: issueDetails,
@@ -663,8 +665,8 @@ class JiraService {
         return doneStatuses.some(s => lower.includes(s));
       };
 
-      // Pre-process issues to build timeline of status changes
-      const issueTimelines = issues.map(issue => {
+      // Pre-process issues to build timeline of status changes (exclude sub-tasks)
+      const issueTimelines = issues.filter(issue => !issue.fields.issuetype?.subtask).map(issue => {
         const changelog = issue.changelog?.histories || [];
         const storyPoints = issue.fields.customfield_10061 || 0;
         const issueCreated = new Date(issue.fields.created);

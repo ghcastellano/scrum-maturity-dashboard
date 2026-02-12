@@ -759,6 +759,8 @@ class DashboardController {
         let completedIssues = 0;
         const sprintAssignees = new Set();
         const sprintIssueDetails = [];
+        // Build status→category map for changelog-based completion check
+        const statusCategoryMap = MetricsService.buildStatusCategoryMap(issues);
 
         for (const issue of issues) {
           // Skip sub-tasks to avoid double-counting story points with their parent
@@ -768,10 +770,9 @@ class DashboardController {
           const assignee = issue.fields.assignee?.displayName || 'Unassigned';
           const issueType = issue.fields.issuetype.name;
 
-          // Only count as completed if resolved before/on sprint end date
-          const statusDone = issue.fields.status.statusCategory.key === 'done';
-          const resolutionDate = issue.fields.resolutiondate ? new Date(issue.fields.resolutiondate) : null;
-          const isDone = statusDone && (!sprintEnd || (resolutionDate && resolutionDate <= sprintEnd));
+          // Check if issue was in "done" status at sprint close time (changelog snapshot)
+          // This matches Jira Sprint Report behavior instead of using resolutionDate
+          const isDone = MetricsService.wasCompletedAtTime(issue, sprintEnd, statusCategoryMap);
 
           totalIssues++;
           committedPoints += points;

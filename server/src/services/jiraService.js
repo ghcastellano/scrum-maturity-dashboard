@@ -272,6 +272,48 @@ class JiraService {
     }
   }
 
+  // Batch fetch changelogs for multiple issues at once.
+  // Returns Map<issueKey, changelogHistories[]> for use by flow metrics.
+  // Much faster than individual getIssueChangelog calls (3-4 batch calls vs 150+ individual).
+  async batchGetIssueChangelogs(issueKeys) {
+    const changelogMap = new Map();
+    if (issueKeys.length === 0) return changelogMap;
+
+    try {
+      // Batch in groups of 50 to stay within JQL length limits
+      const batches = [];
+      for (let i = 0; i < issueKeys.length; i += 50) {
+        batches.push(issueKeys.slice(i, i + 50));
+      }
+
+      // Fetch all batches in parallel
+      const results = await Promise.all(batches.map(async (batch) => {
+        const jql = `key in (${batch.join(',')})`;
+        const resp = await this.api.post('/search/jql', {
+          jql,
+          fields: ['summary'],
+          expand: 'changelog',
+          maxResults: batch.length
+        });
+        return resp.data.issues || [];
+      }));
+
+      for (const issues of results) {
+        for (const issue of issues) {
+          if (issue.changelog?.histories?.length > 0) {
+            changelogMap.set(issue.key, issue.changelog.histories);
+          }
+        }
+      }
+
+      console.log(`  ✓ Batch changelogs fetched for ${changelogMap.size}/${issueKeys.length} issues (${batches.length} batches)`);
+    } catch (err) {
+      console.warn(`  ⚠ Could not batch fetch changelogs: ${err.message}`);
+    }
+
+    return changelogMap;
+  }
+
   // Get board configuration
   async getBoardConfiguration(boardId) {
     try {

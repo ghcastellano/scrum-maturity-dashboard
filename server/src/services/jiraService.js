@@ -165,7 +165,8 @@ class JiraService {
       const response = await this.agileApi.get(endpoint, {
         params: {
           maxResults: 1000,
-          fields: '*all'
+          fields: '*all',
+          expand: 'changelog'
         }
       });
       return response.data.issues;

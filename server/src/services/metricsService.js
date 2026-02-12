@@ -8,6 +8,7 @@ class MetricsService {
   calculateSprintGoalAttainment(sprint, issues) {
     const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
     const sprintEnd = new Date(sprint.completeDate || sprint.endDate);
+    const statusCategoryMap = MetricsService.buildStatusCategoryMap(issues);
 
     let committedPoints = 0;
     let completedPoints = 0;
@@ -29,13 +30,11 @@ class MetricsService {
         issuesWithPoints++;
         committedPoints += points;
 
-        if (issue.fields.status.statusCategory.key === 'done') {
-          const resolutionDate = issue.fields.resolutiondate ? new Date(issue.fields.resolutiondate) : null;
-          if (!sprintEnd || (resolutionDate && resolutionDate <= sprintEnd)) {
-            completedPoints += points;
-          } else {
-            completedAfterSprint++;
-          }
+        // Check if issue was in "done" status at sprint close time (changelog snapshot)
+        if (MetricsService.wasCompletedAtTime(issue, sprintEnd, statusCategoryMap)) {
+          completedPoints += points;
+        } else if (issue.fields.status.statusCategory.key === 'done') {
+          completedAfterSprint++;
         }
       } else {
         issuesWithoutPoints++;
@@ -76,6 +75,78 @@ class MetricsService {
     'req-gap': 'Requirement Gap',
     'dev-qa-spill': 'Dev/QA Spill'
   };
+
+  // Build a mapping of status names → category keys from current issue data.
+  // Used to interpret changelog status transitions.
+  static buildStatusCategoryMap(issues) {
+    const map = new Map();
+    for (const issue of issues) {
+      const statusName = issue.fields?.status?.name;
+      const category = issue.fields?.status?.statusCategory?.key;
+      if (statusName && category) {
+        map.set(statusName, category);
+      }
+    }
+    return map;
+  }
+
+  // Determine if an issue was in a "done" status category at a specific date
+  // by examining the issue's changelog. This matches Jira Sprint Report behavior
+  // which captures a status snapshot at sprint close time.
+  static wasCompletedAtTime(issue, targetDate, statusCategoryMap) {
+    // No valid target date: fall back to current status
+    if (!targetDate || isNaN(targetDate.getTime())) {
+      return issue.fields?.status?.statusCategory?.key === 'done';
+    }
+
+    // If changelog not available (API didn't return it), fall back to resolution date check
+    if (!issue.changelog) {
+      const statusDone = issue.fields?.status?.statusCategory?.key === 'done';
+      const resolutionDate = issue.fields?.resolutiondate ? new Date(issue.fields.resolutiondate) : null;
+      return statusDone && (resolutionDate && resolutionDate <= targetDate);
+    }
+
+    const histories = issue.changelog?.histories || [];
+    const sorted = [...histories].sort((a, b) => new Date(a.created) - new Date(b.created));
+
+    // Walk through status transitions to find the status at targetDate
+    let statusAtTime = null;
+
+    for (const history of sorted) {
+      if (new Date(history.created) > targetDate) break;
+      for (const item of history.items) {
+        if (item.field === 'status') {
+          statusAtTime = item.toString;
+        }
+      }
+    }
+
+    // If no status change before targetDate, find the initial status
+    if (statusAtTime === null) {
+      for (const history of sorted) {
+        for (const item of history.items) {
+          if (item.field === 'status') {
+            statusAtTime = item.fromString; // This was the initial status
+            break;
+          }
+        }
+        if (statusAtTime !== null) break;
+      }
+    }
+
+    // No status changes at all: issue has always been in its current status
+    if (statusAtTime === null) {
+      return issue.fields?.status?.statusCategory?.key === 'done';
+    }
+
+    // Look up category from the map built from current issue statuses
+    const category = statusCategoryMap.get(statusAtTime);
+    if (category) return category === 'done';
+
+    // Fallback: name-based check for statuses not in our map
+    const lower = statusAtTime.toLowerCase();
+    return ['done', 'closed', 'resolved', 'complete', 'completed'].some(s => lower.includes(s));
+  }
 
   // Calculate Rollover Rate - returns { rate, issues[], reasonBreakdown }
   // Excludes sub-tasks to avoid inflating denominator
@@ -132,17 +203,15 @@ class MetricsService {
     return { rate, issues: issueDetails, reasonBreakdown };
   }
 
-  // Calculate Sprint Hit Rate (excludes sub-tasks, only counts completed before sprint end)
+  // Calculate Sprint Hit Rate (excludes sub-tasks, uses changelog snapshot at sprint close)
   calculateSprintHitRate(issues, sprintEndDate = null) {
     const parentIssues = issues.filter(i => !i.fields.issuetype.subtask);
     const total = parentIssues.length;
     const sprintEnd = sprintEndDate ? new Date(sprintEndDate) : null;
-    const completed = parentIssues.filter(i => {
-      if (i.fields.status.statusCategory.key !== 'done') return false;
-      if (!sprintEnd) return true;
-      const resolved = i.fields.resolutiondate ? new Date(i.fields.resolutiondate) : null;
-      return resolved && resolved <= sprintEnd;
-    }).length;
+    const statusCategoryMap = MetricsService.buildStatusCategoryMap(issues);
+    const completed = parentIssues.filter(i =>
+      MetricsService.wasCompletedAtTime(i, sprintEnd, statusCategoryMap)
+    ).length;
 
     return total > 0 ? (completed / total) * 100 : 0;
   }

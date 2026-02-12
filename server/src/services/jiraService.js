@@ -26,6 +26,16 @@ class JiraService {
     });
   }
 
+  // Lightweight credential validation — single API call (~200ms)
+  async getCurrentUser() {
+    try {
+      const response = await this.api.get('/myself');
+      return response.data;
+    } catch (error) {
+      throw new Error(`Invalid credentials or Jira URL: ${error.message}`);
+    }
+  }
+
   // Get all boards (paginated to fetch all)
   async getBoards() {
     try {

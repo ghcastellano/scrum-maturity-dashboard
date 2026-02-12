@@ -199,12 +199,29 @@ class DashboardController {
         console.log(`  ${idx + 1}. ${s.name} (${s.startDate?.split('T')[0]} to ${s.endDate?.split('T')[0]})`);
       });
 
-      // Process each sprint
+      // Pre-fetch ALL sprint issues + backlog in parallel (major speedup)
+      console.log(`  ⚡ Fetching all sprint issues + backlog in parallel...`);
+      const sprintIssuesMap = new Map();
+      let backlogIssuesResult = [];
+
+      const fetchPromises = recentSprints.map(async (sprint) => {
+        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+        sprintIssuesMap.set(sprint.id, issues);
+      });
+      fetchPromises.push(
+        jiraService.getBacklogIssues(boardId)
+          .then(issues => { backlogIssuesResult = issues; })
+          .catch(err => { console.warn('  ⚠ Could not fetch backlog:', err.message); })
+      );
+      await Promise.all(fetchPromises);
+      console.log(`  ✓ All data fetched in parallel`);
+
+      // Process each sprint (all data already in memory)
       const sprintMetrics = [];
-      
+
       for (let i = 0; i < recentSprints.length; i++) {
         const sprint = recentSprints[i];
-        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+        const issues = sprintIssuesMap.get(sprint.id);
 
         // Log sample issues on first sprint to help identify story points field
         if (i === 0 && issues.length > 0) {
@@ -216,7 +233,6 @@ class DashboardController {
               if (fieldKey.startsWith('customfield_')) {
                 const value = issue.fields[fieldKey];
                 if (value !== null && value !== undefined) {
-                  // Show type and value
                   const valueStr = typeof value === 'object' ? JSON.stringify(value).substring(0, 50) : value;
                   customFields.push(`${fieldKey}=${valueStr}(${typeof value})`);
                 }
@@ -230,12 +246,9 @@ class DashboardController {
           });
         }
 
-        // Get next sprint for rollover calculation
+        // Get next sprint for rollover calculation (already pre-fetched)
         const nextSprint = recentSprints[i - 1];
-        let nextSprintIssues = [];
-        if (nextSprint) {
-          nextSprintIssues = await jiraService.getSprintIssues(nextSprint.id, boardId);
-        }
+        const nextSprintIssues = nextSprint ? sprintIssuesMap.get(nextSprint.id) : [];
 
         // Calculate metrics
         const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
@@ -259,19 +272,17 @@ class DashboardController {
           totalIssues: issues.filter(i => !i.fields.issuetype.subtask).length
         });
       }
-      
-      // Get current backlog health using Agile API backlog endpoint
-      console.log(`\n🔍 Fetching Backlog Health for board ${boardId}:`);
+
+      // Backlog health (already pre-fetched in parallel above)
+      console.log(`\n🔍 Processing Backlog Health for board ${boardId}:`);
 
       let backlogHealth = { score: 0, details: {} };
 
       try {
-        console.log(`  Using Agile API /board/${boardId}/backlog endpoint`);
-        const backlogIssues = await jiraService.getBacklogIssues(boardId);
-        console.log(`  Found ${backlogIssues.length} backlog issues`);
-        backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssues);
+        console.log(`  Found ${backlogIssuesResult.length} backlog issues`);
+        backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssuesResult);
       } catch (err) {
-        console.warn('  ❌ Could not fetch backlog health:', err.message);
+        console.warn('  ❌ Could not calculate backlog health:', err.message);
       }
       
       // Aggregate metrics
@@ -402,50 +413,61 @@ class DashboardController {
         leadTimeByType: {}
       };
 
-      // Scatter plot data points: each completed issue with its completion date and cycle time
-      // Track seen issue keys to avoid duplicates across sprints
-      const seenIssueKeys = new Set();
-      const scatterData = [];
-
-      for (const sprint of recentSprints) {
+      // Step 1: Pre-fetch ALL sprint issues in parallel
+      console.log(`  ⚡ Fetching all sprint issues in parallel...`);
+      const sprintIssuesMap = new Map();
+      await Promise.all(recentSprints.map(async (sprint) => {
         const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+        sprintIssuesMap.set(sprint.id, issues);
+      }));
 
-        for (const issue of issues) {
-          // Skip sub-tasks and already-processed issues
+      // Step 2: Collect unique non-subtask issue keys across all sprints
+      const seenIssueKeys = new Set();
+      const uniqueIssues = [];
+      for (const sprint of recentSprints) {
+        for (const issue of sprintIssuesMap.get(sprint.id)) {
           if (issue.fields.issuetype.subtask) continue;
           if (seenIssueKeys.has(issue.key)) continue;
           seenIssueKeys.add(issue.key);
+          uniqueIssues.push(issue);
+        }
+      }
 
-          const issueType = issue.fields.issuetype.name;
+      // Step 3: Batch fetch ALL changelogs in parallel (instead of 1 API call per issue)
+      console.log(`  ⚡ Batch fetching changelogs for ${uniqueIssues.length} issues...`);
+      const changelogMap = await jiraService.batchGetIssueChangelogs(
+        uniqueIssues.map(i => i.key)
+      );
 
-          try {
-            const changelog = await jiraService.getIssueChangelog(issue.key);
-            const cycleTime = this.metricsService.calculateCycleTime(issue, changelog);
-            const leadTime = this.metricsService.calculateLeadTime(issue);
+      // Step 4: Process metrics from pre-fetched data (no API calls)
+      const scatterData = [];
 
-            if (cycleTime) {
-              if (!flowMetrics.cycleTimeByType[issueType]) flowMetrics.cycleTimeByType[issueType] = [];
-              flowMetrics.cycleTimeByType[issueType].push(cycleTime);
-            }
+      for (const issue of uniqueIssues) {
+        const issueType = issue.fields.issuetype.name;
+        const changelog = changelogMap.get(issue.key) || [];
 
-            if (leadTime) {
-              if (!flowMetrics.leadTimeByType[issueType]) flowMetrics.leadTimeByType[issueType] = [];
-              flowMetrics.leadTimeByType[issueType].push(leadTime);
-            }
+        const cycleTime = this.metricsService.calculateCycleTime(issue, changelog);
+        const leadTime = this.metricsService.calculateLeadTime(issue);
 
-            // Add to scatter data if issue is resolved
-            if (cycleTime && issue.fields.resolutiondate) {
-              scatterData.push({
-                key: issue.key,
-                summary: issue.fields.summary || '',
-                type: issueType,
-                completionDate: issue.fields.resolutiondate.split('T')[0],
-                cycleTime: Math.round(cycleTime * 10) / 10
-              });
-            }
-          } catch (err) {
-            console.warn(`Could not fetch changelog for ${issue.key}`);
-          }
+        if (cycleTime) {
+          if (!flowMetrics.cycleTimeByType[issueType]) flowMetrics.cycleTimeByType[issueType] = [];
+          flowMetrics.cycleTimeByType[issueType].push(cycleTime);
+        }
+
+        if (leadTime) {
+          if (!flowMetrics.leadTimeByType[issueType]) flowMetrics.leadTimeByType[issueType] = [];
+          flowMetrics.leadTimeByType[issueType].push(leadTime);
+        }
+
+        // Add to scatter data if issue is resolved
+        if (cycleTime && issue.fields.resolutiondate) {
+          scatterData.push({
+            key: issue.key,
+            summary: issue.fields.summary || '',
+            type: issueType,
+            completionDate: issue.fields.resolutiondate.split('T')[0],
+            cycleTime: Math.round(cycleTime * 10) / 10
+          });
         }
       }
 
@@ -740,6 +762,15 @@ class DashboardController {
 
       console.log(`\n📊 Capacity Metrics for board ${boardId} (${boardName}) - ${recentSprints.length} sprints`);
 
+      // Pre-fetch ALL sprint issues in parallel (major speedup)
+      console.log(`  ⚡ Fetching all sprint issues in parallel...`);
+      const sprintIssuesMap = new Map();
+      await Promise.all(recentSprints.map(async (sprint) => {
+        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+        sprintIssuesMap.set(sprint.id, issues);
+      }));
+      console.log(`  ✓ All sprint issues fetched in parallel`);
+
       const storyPointsField = 'customfield_10061';
       const sprintCapacity = [];
       const assigneeMap = {};
@@ -749,7 +780,7 @@ class DashboardController {
       const issueSprintMap = new Map();
 
       for (const sprint of recentSprints) {
-        const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+        const issues = sprintIssuesMap.get(sprint.id);
         // Use completeDate (when sprint was actually closed) to match Jira Sprint Report
         const sprintEnd = new Date(sprint.completeDate || sprint.endDate);
 

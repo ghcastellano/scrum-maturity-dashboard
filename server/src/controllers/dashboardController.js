@@ -240,7 +240,7 @@ class DashboardController {
         // Calculate metrics
         const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
         const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name);
-        const sprintHitRate = this.metricsService.calculateSprintHitRate(issues, sprint.endDate);
+        const sprintHitRate = this.metricsService.calculateSprintHitRate(issues, sprint.completeDate || sprint.endDate);
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
         const defectDistribution = this.metricsService.calculateDefectDistribution(issues);
 
@@ -750,7 +750,8 @@ class DashboardController {
 
       for (const sprint of recentSprints) {
         const issues = await jiraService.getSprintIssues(sprint.id, boardId);
-        const sprintEnd = sprint.endDate ? new Date(sprint.endDate) : null;
+        // Use completeDate (when sprint was actually closed) to match Jira Sprint Report
+        const sprintEnd = new Date(sprint.completeDate || sprint.endDate);
 
         let committedPoints = 0;
         let completedPoints = 0;

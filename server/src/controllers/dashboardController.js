@@ -8,18 +8,17 @@ class DashboardController {
     this.metricsService = new MetricsService();
   }
 
-  // Initialize Jira connection
+  // Initialize Jira connection (lightweight — validates credentials only)
   async testConnection(req, res) {
     try {
       const { jiraUrl, email, apiToken } = req.body;
-      
+
       const jiraService = new JiraService(jiraUrl, email, apiToken);
-      const boards = await jiraService.getBoards();
-      
+      await jiraService.getCurrentUser();
+
       res.json({
         success: true,
-        message: 'Connection successful',
-        boardCount: boards.length
+        message: 'Connection successful'
       });
     } catch (error) {
       res.status(400).json({

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { Line, Bar } from 'react-chartjs-2';
 
 const formatNumber = (num, decimals = 1) => {
@@ -6,7 +6,7 @@ const formatNumber = (num, decimals = 1) => {
   return Number(num).toFixed(decimals).replace(/\.0$/, '');
 };
 
-export default function CapacityTab({ capacityData }) {
+export default function CapacityTab({ capacityData, credentials }) {
   if (!capacityData) {
     return (
       <div className="card text-center py-12">
@@ -20,6 +20,18 @@ export default function CapacityTab({ capacityData }) {
   }
 
   const { sprintCapacity = [], workDistribution = [], summary = {} } = capacityData;
+
+  // Sprint row expansion state
+  const [expandedSprints, setExpandedSprints] = useState(new Set());
+  const toggleSprint = (sprintId) => {
+    setExpandedSprints(prev => {
+      const next = new Set(prev);
+      if (next.has(sprintId)) next.delete(sprintId);
+      else next.add(sprintId);
+      return next;
+    });
+  };
+  const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
 
   // Capacity Calculator state
   const [calcTeamSize, setCalcTeamSize] = useState(Math.round(summary.avgTeamSize || 5));
@@ -480,24 +492,107 @@ export default function CapacityTab({ capacityData }) {
                   const focus = sprint.committedPoints > 0
                     ? (sprint.completedPoints / sprint.committedPoints) * 100
                     : 0;
+                  const isExpanded = expandedSprints.has(sprint.sprintId);
+                  const issues = sprint.issues || [];
                   return (
-                    <tr key={sprint.sprintId} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium text-gray-800">{sprint.sprintName}</td>
-                      <td className="px-3 py-2 text-center text-gray-600">{sprint.committedPoints} SP</td>
-                      <td className="px-3 py-2 text-center font-semibold text-blue-600">{sprint.completedPoints} SP</td>
-                      <td className="px-3 py-2 text-center font-semibold text-blue-700">{sprint.velocity}</td>
-                      <td className="px-3 py-2 text-center text-purple-600">{sprint.throughput} issues</td>
-                      <td className="px-3 py-2 text-center text-orange-600">{sprint.teamSize}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          focus >= 90 ? 'bg-green-100 text-green-700' :
-                          focus >= 70 ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                          {formatNumber(focus)}%
-                        </span>
-                      </td>
-                    </tr>
+                    <Fragment key={sprint.sprintId}>
+                      <tr className="hover:bg-gray-50 cursor-pointer select-none" onClick={() => toggleSprint(sprint.sprintId)}>
+                        <td className="px-3 py-2 font-medium text-gray-800">
+                          <span className="inline-flex items-center gap-1.5">
+                            <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            {sprint.sprintName}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-center text-gray-600">{sprint.committedPoints} SP</td>
+                        <td className="px-3 py-2 text-center font-semibold text-blue-600">{sprint.completedPoints} SP</td>
+                        <td className="px-3 py-2 text-center font-semibold text-blue-700">{sprint.velocity}</td>
+                        <td className="px-3 py-2 text-center text-purple-600">{sprint.throughput} issues</td>
+                        <td className="px-3 py-2 text-center text-orange-600">{sprint.teamSize}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            focus >= 90 ? 'bg-green-100 text-green-700' :
+                            focus >= 70 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {formatNumber(focus)}%
+                          </span>
+                        </td>
+                      </tr>
+                      {isExpanded && issues.length > 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-0 py-0">
+                            <div className="bg-gray-50 border-t border-b border-gray-200 px-4 py-3">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-gray-500 uppercase tracking-wider">
+                                    <th className="px-2 py-1.5 text-left font-medium">Issue</th>
+                                    <th className="px-2 py-1.5 text-left font-medium">Type</th>
+                                    <th className="px-2 py-1.5 text-center font-medium">SP</th>
+                                    <th className="px-2 py-1.5 text-center font-medium">Status</th>
+                                    <th className="px-2 py-1.5 text-center font-medium">Resolution Date</th>
+                                    <th className="px-2 py-1.5 text-center font-medium">In Sprint</th>
+                                    <th className="px-2 py-1.5 text-center font-medium">Carryover</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {issues.map(issue => (
+                                    <tr key={issue.key} className="hover:bg-white">
+                                      <td className="px-2 py-1.5 text-left">
+                                        {jiraBaseUrl ? (
+                                          <a href={`${jiraBaseUrl}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer"
+                                            className="font-mono font-semibold text-blue-600 hover:underline"
+                                            onClick={e => e.stopPropagation()}>
+                                            {issue.key}
+                                          </a>
+                                        ) : (
+                                          <span className="font-mono font-semibold text-gray-800">{issue.key}</span>
+                                        )}
+                                        <span className="ml-1.5 text-gray-600" title={issue.summary}>
+                                          {issue.summary?.length > 50 ? issue.summary.substring(0, 48) + '...' : issue.summary}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-1.5 text-left">
+                                        <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600">{issue.issueType}</span>
+                                      </td>
+                                      <td className="px-2 py-1.5 text-center font-medium">{issue.points || '-'}</td>
+                                      <td className="px-2 py-1.5 text-center">
+                                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                          issue.statusCategory === 'done' ? 'bg-green-100 text-green-700' :
+                                          issue.statusCategory === 'indeterminate' ? 'bg-blue-100 text-blue-700' :
+                                          'bg-gray-100 text-gray-600'
+                                        }`}>{issue.status}</span>
+                                      </td>
+                                      <td className="px-2 py-1.5 text-center text-gray-600">
+                                        {issue.resolutionDate ? new Date(issue.resolutionDate).toLocaleDateString() : '-'}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-center">
+                                        {issue.completedInSprint
+                                          ? <span className="text-green-600 font-medium">Yes</span>
+                                          : <span className="text-red-500 font-medium">No</span>}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-center">
+                                        {issue.isCarryover
+                                          ? <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">Yes ({issue.sprintCount})</span>
+                                          : <span className="text-gray-400">-</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {isExpanded && issues.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-3 text-sm text-gray-400 text-center bg-gray-50">
+                            No issue details available. Click "Refresh from Jira" to load.
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

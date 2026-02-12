@@ -746,6 +746,8 @@ class DashboardController {
       const assigneeMap = {};
       // Track issues globally to avoid double-counting in work distribution
       const seenIssueKeysGlobal = new Set();
+      // Track which sprints each issue appears in (for carryover detection)
+      const issueSprintMap = new Map();
 
       for (const sprint of recentSprints) {
         const issues = await jiraService.getSprintIssues(sprint.id, boardId);
@@ -756,6 +758,7 @@ class DashboardController {
         let totalIssues = 0;
         let completedIssues = 0;
         const sprintAssignees = new Set();
+        const sprintIssueDetails = [];
 
         for (const issue of issues) {
           // Skip sub-tasks to avoid double-counting story points with their parent
@@ -778,6 +781,23 @@ class DashboardController {
           }
 
           sprintAssignees.add(assignee);
+
+          // Collect issue details for the expandable sprint view
+          sprintIssueDetails.push({
+            key: issue.key,
+            summary: issue.fields.summary,
+            issueType,
+            points,
+            status: issue.fields.status.name,
+            statusCategory: issue.fields.status.statusCategory.key,
+            resolutionDate: issue.fields.resolutiondate || null,
+            completedInSprint: isDone,
+            assignee
+          });
+
+          // Track which sprints this issue appears in
+          if (!issueSprintMap.has(issue.key)) issueSprintMap.set(issue.key, []);
+          issueSprintMap.get(issue.key).push(sprint.id);
 
           // Track per-assignee data (deduplicated across sprints)
           if (!seenIssueKeysGlobal.has(issue.key)) {
@@ -806,8 +826,18 @@ class DashboardController {
           completedIssues,
           teamSize: sprintAssignees.size,
           velocity: completedPoints,
-          throughput: completedIssues
+          throughput: completedIssues,
+          issues: sprintIssueDetails
         });
+      }
+
+      // Annotate carryover status: issue appeared in more than one sprint
+      for (const sc of sprintCapacity) {
+        for (const issue of sc.issues) {
+          const sprintIds = issueSprintMap.get(issue.key) || [];
+          issue.isCarryover = sprintIds.length > 1;
+          issue.sprintCount = sprintIds.length;
+        }
       }
 
       // Calculate aggregated capacity metrics

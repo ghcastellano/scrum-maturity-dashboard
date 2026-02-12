@@ -3,10 +3,11 @@ import { differenceInDays, differenceInHours, parseISO } from 'date-fns';
 class MetricsService {
   
   // Calculate Sprint Goal Attainment
-  // Only counts issues as "completed" if resolved before/on sprint end date
+  // Only counts issues as "completed" if resolved before/on sprint close date.
+  // Uses completeDate (when Scrum Master clicked "Complete Sprint") to match Jira Sprint Report.
   calculateSprintGoalAttainment(sprint, issues) {
     const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
-    const sprintEnd = sprint.endDate ? new Date(sprint.endDate) : null;
+    const sprintEnd = new Date(sprint.completeDate || sprint.endDate);
 
     let committedPoints = 0;
     let completedPoints = 0;

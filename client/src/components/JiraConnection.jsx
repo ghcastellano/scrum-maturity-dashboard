@@ -3,6 +3,7 @@ import api from '../services/api';
 
 const STORAGE_KEY_JIRA_URL = 'scrum-dashboard-jira-url';
 const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
+const STORAGE_KEY_TOKEN = 'scrum-dashboard-api-token';
 
 export default function JiraConnection({ onConnectionSuccess }) {
   const [formData, setFormData] = useState({
@@ -18,12 +19,14 @@ export default function JiraConnection({ onConnectionSuccess }) {
     try {
       const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
       const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
       const defaultJiraUrl = import.meta.env.VITE_JIRA_URL || 'https://indeed.atlassian.net/';
 
       setFormData(prev => ({
         ...prev,
         jiraUrl: savedUrl || defaultJiraUrl,
-        email: savedEmail || ''
+        email: savedEmail || '',
+        apiToken: savedToken || ''
       }));
     } catch (err) {
       console.error('Failed to load saved credentials:', err);

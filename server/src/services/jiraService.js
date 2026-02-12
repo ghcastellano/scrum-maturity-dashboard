@@ -154,11 +154,37 @@ class JiraService {
     }
   }
 
+  // Get the set of issue keys that Jira Sprint Report considers "completed" for a sprint.
+  // Uses the GreenHopper Sprint Report API — the same data source as the Jira UI.
+  async getSprintReportCompletedKeys(boardId, sprintId) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/rest/greenhopper/1.0/rapid/charts/sprintreport`,
+        {
+          params: { rapidViewId: boardId, sprintId },
+          headers: {
+            'Authorization': `Basic ${this.auth}`,
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      const completedIssues = response.data?.contents?.completedIssues || [];
+      const completedKeys = new Set(completedIssues.map(i => i.key));
+      console.log(`  ✓ Sprint Report: ${completedKeys.size} completed issues`);
+      return completedKeys;
+    } catch (err) {
+      console.warn(`  ⚠ Sprint Report API unavailable: ${err.message}`);
+      return null; // null signals fallback needed
+    }
+  }
+
   // Get issues for a sprint
   // When boardId is provided, uses the board-scoped endpoint which respects the board's
   // JQL filter — this matches what the Jira Sprint Report shows.
-  // Changelogs are fetched separately via standard REST API (Agile API does not
-  // reliably support expand=changelog) to enable status-snapshot completion checks.
+  // Each issue is annotated with _completedInSprintReport (true/false) sourced from
+  // the GreenHopper Sprint Report API — the exact same data the Jira UI displays.
+  // If the Sprint Report API is unavailable, falls back to changelog-based checks.
   async getSprintIssues(sprintId, boardId = null) {
     try {
       const endpoint = boardId
@@ -172,44 +198,67 @@ class JiraService {
       });
       const issues = response.data.issues || [];
 
-      // Enrich issues with changelog data from standard REST API
-      if (issues.length > 0) {
-        try {
-          const changelogMap = new Map();
-          const keys = issues.map(i => i.key);
+      // Try Sprint Report API first (exact match with Jira UI)
+      let sprintReportKeys = null;
+      if (boardId && issues.length > 0) {
+        sprintReportKeys = await this.getSprintReportCompletedKeys(boardId, sprintId);
+      }
 
-          // Batch in groups of 50 to stay within JQL length limits
-          for (let i = 0; i < keys.length; i += 50) {
-            const batch = keys.slice(i, i + 50);
-            const jql = `key in (${batch.join(',')})`;
-
-            const searchResp = await this.api.post('/search/jql', {
-              jql,
-              fields: ['summary'],
-              expand: 'changelog',
-              maxResults: batch.length
-            });
-
-            for (const issue of (searchResp.data.issues || [])) {
-              changelogMap.set(issue.key, issue.changelog);
-            }
-          }
-
-          for (const issue of issues) {
-            if (changelogMap.has(issue.key)) {
-              issue.changelog = changelogMap.get(issue.key);
-            }
-          }
-
-          console.log(`  ✓ Changelogs enriched for ${changelogMap.size}/${issues.length} issues`);
-        } catch (err) {
-          console.warn(`  ⚠ Could not fetch changelogs: ${err.message}`);
+      if (sprintReportKeys) {
+        // Annotate each issue with the Sprint Report's completion flag
+        for (const issue of issues) {
+          issue._completedInSprintReport = sprintReportKeys.has(issue.key);
         }
+        console.log(`  ✓ Issues annotated from Sprint Report (${issues.length} issues, ${sprintReportKeys.size} completed)`);
+      } else {
+        // Fallback: enrich with changelog data from standard REST API
+        await this._enrichWithChangelogs(issues);
       }
 
       return issues;
     } catch (error) {
       throw new Error(`Failed to fetch sprint issues: ${error.message}`);
+    }
+  }
+
+  // Enrich issues with changelog data from the standard REST API.
+  // Used as fallback when the Sprint Report API is unavailable.
+  async _enrichWithChangelogs(issues) {
+    if (issues.length === 0) return;
+
+    try {
+      const changelogMap = new Map();
+      const keys = issues.map(i => i.key);
+
+      // Batch in groups of 50 to stay within JQL length limits
+      for (let i = 0; i < keys.length; i += 50) {
+        const batch = keys.slice(i, i + 50);
+        const jql = `key in (${batch.join(',')})`;
+
+        const searchResp = await this.api.post('/search/jql', {
+          jql,
+          fields: ['summary'],
+          expand: 'changelog',
+          maxResults: batch.length
+        });
+
+        for (const issue of (searchResp.data.issues || [])) {
+          // Only store if changelog has actual history data
+          if (issue.changelog?.histories?.length > 0) {
+            changelogMap.set(issue.key, issue.changelog);
+          }
+        }
+      }
+
+      for (const issue of issues) {
+        if (changelogMap.has(issue.key)) {
+          issue.changelog = changelogMap.get(issue.key);
+        }
+      }
+
+      console.log(`  ✓ Changelogs enriched for ${changelogMap.size}/${issues.length} issues`);
+    } catch (err) {
+      console.warn(`  ⚠ Could not fetch changelogs: ${err.message}`);
     }
   }
 

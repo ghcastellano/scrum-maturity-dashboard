@@ -90,10 +90,16 @@ class MetricsService {
     return map;
   }
 
-  // Determine if an issue was in a "done" status category at a specific date
-  // by examining the issue's changelog. This matches Jira Sprint Report behavior
-  // which captures a status snapshot at sprint close time.
+  // Determine if an issue was in a "done" status category at a specific date.
+  // Prefers the Sprint Report flag (_completedInSprintReport) set by jiraService
+  // which comes directly from the Jira Sprint Report API — an exact match with
+  // the Jira UI. Falls back to changelog-based status snapshot when unavailable.
   static wasCompletedAtTime(issue, targetDate, statusCategoryMap) {
+    // Sprint Report flag takes absolute precedence (exact Jira UI match)
+    if (issue._completedInSprintReport !== undefined) {
+      return issue._completedInSprintReport;
+    }
+
     // No valid target date: fall back to current status
     if (!targetDate || isNaN(targetDate.getTime())) {
       return issue.fields?.status?.statusCategory?.key === 'done';

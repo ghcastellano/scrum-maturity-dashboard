@@ -928,7 +928,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
         {/* Capacity Tab */}
         {activeTab === 'capacity' && metrics && (
-          <CapacityTab capacityData={capacityData} />
+          <CapacityTab capacityData={capacityData} credentials={credentials} />
         )}
 
         {/* Inline loading/empty state when no metrics available */}

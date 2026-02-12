@@ -23,13 +23,14 @@ function App() {
   }, []);
 
   const initializeApp = async () => {
+    let boardsFromHistory = [];
     try {
       // Pre-load database boards (used after login to decide dashboard vs team selection)
       const historyResponse = await fetch(`${API_URL}/history/boards`);
       if (historyResponse.ok) {
         const historyData = await historyResponse.json();
         if (historyData.success && historyData.boards?.length > 0) {
-          const boardsFromHistory = historyData.boards.map(b => ({
+          boardsFromHistory = historyData.boards.map(b => ({
             id: b.board_id,
             name: b.board_name
           }));
@@ -40,7 +41,43 @@ function App() {
       console.error('Failed to check database:', err);
     }
 
-    // Always start at connection screen for security
+    // Try auto-login with saved credentials from localStorage
+    try {
+      const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
+      const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
+      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
+
+      if (savedUrl && savedEmail && savedToken) {
+        // Validate saved credentials with a quick API call
+        const response = await fetch(`${API_URL}/test-connection`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            const creds = { jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken };
+            setCredentials(creds);
+
+            if (boardsFromHistory.length > 0) {
+              setSelectedBoards(boardsFromHistory);
+              setStep('dashboard');
+            } else {
+              setStep('teamSelection');
+            }
+            setIsLoading(false);
+            return;
+          }
+        }
+        // Token invalid/expired — remove it and show login
+        localStorage.removeItem(STORAGE_KEY_TOKEN);
+      }
+    } catch (err) {
+      console.error('Auto-login failed:', err);
+    }
+
     setStep('connection');
     setIsLoading(false);
   };

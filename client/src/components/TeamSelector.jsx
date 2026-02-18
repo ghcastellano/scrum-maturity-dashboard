@@ -26,24 +26,41 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
   const loadBoards = async (forceRefresh = false) => {
     try {
       setLoading(true);
+      setError('');
 
-      // 1) Try DB cache first (fast, no API call to Jira)
-      if (!forceRefresh) {
-        try {
-          const cacheResult = await api.getCachedBoards();
-          if (cacheResult.success && cacheResult.boards?.length > 0) {
-            console.log('✅ Boards loaded from DB cache');
-            setBoards(cacheResult.boards);
-            setLoading(false);
-            return;
-          }
-        } catch (e) {
-          console.warn('DB cache miss, falling back to API');
+      // If forcing refresh, fetch from Jira API
+      if (forceRefresh) {
+        const result = await api.getBoards(
+          credentials.jiraUrl,
+          credentials.email,
+          credentials.apiToken
+        );
+        setBoards(result.boards);
+        localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
+          boards: result.boards,
+          timestamp: Date.now()
+        }));
+        setLoading(false);
+        return;
+      }
+
+      // 1) Try DB cache first (fast, no Jira API call)
+      try {
+        const cacheResult = await api.getCachedBoards();
+        if (cacheResult.success && cacheResult.boards?.length > 0) {
+          console.log('✅ Boards loaded from DB cache');
+          setBoards(cacheResult.boards);
+          setLoading(false);
+          return;
         }
+      } catch (e) {
+        console.warn('DB cache miss');
+      }
 
-        // 2) Try localStorage cache
-        const cached = localStorage.getItem(BOARDS_CACHE_KEY);
-        if (cached) {
+      // 2) Try localStorage cache
+      const cached = localStorage.getItem(BOARDS_CACHE_KEY);
+      if (cached) {
+        try {
           const { boards: cachedBoards, timestamp } = JSON.parse(cached);
           if (Date.now() - timestamp < BOARDS_CACHE_TTL && cachedBoards?.length > 0) {
             console.log('✅ Boards loaded from localStorage cache');
@@ -51,22 +68,11 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
             setLoading(false);
             return;
           }
-        }
+        } catch (e) { /* ignore parse errors */ }
       }
 
-      // 3) Fetch from Jira API (slow)
-      const result = await api.getBoards(
-        credentials.jiraUrl,
-        credentials.email,
-        credentials.apiToken
-      );
-      setBoards(result.boards);
-
-      // Save to localStorage
-      localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
-        boards: result.boards,
-        timestamp: Date.now()
-      }));
+      // 3) No cache available — show empty state (user clicks "Refresh from Jira")
+      setBoards([]);
     } catch (err) {
       setError('Failed to load boards');
     } finally {
@@ -179,7 +185,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
           onClick={() => loadBoards(true)}
           className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
         >
-          Refresh List
+          Refresh from Jira
         </button>
       </div>
 
@@ -230,7 +236,17 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
 
       {/* Boards List */}
       <div className="space-y-3 mb-6 max-h-96 overflow-y-auto">
-        {filteredBoards.length === 0 ? (
+        {boards.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p className="mb-3">No cached boards available.</p>
+            <button
+              onClick={() => loadBoards(true)}
+              className="btn-primary"
+            >
+              Refresh from Jira
+            </button>
+          </div>
+        ) : filteredBoards.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             No boards found matching "{searchTerm}"
           </div>

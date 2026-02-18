@@ -272,45 +272,37 @@ class JiraService {
     }
   }
 
-  // Batch fetch changelogs for multiple issues at once.
-  // Returns Map<issueKey, changelogHistories[]> for use by flow metrics.
-  // Much faster than individual getIssueChangelog calls (3-4 batch calls vs 150+ individual).
+  // Batch fetch changelogs for multiple issues using parallel individual calls.
+  // Returns Map<issueKey, changelogValues[]> for use by flow metrics.
+  // Uses the reliable /issue/{key}/changelog endpoint (not /search/jql expand which
+  // may not return changelog data on Jira Cloud).
   async batchGetIssueChangelogs(issueKeys) {
     const changelogMap = new Map();
     if (issueKeys.length === 0) return changelogMap;
 
-    try {
-      // Batch in groups of 50 to stay within JQL length limits
-      const batches = [];
-      for (let i = 0; i < issueKeys.length; i += 50) {
-        batches.push(issueKeys.slice(i, i + 50));
-      }
+    const batchSize = 20; // Parallel batch size (respects Jira rate limits)
+    let fetched = 0;
 
-      // Fetch all batches in parallel
-      const results = await Promise.all(batches.map(async (batch) => {
-        const jql = `key in (${batch.join(',')})`;
-        const resp = await this.api.post('/search/jql', {
-          jql,
-          fields: ['summary'],
-          expand: 'changelog',
-          maxResults: batch.length
-        });
-        return resp.data.issues || [];
+    for (let i = 0; i < issueKeys.length; i += batchSize) {
+      const batch = issueKeys.slice(i, i + batchSize);
+      const results = await Promise.all(batch.map(async (key) => {
+        try {
+          const changelog = await this.getIssueChangelog(key);
+          return { key, changelog };
+        } catch {
+          return { key, changelog: null };
+        }
       }));
 
-      for (const issues of results) {
-        for (const issue of issues) {
-          if (issue.changelog?.histories?.length > 0) {
-            changelogMap.set(issue.key, issue.changelog.histories);
-          }
+      for (const { key, changelog } of results) {
+        if (changelog && changelog.length > 0) {
+          changelogMap.set(key, changelog);
+          fetched++;
         }
       }
-
-      console.log(`  ✓ Batch changelogs fetched for ${changelogMap.size}/${issueKeys.length} issues (${batches.length} batches)`);
-    } catch (err) {
-      console.warn(`  ⚠ Could not batch fetch changelogs: ${err.message}`);
     }
 
+    console.log(`  ✓ Batch changelogs fetched for ${fetched}/${issueKeys.length} issues (${Math.ceil(issueKeys.length / batchSize)} parallel batches)`);
     return changelogMap;
   }
 

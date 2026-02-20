@@ -43,10 +43,17 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
     const end = new Date(selectedSprint.endDate);
     if (isNaN(start) || isNaN(end)) return null;
 
+    // Ensure end date includes the full day (timezone-safe)
+    const endFullDay = new Date(end);
+    endFullDay.setHours(23, 59, 59, 999);
+
     // Generate working days (Mon-Fri) between start and end
     const days = [];
     const current = new Date(start);
-    while (current <= end) {
+    current.setHours(0, 0, 0, 0);
+    const endDay = new Date(end);
+    endDay.setHours(23, 59, 59, 999);
+    while (current <= endDay) {
       const dow = current.getDay();
       if (dow !== 0 && dow !== 6) {
         days.push(new Date(current));
@@ -57,6 +64,28 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
 
     const totalCommitted = selectedSprint.committedPoints || 0;
     const issues = selectedSprint.issues || [];
+    const lastDayEnd = new Date(days[days.length - 1]);
+    lastDayEnd.setHours(23, 59, 59, 999);
+
+    // Determine effective completion date for each issue
+    // Issues may be completedInSprint but lack resolutionDate (common in Jira)
+    const issueCompletionDates = issues.map(issue => {
+      let completionDate = null;
+
+      if (issue.completedInSprint && issue.resolutionDate) {
+        completionDate = new Date(issue.resolutionDate);
+      } else if (issue.completedInSprint && !issue.resolutionDate) {
+        // Completed per Sprint Report API but no resolution date — place at sprint end
+        completionDate = lastDayEnd;
+      } else if (issue.statusCategory === 'done' && issue.resolutionDate) {
+        completionDate = new Date(issue.resolutionDate);
+      } else if (issue.statusCategory === 'done' && !issue.resolutionDate) {
+        // Done status but no resolution date — place at sprint end
+        completionDate = lastDayEnd;
+      }
+
+      return { issue, completionDate };
+    });
 
     // For each day, calculate remaining points
     const actualData = days.map(day => {
@@ -64,12 +93,9 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
       dayEnd.setHours(23, 59, 59, 999);
 
       let completedByDay = 0;
-      issues.forEach(issue => {
-        if (issue.completedInSprint && issue.resolutionDate) {
-          const resolved = new Date(issue.resolutionDate);
-          if (resolved <= dayEnd) {
-            completedByDay += (issue.points || 0);
-          }
+      issueCompletionDates.forEach(({ issue, completionDate }) => {
+        if (completionDate && completionDate <= dayEnd) {
+          completedByDay += (issue.points || 0);
         }
       });
       return totalCommitted - completedByDay;
@@ -85,11 +111,12 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
       const dayEnd = new Date(day);
       dayEnd.setHours(23, 59, 59, 999);
 
-      return issues.filter(issue => {
-        if (!issue.completedInSprint) return true;
-        if (!issue.resolutionDate) return true;
-        return new Date(issue.resolutionDate) > dayEnd;
-      });
+      return issueCompletionDates
+        .filter(({ completionDate }) => {
+          if (!completionDate) return true; // never completed
+          return completionDate > dayEnd;   // completed after this day
+        })
+        .map(({ issue }) => issue);
     });
 
     const labels = days.map(d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));

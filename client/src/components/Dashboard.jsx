@@ -20,6 +20,7 @@ import MaturityLevelsReference from './MaturityLevelsReference';
 import ReleasesTab from './ReleasesTab';
 import FlowMetricsTab from './FlowMetricsTab';
 import CapacityTab from './CapacityTab';
+import TeamSummaryTab from './TeamSummaryTab';
 
 ChartJS.register(
   CategoryScale,
@@ -55,7 +56,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [selectedSprintIds, setSelectedSprintIds] = useState([]);
   const [showSprintSelector, setShowSprintSelector] = useState(false);
   const [loadingSprints, setLoadingSprints] = useState(false);
-  const [activeTab, setActiveTab] = useState('metrics');
+  const [activeTab, setActiveTab] = useState('summary');
 
   // Use prop credentials or locally fetched ones
   const credentials = credentialsProp || localCredentials;
@@ -865,6 +866,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           {/* Tab Navigation */}
           <div className="flex border-b border-gray-200 mt-6">
             <button
+              onClick={() => setActiveTab('summary')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'summary'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Team Summary
+            </button>
+            <button
               onClick={() => setActiveTab('metrics')}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'metrics'
@@ -906,6 +917,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </button>
           </div>
         </div>
+
+        {/* Team Summary Tab */}
+        {activeTab === 'summary' && metrics && (
+          <TeamSummaryTab metrics={metrics} capacityData={capacityData} flowMetrics={flowMetrics} credentials={credentials} />
+        )}
 
         {/* Flow Metrics Tab */}
         {activeTab === 'flow' && metrics && (

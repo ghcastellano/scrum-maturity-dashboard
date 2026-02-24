@@ -220,10 +220,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
   console.log(`📊 Scrum Maturity Dashboard API ready`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+
+// Allow up to 2 minutes for heavy cross-board queries
+server.timeout = 120000;
+server.keepAliveTimeout = 120000;
 
 export default app;

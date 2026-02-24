@@ -210,6 +210,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
               credentials={credentials}
               selectedBoards={selectedBoards}
               epicData={epicData}
+              prioritizationData={epicData?.prioritizationData}
             />
           )}
 
@@ -217,6 +218,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
             <PortfolioTab
               credentials={credentials}
               selectedBoards={selectedBoards}
+              portfolioData={epicData?.portfolioData}
             />
           )}
         </>

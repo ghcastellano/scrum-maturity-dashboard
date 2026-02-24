@@ -1,63 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
-import api from '../../services/api';
 
 const WIP_LIMIT_DEFAULT = 10;
 
-export default function PortfolioTab({ credentials, selectedBoards }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+export default function PortfolioTab({ credentials, selectedBoards, portfolioData }) {
+  // Use pre-loaded data from parent (no separate API call needed)
+  const data = portfolioData || null;
   const [wipLimit, setWipLimit] = useState(WIP_LIMIT_DEFAULT);
 
-  const boardIds = selectedBoards.map(b => typeof b === 'object' ? b.id : b);
-
-  useEffect(() => {
-    loadPortfolio();
-  }, []);
-
-  const loadPortfolio = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const result = await api.getPortfolioView(
-        credentials.jiraUrl,
-        credentials.email,
-        credentials.apiToken,
-        boardIds
-      );
-      if (result.success) {
-        setData(result.data);
-      } else {
-        setError(result.message || 'Failed to load portfolio data');
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to load');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading && !data) {
+  if (!data) {
     return (
       <div className="card text-center py-16">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Building portfolio view...</p>
-        <p className="text-xs text-gray-400 mt-1">Running Monte Carlo simulation...</p>
+        <p className="text-gray-500">No portfolio data available. Click "Refresh from Jira" to load.</p>
       </div>
     );
   }
-
-  if (error) {
-    return (
-      <div className="card bg-red-50 border-red-200">
-        <p className="text-red-700 text-sm">{error}</p>
-        <button onClick={loadPortfolio} className="mt-2 text-xs text-red-600 underline">Try again</button>
-      </div>
-    );
-  }
-
-  if (!data) return null;
 
   const { cumulativeFlow, leadCycleTime, wipMetrics, forecast } = data;
 

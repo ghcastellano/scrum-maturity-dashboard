@@ -735,19 +735,28 @@ class DashboardController {
       const boardName = board?.name || `Board ${boardId}`;
       const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
 
-      const allSprints = await jiraService.getSprints(boardId, 'closed');
+      // Fetch closed and active sprints in parallel
+      const [allSprints, activeSprints] = await Promise.all([
+        jiraService.getSprints(boardId, 'closed'),
+        jiraService.getSprints(boardId, 'active')
+      ]);
 
       // Filter sprints by board naming convention
-      const filteredSprints = allSprints.filter(sprint => {
-        const sprintNameUpper = sprint.name.toUpperCase();
-        const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
-        if (prefixMatch) {
-          const sprintPrefix = prefixMatch[1].toUpperCase();
-          return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
-        }
-        return sprintNameUpper.includes(boardKey);
-      });
-      const matchedSprints = filteredSprints.length > 0 ? filteredSprints : allSprints;
+      const filterByBoard = (sprints) => {
+        const filtered = sprints.filter(sprint => {
+          const sprintNameUpper = sprint.name.toUpperCase();
+          const prefixMatch = sprint.name.match(/^([A-Za-z]+)/);
+          if (prefixMatch) {
+            const sprintPrefix = prefixMatch[1].toUpperCase();
+            return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
+          }
+          return sprintNameUpper.includes(boardKey);
+        });
+        return filtered.length > 0 ? filtered : sprints;
+      };
+
+      const matchedSprints = filterByBoard(allSprints);
+      const matchedActiveSprints = filterByBoard(activeSprints);
 
       let recentSprints;
       if (sprintIds && sprintIds.length > 0) {
@@ -762,7 +771,13 @@ class DashboardController {
         recentSprints = matchedSprints.slice(0, sprintCount);
       }
 
-      console.log(`\n📊 Capacity Metrics for board ${boardId} (${boardName}) - ${recentSprints.length} sprints`);
+      // Append active sprint(s) if not already included
+      const activeSprintToInclude = matchedActiveSprints.length > 0 ? matchedActiveSprints[0] : null;
+      if (activeSprintToInclude && !recentSprints.some(s => s.id === activeSprintToInclude.id)) {
+        recentSprints.push(activeSprintToInclude);
+      }
+
+      console.log(`\n📊 Capacity Metrics for board ${boardId} (${boardName}) - ${recentSprints.length} sprints (${activeSprintToInclude ? 'incl. active' : 'no active'})`);
 
       // Pre-fetch ALL sprint issues in parallel (major speedup)
       console.log(`  ⚡ Fetching all sprint issues in parallel...`);
@@ -783,8 +798,9 @@ class DashboardController {
 
       for (const sprint of recentSprints) {
         const issues = sprintIssuesMap.get(sprint.id);
-        // Use completeDate (when sprint was actually closed) to match Jira Sprint Report
-        const sprintEnd = new Date(sprint.completeDate || sprint.endDate);
+        const isActive = activeSprintToInclude && sprint.id === activeSprintToInclude.id;
+        // For active sprints use current time; for closed use completeDate
+        const sprintEnd = isActive ? new Date() : new Date(sprint.completeDate || sprint.endDate);
 
         let committedPoints = 0;
         let completedPoints = 0;
@@ -854,6 +870,7 @@ class DashboardController {
           sprintName: sprint.name,
           startDate: sprint.startDate,
           endDate: sprint.endDate,
+          isActive: !!isActive,
           committedPoints,
           completedPoints,
           totalIssues,

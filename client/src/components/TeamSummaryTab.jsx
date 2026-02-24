@@ -26,8 +26,11 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
   const { sprintMetrics = [], aggregated = {} } = metrics || {};
   const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
 
-  // Sprint selector for burndown
-  const [selectedSprintIdx, setSelectedSprintIdx] = useState(() => sprintCapacity.length - 1);
+  // Sprint selector for burndown — auto-select active sprint if available, otherwise last
+  const [selectedSprintIdx, setSelectedSprintIdx] = useState(() => {
+    const activeIdx = sprintCapacity.findIndex(s => s.isActive);
+    return activeIdx >= 0 ? activeIdx : sprintCapacity.length - 1;
+  });
   const selectedSprint = sprintCapacity[selectedSprintIdx] || null;
 
   // ── KPI Calculations ──
@@ -43,11 +46,17 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
     const end = new Date(selectedSprint.endDate);
     if (isNaN(start) || isNaN(end)) return null;
 
+    const isActive = !!selectedSprint.isActive;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
     // Ensure end date includes the full day (timezone-safe)
     const endFullDay = new Date(end);
     endFullDay.setHours(23, 59, 59, 999);
 
     // Generate working days (Mon-Fri) between start and end
+    // For active sprints, generate all days until sprint end (for ideal line)
+    // but only show actual data up to today
     const days = [];
     const current = new Date(start);
     current.setHours(0, 0, 0, 0);
@@ -61,6 +70,12 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
       current.setDate(current.getDate() + 1);
     }
     if (days.length === 0) return null;
+
+    // For active sprints: find the index of today (or last past day) for truncation
+    const todayIdx = isActive
+      ? days.findIndex(d => d > today)
+      : -1;
+    const actualCutoff = isActive && todayIdx >= 0 ? todayIdx : days.length;
 
     const totalCommitted = selectedSprint.committedPoints || 0;
     const issues = selectedSprint.issues || [];
@@ -88,7 +103,9 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
     });
 
     // For each day, calculate remaining points
-    const actualData = days.map(day => {
+    // For active sprints, only show actual data up to today (null for future)
+    const actualData = days.map((day, i) => {
+      if (isActive && i >= actualCutoff) return null; // future day in active sprint
       const dayEnd = new Date(day);
       dayEnd.setHours(23, 59, 59, 999);
 
@@ -101,13 +118,14 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
       return totalCommitted - completedByDay;
     });
 
-    // Ideal burndown: straight line from totalCommitted to 0
+    // Ideal burndown: straight line from totalCommitted to 0 (always show full)
     const idealData = days.map((_, i) => {
       return totalCommitted * (1 - (i / (days.length - 1)));
     });
 
     // Remaining issues per day (for tooltip)
-    const remainingIssuesPerDay = days.map(day => {
+    const remainingIssuesPerDay = days.map((day, i) => {
+      if (isActive && i >= actualCutoff) return [];
       const dayEnd = new Date(day);
       dayEnd.setHours(23, 59, 59, 999);
 
@@ -119,11 +137,16 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         .map(({ issue }) => issue);
     });
 
-    const labels = days.map(d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const labels = days.map((d, i) => {
+      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (isActive && i === actualCutoff - 1) return `${label} (today)`;
+      return label;
+    });
 
     return {
       labels,
       actualData,
+      isActive,
       idealData,
       remainingIssuesPerDay,
       totalCommitted
@@ -148,11 +171,11 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         {
           label: 'Actual Remaining',
           data: burndownData.actualData,
-          borderColor: 'rgba(59, 130, 246, 1)',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          borderColor: burndownData.isActive ? 'rgba(34, 197, 94, 1)' : 'rgba(59, 130, 246, 1)',
+          backgroundColor: burndownData.isActive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(59, 130, 246, 0.1)',
           borderWidth: 3,
           pointRadius: 4,
-          pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+          pointBackgroundColor: burndownData.isActive ? 'rgba(34, 197, 94, 1)' : 'rgba(59, 130, 246, 1)',
           pointHoverRadius: 7,
           fill: true,
           tension: 0.2
@@ -373,10 +396,18 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
       {/* ── Section 2: Sprint Burndown ── */}
       <div className="card">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-bold text-gray-800">Sprint Burndown</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-gray-800">Sprint Burndown</h2>
+            {selectedSprint?.isActive && (
+              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full border border-green-300">
+                In Progress
+              </span>
+            )}
+          </div>
           {selectedSprint && (
             <div className="text-sm text-gray-500">
               {selectedSprint.committedPoints} SP committed &middot; {selectedSprint.completedPoints} SP completed
+              {selectedSprint.isActive && ` &middot; ${selectedSprint.totalIssues - selectedSprint.completedIssues} remaining`}
             </div>
           )}
         </div>
@@ -393,11 +424,18 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
                 onClick={() => setSelectedSprintIdx(idx)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   idx === selectedSprintIdx
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? sprint.isActive
+                      ? 'bg-green-600 text-white shadow-sm'
+                      : 'bg-primary-600 text-white shadow-sm'
+                    : sprint.isActive
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-300'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 {sprint.sprintName}
+                {sprint.isActive && (
+                  <span className="ml-1.5 text-[10px] font-bold uppercase">Active</span>
+                )}
               </button>
             ))}
           </div>

@@ -24,6 +24,10 @@ class JiraService {
         'Content-Type': 'application/json'
       }
     });
+
+    // Cache for project key lookups (avoid repeated API calls)
+    this._projectKeyCache = new Map();
+    this._boardNameCache = new Map();
   }
 
   // Lightweight credential validation — single API call (~200ms)
@@ -82,8 +86,11 @@ class JiraService {
 
   // Get a single board by ID
   async getBoard(boardId) {
+    const cached = this._boardNameCache.get(String(boardId));
+    if (cached) return cached;
     try {
       const response = await this.agileApi.get(`/board/${boardId}`);
+      this._boardNameCache.set(String(boardId), response.data);
       return response.data;
     } catch (error) {
       console.warn(`Failed to fetch board ${boardId}:`, error.message);
@@ -468,45 +475,37 @@ class JiraService {
 
   // Get project key from board
   async getProjectKeyFromBoard(boardId) {
+    const cacheKey = String(boardId);
+    const cached = this._projectKeyCache.get(cacheKey);
+    if (cached) return cached;
     try {
       const config = await this.getBoardConfiguration(boardId);
-      console.log(`[getProjectKeyFromBoard] Board ${boardId} location:`, config.location);
+
+      let projectKey = null;
 
       // Try to get from board location first (most reliable)
       if (config.location?.key) {
-        console.log(`[getProjectKeyFromBoard] Using location.key: ${config.location.key}`);
-        return config.location.key;
-      }
-      if (config.location?.projectKey) {
-        console.log(`[getProjectKeyFromBoard] Using location.projectKey: ${config.location.projectKey}`);
-        return config.location.projectKey;
+        projectKey = config.location.key;
+      } else if (config.location?.projectKey) {
+        projectKey = config.location.projectKey;
+      } else {
+        // Fallback: Board filter contains project info
+        const filterResponse = await this.api.get(`/filter/${config.filter.id}`);
+        const jql = filterResponse.data.jql || '';
+
+        let match = jql.match(/project\s*=\s*"([^"]+)"/i) || jql.match(/project\s*=\s*'([^']+)'/i);
+        if (!match) match = jql.match(/project\s*=\s*([A-Za-z0-9_-]+)/i);
+        if (!match) match = jql.match(/project\s+IN\s*\(\s*"([^"]+)"/i) || jql.match(/project\s+IN\s*\(\s*([A-Za-z0-9_-]+)/i);
+
+        if (match) {
+          projectKey = match[1];
+        } else {
+          throw new Error(`Could not determine project key from board. JQL: ${jql}`);
+        }
       }
 
-      // Fallback: Board filter contains project info
-      const filterResponse = await this.api.get(`/filter/${config.filter.id}`);
-      const jql = filterResponse.data.jql || '';
-      console.log(`[getProjectKeyFromBoard] Filter JQL: ${jql}`);
-
-      // Try different patterns to extract project key
-      // Pattern 1: project = "Quoted Name" or project = 'Quoted Name'
-      let match = jql.match(/project\s*=\s*"([^"]+)"/i) || jql.match(/project\s*=\s*'([^']+)'/i);
-      if (!match) {
-        // Pattern 2: project = KEY (unquoted, single word)
-        match = jql.match(/project\s*=\s*([A-Za-z0-9_-]+)/i);
-      }
-      if (match) {
-        console.log(`[getProjectKeyFromBoard] Extracted from JQL (=): ${match[1]}`);
-        return match[1];
-      }
-
-      // Pattern 3: project IN ("KEY") or project IN (KEY, KEY2)
-      match = jql.match(/project\s+IN\s*\(\s*"([^"]+)"/i) || jql.match(/project\s+IN\s*\(\s*([A-Za-z0-9_-]+)/i);
-      if (match) {
-        console.log(`[getProjectKeyFromBoard] Extracted from JQL (IN): ${match[1]}`);
-        return match[1];
-      }
-
-      throw new Error(`Could not determine project key from board. JQL: ${jql}`);
+      this._projectKeyCache.set(cacheKey, projectKey);
+      return projectKey;
     } catch (error) {
       throw new Error(`Failed to get project key: ${error.message}`);
     }
@@ -874,28 +873,59 @@ class JiraService {
     }
   }
 
-  // Batch fetch children for multiple epics in parallel
+  // Batch fetch children for multiple epics using bulk JQL queries
+  // Instead of 1 API call per epic, uses a single paginated JQL with parent IN (...)
   async batchGetEpicChildren(epicKeys) {
     const childrenMap = new Map();
     if (epicKeys.length === 0) return childrenMap;
 
-    const batchSize = 10;
-    for (let i = 0; i < epicKeys.length; i += batchSize) {
-      const batch = epicKeys.slice(i, i + batchSize);
-      const results = await Promise.all(
-        batch.map(async (key) => {
-          const children = await this.getEpicChildren(key);
-          return { key, children };
-        })
-      );
+    // Initialize empty arrays for all epics
+    for (const key of epicKeys) childrenMap.set(key, []);
 
-      for (const { key, children } of results) {
-        childrenMap.set(key, children);
+    const fields = [
+      'summary', 'status', 'issuetype', 'assignee',
+      'resolutiondate', 'created', 'customfield_10061', 'parent'
+    ];
+
+    // JQL has a practical limit on clause length, so batch epic keys in groups
+    const jqlBatchSize = 50;
+    for (let i = 0; i < epicKeys.length; i += jqlBatchSize) {
+      const batch = epicKeys.slice(i, i + jqlBatchSize);
+      const keysList = batch.map(k => `"${k}"`).join(',');
+      // Use parent IN (...) — covers both parent link and Epic Link
+      const jql = `parent in (${keysList}) ORDER BY status ASC`;
+
+      let allIssues = [];
+      let nextPageToken = null;
+      const maxResults = 100;
+
+      try {
+        do {
+          const requestBody = { jql, fields, maxResults };
+          if (nextPageToken) requestBody.nextPageToken = nextPageToken;
+
+          const response = await this.api.post('/search/jql', requestBody);
+          const issues = response.data.issues || [];
+          allIssues = allIssues.concat(issues);
+
+          nextPageToken = response.data.nextPageToken;
+          if (response.data.isLast || !nextPageToken || issues.length < maxResults) break;
+        } while (true);
+      } catch (error) {
+        console.warn(`Failed to bulk fetch children (batch ${i}): ${error.message}`);
+      }
+
+      // Map children back to their parent epic
+      for (const issue of allIssues) {
+        const parentKey = issue.fields.parent?.key;
+        if (parentKey && childrenMap.has(parentKey)) {
+          childrenMap.get(parentKey).push(issue);
+        }
       }
     }
 
     const totalChildren = Array.from(childrenMap.values()).reduce((sum, c) => sum + c.length, 0);
-    console.log(`✓ Batch fetched children for ${epicKeys.length} epics (${totalChildren} total children)`);
+    console.log(`✓ Bulk fetched children for ${epicKeys.length} epics (${totalChildren} total children) using ${Math.ceil(epicKeys.length / jqlBatchSize)} JQL queries`);
     return childrenMap;
   }
 

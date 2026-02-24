@@ -8,7 +8,8 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: process.env.VITE_API_URL || 'http://localhost:3001',
-        changeOrigin: true
+        changeOrigin: true,
+        timeout: 120000 // 2 minutes for heavy cross-board queries
       }
     }
   },

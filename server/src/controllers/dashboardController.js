@@ -1063,21 +1063,22 @@ class DashboardController {
       console.log(`\n🏢 Product Management: Fetching epics for ${boardIdList.length} boards`);
       const jiraService = new JiraService(jiraUrl, email, apiToken);
 
-      // Get project keys for all boards in parallel
-      const projectKeys = [];
+      // Get project keys for all boards in parallel (cached after first call)
+      const projectKeySet = new Set();
       const boardNames = {};
       await Promise.all(boardIdList.map(async (boardId) => {
         try {
-          const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
-          if (!projectKeys.includes(projectKey)) {
-            projectKeys.push(projectKey);
-          }
-          const board = await jiraService.getBoard(boardId);
+          const [projectKey, board] = await Promise.all([
+            jiraService.getProjectKeyFromBoard(boardId),
+            jiraService.getBoard(boardId)
+          ]);
+          projectKeySet.add(projectKey);
           boardNames[boardId] = board?.name || `Board ${boardId}`;
         } catch (err) {
           console.warn(`  ⚠ Could not get project key for board ${boardId}: ${err.message}`);
         }
       }));
+      const projectKeys = Array.from(projectKeySet);
 
       if (projectKeys.length === 0) {
         return res.status(400).json({ success: false, message: 'No valid project keys found for the selected boards' });
@@ -1093,12 +1094,12 @@ class DashboardController {
 
       console.log(`  Found ${rawEpics.length} epics, ${rawInitiatives.length} initiatives`);
 
-      // Batch fetch children for all epics
+      // Batch fetch children and dependencies in parallel (bulk JQL)
       const epicKeys = rawEpics.map(e => e.key);
-      const childrenMap = await jiraService.batchGetEpicChildren(epicKeys);
-
-      // Fetch dependencies
-      const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+      const [childrenMap, dependencyMap] = await Promise.all([
+        jiraService.batchGetEpicChildren(epicKeys),
+        jiraService.getEpicDependencies(epicKeys)
+      ]);
 
       // Build enriched epic data
       const epics = rawEpics.map(epic => {
@@ -1224,14 +1225,15 @@ class DashboardController {
 
         const rawEpics = await jiraService.searchEpics(projectKeys);
         const epicKeys = rawEpics.map(e => e.key);
-        const childrenMap = await jiraService.batchGetEpicChildren(epicKeys);
-        const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+        const [childrenMap, dependencyMap] = await Promise.all([
+          jiraService.batchGetEpicChildren(epicKeys),
+          jiraService.getEpicDependencies(epicKeys)
+        ]);
 
         const epics = rawEpics.map(epic => {
           const children = childrenMap.get(epic.key) || [];
           const dependencies = dependencyMap.get(epic.key) || { blocks: [], blockedBy: [], relatesTo: [] };
           const built = epicMetricsService.buildEpicData(epic, children, dependencies);
-          // Attach raw fields for custom field mapping
           built._rawFields = epic.fields;
           return built;
         });
@@ -1291,8 +1293,10 @@ class DashboardController {
         ]);
 
         const epicKeys = rawEpics.map(e => e.key);
-        const childrenMap = await jiraService.batchGetEpicChildren(epicKeys);
-        const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+        const [childrenMap, dependencyMap] = await Promise.all([
+          jiraService.batchGetEpicChildren(epicKeys),
+          jiraService.getEpicDependencies(epicKeys)
+        ]);
 
         const epics = rawEpics.map(epic => {
           const children = childrenMap.get(epic.key) || [];

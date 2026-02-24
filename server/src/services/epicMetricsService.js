@@ -251,9 +251,22 @@ class EpicMetricsService {
       riskReduction = epic._rawFields?.[fieldMappings.riskReduction] || 0;
       jobSize = epic._rawFields?.[fieldMappings.jobSize] || epic.children?.totalPoints || 1;
     } else {
-      // Fallback: derive from priority + story points
+      // Fallback: composite score using multiple signals for better spread
       const priorityScores = { 'Highest': 5, 'High': 4, 'Medium': 3, 'Low': 2, 'Lowest': 1 };
-      businessValue = priorityScores[epic.priority] || 3;
+      const basePriority = priorityScores[epic.priority] || 3;
+
+      // Factor in child issue count (more children = bigger/more important epic)
+      const childCount = epic.children?.total || 0;
+      const childBonus = childCount >= 20 ? 2 : childCount >= 10 ? 1.5 : childCount >= 5 ? 1 : 0.5;
+
+      // Factor in progress (invested work signals value)
+      const progressBonus = (epic.progress || 0) > 50 ? 0.5 : 0;
+
+      // Factor in health (blocked items may signal dependencies = importance)
+      const healthBonus = epic.health === 'blocked' ? 1 : epic.health === 'at-risk' ? 0.5 : 0;
+
+      // Composite business value: 1-8 range with more spread
+      businessValue = Math.min(8, Math.round((basePriority + childBonus + progressBonus + healthBonus) * 10) / 10);
 
       // Time criticality: higher for items with closer due dates
       if (epic.dueDate) {
@@ -263,7 +276,8 @@ class EpicMetricsService {
         timeCriticality = 2;
       }
 
-      riskReduction = 2; // neutral default
+      // Risk reduction: higher for blocked/at-risk items
+      riskReduction = epic.health === 'blocked' ? 4 : epic.health === 'at-risk' ? 3 : 2;
       jobSize = epic.children?.totalPoints || epic.storyPoints || 1;
     }
 

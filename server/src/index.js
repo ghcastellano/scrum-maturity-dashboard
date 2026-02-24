@@ -190,6 +190,10 @@ app.post('/api/product/portfolio', (req, res) =>
   dashboardController.getPortfolioView(req, res)
 );
 
+app.post('/api/product/cached', (req, res) =>
+  dashboardController.getCachedProductData(req, res)
+);
+
 app.post('/api/product/discover-fields', (req, res) =>
   dashboardController.discoverFields(req, res)
 );

@@ -152,6 +152,11 @@ class ApiService {
 
   // === PRODUCT MANAGEMENT ===
 
+  async getCachedProductData(boardIds) {
+    const response = await this.client.post('/product/cached', { boardIds });
+    return response.data;
+  }
+
   async getEpics(jiraUrl, email, apiToken, boardIds) {
     const response = await this.client.post('/product/epics', {
       jiraUrl, email, apiToken, boardIds

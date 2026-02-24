@@ -1125,8 +1125,15 @@ class DashboardController {
         boardNames
       };
 
-      // Cache for 10 minutes
+      // Cache for 10 minutes (in-memory)
       cacheService.set(cacheKey, responseData, 10 * 60 * 1000);
+
+      // Persist to database for fast loading on next visit
+      try {
+        await database.saveProductData(boardIdList, 'epics', responseData);
+      } catch (dbError) {
+        console.warn('Failed to save product data to database:', dbError.message);
+      }
 
       res.json({
         success: true,
@@ -1323,6 +1330,31 @@ class DashboardController {
       });
     } catch (error) {
       console.error('Error fetching portfolio view:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get cached product data from database (no Jira API call)
+  async getCachedProductData(req, res) {
+    try {
+      const { boardIds } = req.body;
+      const boardIdList = Array.isArray(boardIds) ? boardIds : [boardIds];
+
+      const cached = await database.getProductData(boardIdList, 'epics', 0); // 0 = no max age, return even if stale
+      if (cached) {
+        res.json({
+          success: true,
+          data: cached.data,
+          cached: true,
+          stale: cached.stale,
+          age: cached.age,
+          message: `Loaded from database (${cached.age} min ago)`
+        });
+      } else {
+        res.json({ success: false, message: 'No cached data available' });
+      }
+    } catch (error) {
+      console.error('Error getting cached product data:', error);
       res.status(500).json({ success: false, message: error.message });
     }
   }

@@ -9,6 +9,8 @@ export default function ProductManagement({ credentials, selectedBoards }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('epic-intelligence');
+  const [dataSource, setDataSource] = useState(null); // 'database' | 'jira' | null
+  const [dataAge, setDataAge] = useState(null); // minutes since last update
 
   // Board selection for cross-board view
   const [selectedBoardIds, setSelectedBoardIds] = useState(() =>
@@ -21,12 +23,35 @@ export default function ProductManagement({ credentials, selectedBoards }) {
   }));
 
   useEffect(() => {
-    if (selectedBoardIds.length > 0 && credentials) {
-      loadEpicData();
+    if (selectedBoardIds.length > 0) {
+      loadFromDatabase();
     }
   }, [selectedBoardIds]);
 
-  const loadEpicData = async () => {
+  // Try loading from database first (fast, no Jira API call)
+  const loadFromDatabase = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await api.getCachedProductData(selectedBoardIds);
+      if (result.success && result.data) {
+        setEpicData(result.data);
+        setDataSource('database');
+        setDataAge(result.age || 0);
+      } else {
+        // No cached data — user needs to click Refresh
+        setDataSource(null);
+      }
+    } catch {
+      // DB might not have the table yet, silently continue
+      setDataSource(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch fresh data from Jira API
+  const loadFromJira = async () => {
     setLoading(true);
     setError('');
     try {
@@ -38,6 +63,8 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       );
       if (result.success) {
         setEpicData(result.data);
+        setDataSource('jira');
+        setDataAge(0);
       } else {
         setError(result.message || 'Failed to load epic data');
       }
@@ -73,6 +100,17 @@ export default function ProductManagement({ credentials, selectedBoards }) {
             <span className="text-xs text-gray-500">
               {selectedBoardIds.length} of {boardList.length} boards selected
             </span>
+            {dataSource && dataAge !== null && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                dataSource === 'database'
+                  ? 'bg-blue-100 text-blue-600'
+                  : 'bg-green-100 text-green-600'
+              }`}>
+                {dataSource === 'database'
+                  ? `Cached (${dataAge < 1 ? '<1' : dataAge} min ago)`
+                  : 'Fresh from Jira'}
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
             {selectedBoardIds.length < boardList.length && (
@@ -81,7 +119,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
               </button>
             )}
             <button
-              onClick={loadEpicData}
+              onClick={loadFromJira}
               disabled={loading}
               className="btn-primary text-xs px-3 py-1.5"
               style={{ backgroundColor: '#7c3aed' }}
@@ -111,8 +149,8 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       {loading && !epicData && (
         <div className="card text-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading epic data from Jira...</p>
-          <p className="text-xs text-gray-400 mt-1">This may take a moment for large projects</p>
+          <p className="mt-4 text-gray-600">Loading epic data...</p>
+          <p className="text-xs text-gray-400 mt-1">Checking local cache first</p>
         </div>
       )}
 
@@ -120,7 +158,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       {error && (
         <div className="card bg-red-50 border-red-200 mb-6">
           <p className="text-red-700 text-sm">{error}</p>
-          <button onClick={loadEpicData} className="mt-2 text-xs text-red-600 underline">
+          <button onClick={loadFromJira} className="mt-2 text-xs text-red-600 underline">
             Try again
           </button>
         </div>

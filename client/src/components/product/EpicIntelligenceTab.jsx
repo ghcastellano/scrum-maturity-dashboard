@@ -129,7 +129,7 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
       </div>
 
       {/* Epic Timeline */}
-      <EpicTimelineChart epics={epics} />
+      <EpicTimelineChart epics={epics} initiatives={initiatives} />
 
       {/* View Toggle + Filters */}
       <div className="card">

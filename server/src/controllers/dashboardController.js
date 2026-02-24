@@ -1066,6 +1066,7 @@ class DashboardController {
       // Get project keys for all boards in parallel (cached after first call)
       const projectKeySet = new Set();
       const boardNames = {};
+      const boardProjectMap = {}; // boardId → projectKey for client-side filtering
       await Promise.all(boardIdList.map(async (boardId) => {
         try {
           const [projectKey, board] = await Promise.all([
@@ -1074,6 +1075,7 @@ class DashboardController {
           ]);
           projectKeySet.add(projectKey);
           boardNames[boardId] = board?.name || `Board ${boardId}`;
+          boardProjectMap[boardId] = projectKey;
         } catch (err) {
           console.warn(`  ⚠ Could not get project key for board ${boardId}: ${err.message}`);
         }
@@ -1142,6 +1144,7 @@ class DashboardController {
         summary,
         projectKeys,
         boardNames,
+        boardProjectMap,
         prioritizationData,
         portfolioData
       };

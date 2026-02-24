@@ -1,56 +1,104 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import EpicIntelligenceTab from './product/EpicIntelligenceTab';
 import PrioritizationTab from './product/PrioritizationTab';
 import PortfolioTab from './product/PortfolioTab';
 
 export default function ProductManagement({ credentials, selectedBoards }) {
-  const [epicData, setEpicData] = useState(null);
+  const [fullData, setFullData] = useState(null); // raw data for ALL boards
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('epic-intelligence');
   const [dataSource, setDataSource] = useState(null); // 'database' | 'jira' | null
   const [dataAge, setDataAge] = useState(null); // minutes since last update
 
-  // Board selection for cross-board view
-  const [selectedBoardIds, setSelectedBoardIds] = useState(() =>
-    selectedBoards.map(b => typeof b === 'object' ? b.id : b)
+  // All board IDs (used for API calls — always fetch all)
+  const allBoardIds = useMemo(
+    () => selectedBoards.map(b => typeof b === 'object' ? b.id : b),
+    [selectedBoards]
   );
+
+  // Board selection for cross-board filtering (client-side only)
+  const [selectedBoardIds, setSelectedBoardIds] = useState(allBoardIds);
 
   const boardList = selectedBoards.map(b => ({
     id: typeof b === 'object' ? b.id : b,
     name: typeof b === 'object' ? b.name : `Board ${b}`
   }));
 
+  // Load from DB on mount only (once)
   useEffect(() => {
-    if (selectedBoardIds.length > 0) {
+    if (allBoardIds.length > 0) {
       loadFromDatabase();
     }
-  }, [selectedBoardIds]);
+  }, []);
+
+  // Filter epics by selected boards (client-side, instant)
+  const filteredData = useMemo(() => {
+    if (!fullData) return null;
+    // If all boards selected, return full data
+    if (selectedBoardIds.length === allBoardIds.length) return fullData;
+
+    const boardProjectMap = fullData.boardProjectMap || {};
+    // Get project keys for selected boards
+    const activeProjectKeys = new Set(
+      selectedBoardIds
+        .map(id => boardProjectMap[id])
+        .filter(Boolean)
+    );
+
+    // If no map available, fall back to showing all data
+    if (activeProjectKeys.size === 0) return fullData;
+
+    // Filter epics by project key (extracted from issue key, e.g. "PROJ-123" → "PROJ")
+    const filteredEpics = fullData.epics.filter(epic => {
+      const projectKey = epic.key.split('-')[0];
+      return activeProjectKeys.has(projectKey);
+    });
+
+    // Return filtered data (prioritization & portfolio stay full since they're computed server-side)
+    return {
+      ...fullData,
+      epics: filteredEpics,
+      summary: {
+        total: filteredEpics.length,
+        done: filteredEpics.filter(e => e.statusCategory === 'done').length,
+        inProgress: filteredEpics.filter(e => e.statusCategory === 'indeterminate').length,
+        todo: filteredEpics.filter(e => e.statusCategory === 'new' || e.statusCategory === 'undefined').length,
+        blocked: filteredEpics.filter(e => e.health === 'blocked').length,
+        atRisk: filteredEpics.filter(e => e.health === 'at-risk').length
+      },
+      initiatives: (fullData.initiatives || []).map(init => ({
+        ...init,
+        epics: (init.epics || []).filter(epic => {
+          const projectKey = epic.key.split('-')[0];
+          return activeProjectKeys.has(projectKey);
+        })
+      })).filter(init => init.epics.length > 0)
+    };
+  }, [fullData, selectedBoardIds, allBoardIds]);
 
   // Try loading from database first (fast, no Jira API call)
   const loadFromDatabase = async () => {
     setLoading(true);
     setError('');
     try {
-      const result = await api.getCachedProductData(selectedBoardIds);
+      const result = await api.getCachedProductData(allBoardIds);
       if (result.success && result.data) {
-        setEpicData(result.data);
+        setFullData(result.data);
         setDataSource('database');
         setDataAge(result.age || 0);
       } else {
-        // No cached data — user needs to click Refresh
         setDataSource(null);
       }
     } catch {
-      // DB might not have the table yet, silently continue
       setDataSource(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch fresh data from Jira API
+  // Fetch fresh data from Jira API (always uses ALL boards)
   const loadFromJira = async () => {
     setLoading(true);
     setError('');
@@ -59,10 +107,10 @@ export default function ProductManagement({ credentials, selectedBoards }) {
         credentials.jiraUrl,
         credentials.email,
         credentials.apiToken,
-        selectedBoardIds
+        allBoardIds
       );
       if (result.success) {
-        setEpicData(result.data);
+        setFullData(result.data);
         setDataSource('jira');
         setDataAge(0);
       } else {
@@ -78,7 +126,6 @@ export default function ProductManagement({ credentials, selectedBoards }) {
   const toggleBoard = (boardId) => {
     setSelectedBoardIds(prev => {
       if (prev.includes(boardId)) {
-        // Don't allow deselecting all boards
         if (prev.length === 1) return prev;
         return prev.filter(id => id !== boardId);
       }
@@ -87,7 +134,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
   };
 
   const selectAllBoards = () => {
-    setSelectedBoardIds(boardList.map(b => b.id));
+    setSelectedBoardIds(allBoardIds);
   };
 
   return (
@@ -146,7 +193,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       </div>
 
       {/* Loading State */}
-      {loading && !epicData && (
+      {loading && !fullData && (
         <div className="card text-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading epic data...</p>
@@ -165,7 +212,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       )}
 
       {/* Tab Navigation */}
-      {epicData && (
+      {filteredData && (
         <>
           <div className="flex border-b border-gray-200 mb-6">
             <button
@@ -202,15 +249,15 @@ export default function ProductManagement({ credentials, selectedBoards }) {
 
           {/* Tab Content */}
           {activeTab === 'epic-intelligence' && (
-            <EpicIntelligenceTab epicData={epicData} loading={loading} />
+            <EpicIntelligenceTab epicData={filteredData} loading={loading} />
           )}
 
           {activeTab === 'prioritization' && (
             <PrioritizationTab
               credentials={credentials}
               selectedBoards={selectedBoards}
-              epicData={epicData}
-              prioritizationData={epicData?.prioritizationData}
+              epicData={filteredData}
+              prioritizationData={filteredData?.prioritizationData}
             />
           )}
 
@@ -218,14 +265,14 @@ export default function ProductManagement({ credentials, selectedBoards }) {
             <PortfolioTab
               credentials={credentials}
               selectedBoards={selectedBoards}
-              portfolioData={epicData?.portfolioData}
+              portfolioData={filteredData?.portfolioData}
             />
           )}
         </>
       )}
 
       {/* Empty State */}
-      {!loading && !epicData && !error && (
+      {!loading && !fullData && !error && (
         <div className="card text-center py-16">
           <p className="text-gray-500 text-lg">No data loaded yet</p>
           <p className="text-gray-400 text-sm mt-2">Click "Refresh from Jira" to load epic data for the selected boards</p>

@@ -18,13 +18,17 @@ export default function ProductManagement({ credentials, selectedBoards }) {
     [selectedBoards]
   );
 
-  // Default: only first board selected
-  const [selectedBoardIds, setSelectedBoardIds] = useState(() => allBoardIds.length > 0 ? [allBoardIds[0]] : []);
-
   const boardList = selectedBoards.map(b => ({
     id: typeof b === 'object' ? b.id : b,
     name: typeof b === 'object' ? b.name : `Board ${b}`
   }));
+
+  // Default: prefer CES Scrum Board, fallback to first board
+  const [selectedBoardIds, setSelectedBoardIds] = useState(() => {
+    const cesBoard = boardList.find(b => b.name.toLowerCase().includes('ces'));
+    if (cesBoard) return [cesBoard.id];
+    return allBoardIds.length > 0 ? [allBoardIds[0]] : [];
+  });
 
   // Load from DB on mount (try selected boards first, then all boards as fallback)
   useEffect(() => {

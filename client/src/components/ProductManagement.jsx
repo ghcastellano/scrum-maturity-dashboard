@@ -1,62 +1,72 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import EpicIntelligenceTab from './product/EpicIntelligenceTab';
 import PrioritizationTab from './product/PrioritizationTab';
 import PortfolioTab from './product/PortfolioTab';
 
 export default function ProductManagement({ credentials, selectedBoards }) {
-  const [fullData, setFullData] = useState(null); // raw data for ALL boards
+  const [fullData, setFullData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('epic-intelligence');
-  const [dataSource, setDataSource] = useState(null); // 'database' | 'jira' | null
-  const [dataAge, setDataAge] = useState(null); // minutes since last update
+  const [dataSource, setDataSource] = useState(null);
+  const [dataAge, setDataAge] = useState(null);
+  const [fetchedBoardIds, setFetchedBoardIds] = useState([]); // tracks which boards are in fullData
 
-  // All board IDs (used for API calls — always fetch all)
   const allBoardIds = useMemo(
     () => selectedBoards.map(b => typeof b === 'object' ? b.id : b),
     [selectedBoards]
   );
 
-  // Board selection for cross-board filtering (client-side only)
-  const [selectedBoardIds, setSelectedBoardIds] = useState(allBoardIds);
+  // Default: only first board selected
+  const [selectedBoardIds, setSelectedBoardIds] = useState(() => allBoardIds.length > 0 ? [allBoardIds[0]] : []);
 
   const boardList = selectedBoards.map(b => ({
     id: typeof b === 'object' ? b.id : b,
     name: typeof b === 'object' ? b.name : `Board ${b}`
   }));
 
-  // Load from DB on mount only (once)
+  // Load from DB on mount (try selected boards first, then all boards as fallback)
   useEffect(() => {
-    if (allBoardIds.length > 0) {
-      loadFromDatabase();
+    if (selectedBoardIds.length > 0) {
+      loadFromDatabase(selectedBoardIds);
     }
   }, []);
+
+  // Check if selected boards are covered by fetched data
+  const uncoveredBoards = useMemo(() => {
+    if (!fullData || !fullData.boardProjectMap) return selectedBoardIds;
+    const coveredBoardIds = new Set(fetchedBoardIds.map(String));
+    return selectedBoardIds.filter(id => !coveredBoardIds.has(String(id)));
+  }, [selectedBoardIds, fetchedBoardIds, fullData]);
+
+  const needsRefresh = uncoveredBoards.length > 0 && fullData !== null;
 
   // Filter epics by selected boards (client-side, instant)
   const filteredData = useMemo(() => {
     if (!fullData) return null;
-    // If all boards selected, return full data
-    if (selectedBoardIds.length === allBoardIds.length) return fullData;
 
     const boardProjectMap = fullData.boardProjectMap || {};
-    // Get project keys for selected boards
+    // Get project keys for selected boards (only from covered boards)
     const activeProjectKeys = new Set(
       selectedBoardIds
         .map(id => boardProjectMap[id])
         .filter(Boolean)
     );
 
-    // If no map available, fall back to showing all data
+    // If no map available or all boards match, return full data
     if (activeProjectKeys.size === 0) return fullData;
 
-    // Filter epics by project key (extracted from issue key, e.g. "PROJ-123" → "PROJ")
+    // Check if all projects are selected
+    const allProjectKeys = new Set(Object.values(boardProjectMap));
+    if (activeProjectKeys.size === allProjectKeys.size) return fullData;
+
+    // Filter epics by project key
     const filteredEpics = fullData.epics.filter(epic => {
       const projectKey = epic.key.split('-')[0];
       return activeProjectKeys.has(projectKey);
     });
 
-    // Return filtered data (prioritization & portfolio stay full since they're computed server-side)
     return {
       ...fullData,
       epics: filteredEpics,
@@ -76,16 +86,27 @@ export default function ProductManagement({ credentials, selectedBoards }) {
         })
       })).filter(init => init.epics.length > 0)
     };
-  }, [fullData, selectedBoardIds, allBoardIds]);
+  }, [fullData, selectedBoardIds]);
 
-  // Try loading from database first (fast, no Jira API call)
-  const loadFromDatabase = async () => {
+  // Try loading from database (fast, no Jira API call)
+  const loadFromDatabase = async (boardIds) => {
     setLoading(true);
     setError('');
     try {
-      const result = await api.getCachedProductData(allBoardIds);
+      // Try exact boardIds first
+      let result = await api.getCachedProductData(boardIds);
+
+      // If no data, try loading the all-boards cache as fallback
+      if ((!result.success || !result.data) && boardIds.length < allBoardIds.length) {
+        result = await api.getCachedProductData(allBoardIds);
+        if (result.success && result.data) {
+          setFetchedBoardIds(allBoardIds);
+        }
+      }
+
       if (result.success && result.data) {
         setFullData(result.data);
+        if (!fetchedBoardIds.length) setFetchedBoardIds(boardIds);
         setDataSource('database');
         setDataAge(result.age || 0);
       } else {
@@ -98,7 +119,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
     }
   };
 
-  // Fetch fresh data from Jira API (always uses ALL boards)
+  // Fetch fresh data from Jira API (only for SELECTED boards)
   const loadFromJira = async () => {
     setLoading(true);
     setError('');
@@ -107,10 +128,11 @@ export default function ProductManagement({ credentials, selectedBoards }) {
         credentials.jiraUrl,
         credentials.email,
         credentials.apiToken,
-        allBoardIds
+        selectedBoardIds // only fetch selected boards
       );
       if (result.success) {
         setFullData(result.data);
+        setFetchedBoardIds([...selectedBoardIds]);
         setDataSource('jira');
         setDataAge(0);
       } else {
@@ -123,7 +145,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
     }
   };
 
-  const toggleBoard = (boardId) => {
+  const toggleBoard = useCallback((boardId) => {
     setSelectedBoardIds(prev => {
       if (prev.includes(boardId)) {
         if (prev.length === 1) return prev;
@@ -131,11 +153,11 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       }
       return [...prev, boardId];
     });
-  };
+  }, []);
 
-  const selectAllBoards = () => {
+  const selectAllBoards = useCallback(() => {
     setSelectedBoardIds(allBoardIds);
-  };
+  }, [allBoardIds]);
 
   return (
     <div className="max-w-7xl mx-auto px-6">
@@ -158,6 +180,11 @@ export default function ProductManagement({ credentials, selectedBoards }) {
                   : 'Fresh from Jira'}
               </span>
             )}
+            {needsRefresh && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">
+                {uncoveredBoards.length} board{uncoveredBoards.length > 1 ? 's' : ''} not loaded
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
             {selectedBoardIds.length < boardList.length && (
@@ -171,7 +198,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
               className="btn-primary text-xs px-3 py-1.5"
               style={{ backgroundColor: '#7c3aed' }}
             >
-              {loading ? 'Loading...' : 'Refresh from Jira'}
+              {loading ? 'Loading...' : `Refresh from Jira (${selectedBoardIds.length} board${selectedBoardIds.length > 1 ? 's' : ''})`}
             </button>
           </div>
         </div>
@@ -197,7 +224,12 @@ export default function ProductManagement({ credentials, selectedBoards }) {
         <div className="card text-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading epic data...</p>
-          <p className="text-xs text-gray-400 mt-1">Checking local cache first</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {selectedBoardIds.length === 1
+              ? `Loading 1 board...`
+              : `Loading ${selectedBoardIds.length} boards...`
+            }
+          </p>
         </div>
       )}
 
@@ -275,7 +307,9 @@ export default function ProductManagement({ credentials, selectedBoards }) {
       {!loading && !fullData && !error && (
         <div className="card text-center py-16">
           <p className="text-gray-500 text-lg">No data loaded yet</p>
-          <p className="text-gray-400 text-sm mt-2">Click "Refresh from Jira" to load epic data for the selected boards</p>
+          <p className="text-gray-400 text-sm mt-2">
+            Click "Refresh from Jira" to load epic data for the {selectedBoardIds.length} selected board{selectedBoardIds.length > 1 ? 's' : ''}
+          </p>
         </div>
       )}
     </div>

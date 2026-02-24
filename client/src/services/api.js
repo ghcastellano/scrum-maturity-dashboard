@@ -149,6 +149,43 @@ class ApiService {
     const response = await this.client.post('/releases/save-cache', { boardId, releasesData });
     return response.data;
   }
+
+  // === PRODUCT MANAGEMENT ===
+
+  async getEpics(jiraUrl, email, apiToken, boardIds) {
+    const response = await this.client.post('/product/epics', {
+      jiraUrl, email, apiToken, boardIds
+    });
+    return response.data;
+  }
+
+  async getEpicPrioritization(jiraUrl, email, apiToken, boardIds, fieldMappings) {
+    const body = { jiraUrl, email, apiToken, boardIds };
+    if (fieldMappings) body.fieldMappings = fieldMappings;
+    const response = await this.client.post('/product/prioritization', body);
+    return response.data;
+  }
+
+  async getEpicDependencies(jiraUrl, email, apiToken, epicKeys) {
+    const response = await this.client.post('/product/dependencies', {
+      jiraUrl, email, apiToken, epicKeys
+    });
+    return response.data;
+  }
+
+  async getPortfolioView(jiraUrl, email, apiToken, boardIds, remainingItems) {
+    const body = { jiraUrl, email, apiToken, boardIds };
+    if (remainingItems) body.remainingItems = remainingItems;
+    const response = await this.client.post('/product/portfolio', body);
+    return response.data;
+  }
+
+  async discoverPrioritizationFields(jiraUrl, email, apiToken) {
+    const response = await this.client.post('/product/discover-fields', {
+      jiraUrl, email, apiToken
+    });
+    return response.data;
+  }
 }
 
 export default new ApiService();

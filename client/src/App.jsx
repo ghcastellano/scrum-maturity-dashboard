@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import JiraConnection from './components/JiraConnection';
 import TeamSelector from './components/TeamSelector';
 import Dashboard from './components/Dashboard';
+import ProductManagement from './components/ProductManagement';
 
 const STORAGE_KEY_JIRA_URL = 'scrum-dashboard-jira-url';
 const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
@@ -17,6 +18,7 @@ function App() {
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [savedBoardsFromHistory, setSavedBoardsFromHistory] = useState([]);
   const [newlyAddedBoard, setNewlyAddedBoard] = useState(null);
+  const [activeSection, setActiveSection] = useState('scrum-maturity');
 
   useEffect(() => {
     initializeApp();
@@ -174,8 +176,14 @@ function App() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
-            <p className="text-sm text-gray-600">Analyze team health and maturity</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {activeSection === 'product-management' ? 'Product Management' : 'Scrum Maturity Dashboard'}
+            </h1>
+            <p className="text-sm text-gray-600">
+              {activeSection === 'product-management'
+                ? 'Epic intelligence, prioritization & portfolio'
+                : 'Analyze team health and maturity'}
+            </p>
           </div>
 
           {step === 'dashboard' && credentials && (
@@ -191,8 +199,36 @@ function App() {
         </div>
       </header>
 
+      {/* Section Navigation */}
+      {step === 'dashboard' && (
+        <nav className="bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-6 flex gap-1">
+            <button
+              onClick={() => setActiveSection('scrum-maturity')}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeSection === 'scrum-maturity'
+                  ? 'border-primary-600 text-primary-600 bg-primary-50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              Scrum Maturity
+            </button>
+            <button
+              onClick={() => setActiveSection('product-management')}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeSection === 'product-management'
+                  ? 'border-purple-600 text-purple-600 bg-purple-50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              Product Management
+            </button>
+          </div>
+        </nav>
+      )}
+
       {/* Main Content */}
-      <main className="py-8">
+      <main className={step === 'dashboard' ? 'py-4' : 'py-8'}>
         {step === 'connection' && (
           <JiraConnection onConnectionSuccess={handleConnectionSuccess} />
         )}
@@ -206,13 +242,20 @@ function App() {
           />
         )}
 
-        {step === 'dashboard' && (
+        {step === 'dashboard' && activeSection === 'scrum-maturity' && (
           <Dashboard
             credentials={credentials}
             selectedBoards={selectedBoards}
             newlyAddedBoard={newlyAddedBoard}
             onNewBoardHandled={() => setNewlyAddedBoard(null)}
             onBoardDeleted={handleBoardDeleted}
+          />
+        )}
+
+        {step === 'dashboard' && activeSection === 'product-management' && (
+          <ProductManagement
+            credentials={credentials}
+            selectedBoards={selectedBoards}
           />
         )}
       </main>

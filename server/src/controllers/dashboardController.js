@@ -1,5 +1,7 @@
 import JiraService from '../services/jiraService.js';
 import MetricsService from '../services/metricsService.js';
+import epicMetricsService from '../services/epicMetricsService.js';
+import forecastService from '../services/forecastService.js';
 import cacheService from '../services/cacheService.js';
 import database from '../services/database.js';
 
@@ -1022,6 +1024,304 @@ class DashboardController {
       risks,
       blockedItems: blockedItems.length
     };
+  }
+  // ==============================
+  // PRODUCT MANAGEMENT endpoints
+  // ==============================
+
+  // Get all epics for selected boards (cross-board)
+  async getEpics(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardIds } = req.body;
+
+      const boardIdList = Array.isArray(boardIds) ? boardIds : [boardIds];
+      const cacheKey = `product-epics-${boardIdList.sort().join('-')}`;
+
+      // Check cache
+      const cachedData = cacheService.get(cacheKey);
+      if (cachedData) {
+        return res.json({ success: true, data: cachedData, cached: true });
+      }
+
+      console.log(`\n🏢 Product Management: Fetching epics for ${boardIdList.length} boards`);
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+      // Get project keys for all boards in parallel
+      const projectKeys = [];
+      const boardNames = {};
+      await Promise.all(boardIdList.map(async (boardId) => {
+        try {
+          const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
+          if (!projectKeys.includes(projectKey)) {
+            projectKeys.push(projectKey);
+          }
+          const board = await jiraService.getBoard(boardId);
+          boardNames[boardId] = board?.name || `Board ${boardId}`;
+        } catch (err) {
+          console.warn(`  ⚠ Could not get project key for board ${boardId}: ${err.message}`);
+        }
+      }));
+
+      if (projectKeys.length === 0) {
+        return res.status(400).json({ success: false, message: 'No valid project keys found for the selected boards' });
+      }
+
+      console.log(`  Projects: ${projectKeys.join(', ')}`);
+
+      // Fetch epics and initiatives in parallel
+      const [rawEpics, rawInitiatives] = await Promise.all([
+        jiraService.searchEpics(projectKeys),
+        jiraService.searchInitiatives(projectKeys)
+      ]);
+
+      console.log(`  Found ${rawEpics.length} epics, ${rawInitiatives.length} initiatives`);
+
+      // Batch fetch children for all epics
+      const epicKeys = rawEpics.map(e => e.key);
+      const childrenMap = await jiraService.batchGetEpicChildren(epicKeys);
+
+      // Fetch dependencies
+      const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+
+      // Build enriched epic data
+      const epics = rawEpics.map(epic => {
+        const children = childrenMap.get(epic.key) || [];
+        const dependencies = dependencyMap.get(epic.key) || { blocks: [], blockedBy: [], relatesTo: [] };
+        return epicMetricsService.buildEpicData(epic, children, dependencies);
+      });
+
+      // Aggregate by initiative
+      const initiatives = epicMetricsService.aggregateByInitiative(rawInitiatives, epics);
+
+      // Calculate throughput
+      const throughput = epicMetricsService.calculateThroughput(epics, 'month');
+
+      // Build summary
+      const summary = epicMetricsService.buildSummary(epics);
+
+      const responseData = {
+        epics,
+        initiatives,
+        throughput,
+        summary,
+        projectKeys,
+        boardNames
+      };
+
+      // Cache for 10 minutes
+      cacheService.set(cacheKey, responseData, 10 * 60 * 1000);
+
+      res.json({
+        success: true,
+        data: responseData,
+        cached: false,
+        message: `Found ${epics.length} epics across ${projectKeys.length} projects`
+      });
+    } catch (error) {
+      console.error('Error fetching epics:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get epic dependencies graph
+  async getEpicDependencies(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, epicKeys } = req.body;
+
+      if (!epicKeys || epicKeys.length === 0) {
+        return res.json({ success: true, data: { nodes: [], edges: [] } });
+      }
+
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+      const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+
+      // Build graph nodes and edges
+      const nodeSet = new Set();
+      const edges = [];
+
+      for (const [epicKey, deps] of dependencyMap) {
+        nodeSet.add(epicKey);
+        for (const blocked of deps.blocks) {
+          nodeSet.add(blocked.key);
+          edges.push({ source: epicKey, target: blocked.key, type: 'blocks' });
+        }
+        for (const blocker of deps.blockedBy) {
+          nodeSet.add(blocker.key);
+          edges.push({ source: blocker.key, target: epicKey, type: 'blocks' });
+        }
+        for (const related of deps.relatesTo) {
+          nodeSet.add(related.key);
+          edges.push({ source: epicKey, target: related.key, type: related.type || 'relates' });
+        }
+      }
+
+      // Build nodes with status info
+      const nodes = Array.from(nodeSet).map(key => {
+        const deps = dependencyMap.get(key);
+        return { id: key, label: key, hasDeps: !!deps };
+      });
+
+      res.json({ success: true, data: { nodes, edges } });
+    } catch (error) {
+      console.error('Error fetching epic dependencies:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get prioritization data (WSJF, MoSCoW, Value vs Effort)
+  async getEpicPrioritization(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardIds, fieldMappings } = req.body;
+
+      const boardIdList = Array.isArray(boardIds) ? boardIds : [boardIds];
+
+      // Check if we have cached epic data to avoid re-fetching
+      const epicCacheKey = `product-epics-${boardIdList.sort().join('-')}`;
+      let epicData = cacheService.get(epicCacheKey);
+
+      if (!epicData) {
+        // Need to fetch epics first
+        console.log(`\n📊 Prioritization: Fetching epics for ${boardIdList.length} boards`);
+        const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+        const projectKeys = [];
+        await Promise.all(boardIdList.map(async (boardId) => {
+          try {
+            const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
+            if (!projectKeys.includes(projectKey)) projectKeys.push(projectKey);
+          } catch (err) {
+            console.warn(`  ⚠ Could not get project key for board ${boardId}: ${err.message}`);
+          }
+        }));
+
+        if (projectKeys.length === 0) {
+          return res.status(400).json({ success: false, message: 'No valid project keys found' });
+        }
+
+        const rawEpics = await jiraService.searchEpics(projectKeys);
+        const epicKeys = rawEpics.map(e => e.key);
+        const childrenMap = await jiraService.batchGetEpicChildren(epicKeys);
+        const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+
+        const epics = rawEpics.map(epic => {
+          const children = childrenMap.get(epic.key) || [];
+          const dependencies = dependencyMap.get(epic.key) || { blocks: [], blockedBy: [], relatesTo: [] };
+          const built = epicMetricsService.buildEpicData(epic, children, dependencies);
+          // Attach raw fields for custom field mapping
+          built._rawFields = epic.fields;
+          return built;
+        });
+
+        epicData = { epics };
+      }
+
+      // Build prioritization data using epicMetricsService
+      const prioritizationData = epicMetricsService.buildPrioritizationData(
+        epicData.epics,
+        fieldMappings || null
+      );
+
+      res.json({
+        success: true,
+        data: prioritizationData,
+        cached: false
+      });
+    } catch (error) {
+      console.error('Error fetching prioritization data:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get portfolio view data (CFD, Lead/Cycle Time, Monte Carlo, WIP)
+  async getPortfolioView(req, res) {
+    try {
+      const { jiraUrl, email, apiToken, boardIds, remainingItems } = req.body;
+
+      const boardIdList = Array.isArray(boardIds) ? boardIds : [boardIds];
+
+      // Try to reuse cached epic data
+      const epicCacheKey = `product-epics-${boardIdList.sort().join('-')}`;
+      let epicData = cacheService.get(epicCacheKey);
+
+      if (!epicData) {
+        console.log(`\n📊 Portfolio: Fetching epics for ${boardIdList.length} boards`);
+        const jiraService = new JiraService(jiraUrl, email, apiToken);
+
+        const projectKeys = [];
+        await Promise.all(boardIdList.map(async (boardId) => {
+          try {
+            const projectKey = await jiraService.getProjectKeyFromBoard(boardId);
+            if (!projectKeys.includes(projectKey)) projectKeys.push(projectKey);
+          } catch (err) {
+            console.warn(`  ⚠ Could not get project key for board ${boardId}: ${err.message}`);
+          }
+        }));
+
+        if (projectKeys.length === 0) {
+          return res.status(400).json({ success: false, message: 'No valid project keys found' });
+        }
+
+        const [rawEpics, rawInitiatives] = await Promise.all([
+          jiraService.searchEpics(projectKeys),
+          jiraService.searchInitiatives(projectKeys)
+        ]);
+
+        const epicKeys = rawEpics.map(e => e.key);
+        const childrenMap = await jiraService.batchGetEpicChildren(epicKeys);
+        const dependencyMap = await jiraService.getEpicDependencies(epicKeys);
+
+        const epics = rawEpics.map(epic => {
+          const children = childrenMap.get(epic.key) || [];
+          const dependencies = dependencyMap.get(epic.key) || { blocks: [], blockedBy: [], relatesTo: [] };
+          return epicMetricsService.buildEpicData(epic, children, dependencies);
+        });
+
+        const initiatives = epicMetricsService.aggregateByInitiative(rawInitiatives, epics);
+        const throughput = epicMetricsService.calculateThroughput(epics, 'month');
+
+        epicData = { epics, initiatives, throughput };
+      }
+
+      const { epics, initiatives, throughput } = epicData;
+
+      // Build portfolio metrics
+      const cumulativeFlow = epicMetricsService.buildCumulativeFlow(epics);
+      const leadCycleTime = epicMetricsService.calculateEpicLeadCycleTime(epics);
+      const wipMetrics = epicMetricsService.calculateWIPMetrics(epics, initiatives);
+
+      // Monte Carlo forecast
+      const itemsToForecast = remainingItems || epics.filter(e => e.statusCategory !== 'done').length;
+      const forecast = forecastService.monteCarloForecast(throughput, itemsToForecast);
+
+      res.json({
+        success: true,
+        data: {
+          cumulativeFlow,
+          leadCycleTime,
+          wipMetrics,
+          forecast,
+          throughput
+        },
+        cached: false
+      });
+    } catch (error) {
+      console.error('Error fetching portfolio view:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Discover custom fields for prioritization
+  async discoverFields(req, res) {
+    try {
+      const { jiraUrl, email, apiToken } = req.body;
+      const jiraService = new JiraService(jiraUrl, email, apiToken);
+      const fields = await jiraService.discoverCustomFields();
+
+      res.json({ success: true, fields });
+    } catch (error) {
+      console.error('Error discovering fields:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
   }
 }
 

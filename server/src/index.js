@@ -171,6 +171,29 @@ app.delete('/api/history/board/:boardId', async (req, res) => {
   }
 });
 
+// ==============================
+// PRODUCT MANAGEMENT endpoints
+// ==============================
+app.post('/api/product/epics', (req, res) =>
+  dashboardController.getEpics(req, res)
+);
+
+app.post('/api/product/dependencies', (req, res) =>
+  dashboardController.getEpicDependencies(req, res)
+);
+
+app.post('/api/product/prioritization', (req, res) =>
+  dashboardController.getEpicPrioritization(req, res)
+);
+
+app.post('/api/product/portfolio', (req, res) =>
+  dashboardController.getPortfolioView(req, res)
+);
+
+app.post('/api/product/discover-fields', (req, res) =>
+  dashboardController.discoverFields(req, res)
+);
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

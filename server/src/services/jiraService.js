@@ -756,6 +756,234 @@ class JiraService {
     }
   }
 
+  // ============================
+  // PRODUCT MANAGEMENT - EPICS
+  // ============================
+
+  // Search epics across one or more projects
+  async searchEpics(projectKeys, additionalJql = '') {
+    try {
+      const projectsJql = Array.isArray(projectKeys)
+        ? `project in (${projectKeys.map(k => `"${k}"`).join(',')})`
+        : `project = "${projectKeys}"`;
+
+      let jql = `${projectsJql} AND issuetype = Epic`;
+      if (additionalJql) jql += ` ${additionalJql}`;
+      jql += ' ORDER BY rank ASC';
+
+      const fields = [
+        'summary', 'status', 'priority', 'labels', 'components',
+        'fixVersions', 'issuelinks', 'created', 'updated',
+        'resolutiondate', 'duedate', 'parent', 'assignee',
+        'customfield_10061' // story points
+      ];
+
+      let allIssues = [];
+      let nextPageToken = null;
+      const maxResults = 100;
+
+      do {
+        const requestBody = { jql, fields, maxResults };
+        if (nextPageToken) requestBody.nextPageToken = nextPageToken;
+
+        const response = await this.api.post('/search/jql', requestBody);
+        const issues = response.data.issues || [];
+        allIssues = allIssues.concat(issues);
+
+        nextPageToken = response.data.nextPageToken;
+        if (response.data.isLast || !nextPageToken || issues.length < maxResults) break;
+      } while (true);
+
+      console.log(`✓ Found ${allIssues.length} epics across projects: ${projectKeys}`);
+      return allIssues;
+    } catch (error) {
+      throw new Error(`Failed to search epics: ${error.message}`);
+    }
+  }
+
+  // Search initiatives across one or more projects
+  async searchInitiatives(projectKeys) {
+    try {
+      const projectsJql = Array.isArray(projectKeys)
+        ? `project in (${projectKeys.map(k => `"${k}"`).join(',')})`
+        : `project = "${projectKeys}"`;
+
+      const jql = `${projectsJql} AND issuetype = Initiative ORDER BY rank ASC`;
+      const fields = [
+        'summary', 'status', 'priority', 'labels', 'created',
+        'updated', 'resolutiondate', 'duedate', 'assignee'
+      ];
+
+      let allIssues = [];
+      let nextPageToken = null;
+      const maxResults = 100;
+
+      do {
+        const requestBody = { jql, fields, maxResults };
+        if (nextPageToken) requestBody.nextPageToken = nextPageToken;
+
+        const response = await this.api.post('/search/jql', requestBody);
+        const issues = response.data.issues || [];
+        allIssues = allIssues.concat(issues);
+
+        nextPageToken = response.data.nextPageToken;
+        if (response.data.isLast || !nextPageToken || issues.length < maxResults) break;
+      } while (true);
+
+      console.log(`✓ Found ${allIssues.length} initiatives across projects: ${projectKeys}`);
+      return allIssues;
+    } catch (error) {
+      // Initiative type may not exist — return empty instead of throwing
+      if (error.message?.includes('does not exist') || error.response?.status === 400) {
+        console.warn(`⚠ Initiative issue type not found, skipping`);
+        return [];
+      }
+      throw new Error(`Failed to search initiatives: ${error.message}`);
+    }
+  }
+
+  // Get child issues of an epic (stories, tasks, bugs)
+  async getEpicChildren(epicKey) {
+    try {
+      const jql = `parent = "${epicKey}" OR "Epic Link" = "${epicKey}" ORDER BY status ASC`;
+      const fields = [
+        'summary', 'status', 'issuetype', 'assignee',
+        'resolutiondate', 'created', 'customfield_10061'
+      ];
+
+      let allIssues = [];
+      let nextPageToken = null;
+      const maxResults = 100;
+
+      do {
+        const requestBody = { jql, fields, maxResults };
+        if (nextPageToken) requestBody.nextPageToken = nextPageToken;
+
+        const response = await this.api.post('/search/jql', requestBody);
+        const issues = response.data.issues || [];
+        allIssues = allIssues.concat(issues);
+
+        nextPageToken = response.data.nextPageToken;
+        if (response.data.isLast || !nextPageToken || issues.length < maxResults) break;
+      } while (true);
+
+      return allIssues;
+    } catch (error) {
+      console.warn(`Failed to get children for ${epicKey}: ${error.message}`);
+      return [];
+    }
+  }
+
+  // Batch fetch children for multiple epics in parallel
+  async batchGetEpicChildren(epicKeys) {
+    const childrenMap = new Map();
+    if (epicKeys.length === 0) return childrenMap;
+
+    const batchSize = 10;
+    for (let i = 0; i < epicKeys.length; i += batchSize) {
+      const batch = epicKeys.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (key) => {
+          const children = await this.getEpicChildren(key);
+          return { key, children };
+        })
+      );
+
+      for (const { key, children } of results) {
+        childrenMap.set(key, children);
+      }
+    }
+
+    const totalChildren = Array.from(childrenMap.values()).reduce((sum, c) => sum + c.length, 0);
+    console.log(`✓ Batch fetched children for ${epicKeys.length} epics (${totalChildren} total children)`);
+    return childrenMap;
+  }
+
+  // Get dependencies between epics (from issuelinks)
+  async getEpicDependencies(epicKeys) {
+    const dependencyMap = new Map();
+    if (epicKeys.length === 0) return dependencyMap;
+
+    const jql = `key in (${epicKeys.join(',')})`;
+    const fields = ['summary', 'status', 'issuelinks'];
+
+    let allIssues = [];
+    let nextPageToken = null;
+    const maxResults = 100;
+
+    try {
+      do {
+        const requestBody = { jql, fields, maxResults };
+        if (nextPageToken) requestBody.nextPageToken = nextPageToken;
+
+        const response = await this.api.post('/search/jql', requestBody);
+        const issues = response.data.issues || [];
+        allIssues = allIssues.concat(issues);
+
+        nextPageToken = response.data.nextPageToken;
+        if (response.data.isLast || !nextPageToken || issues.length < maxResults) break;
+      } while (true);
+
+      for (const issue of allIssues) {
+        const deps = { blocks: [], blockedBy: [], relatesTo: [] };
+        for (const link of (issue.fields.issuelinks || [])) {
+          const linkType = link.type?.name || '';
+          if (link.outwardIssue) {
+            const target = link.outwardIssue.key;
+            if (linkType === 'Blocks') {
+              deps.blocks.push({ key: target, summary: link.outwardIssue.fields?.summary || '', status: link.outwardIssue.fields?.status?.name || '' });
+            } else {
+              deps.relatesTo.push({ key: target, summary: link.outwardIssue.fields?.summary || '', type: linkType });
+            }
+          }
+          if (link.inwardIssue) {
+            const source = link.inwardIssue.key;
+            if (linkType === 'Blocks') {
+              deps.blockedBy.push({ key: source, summary: link.inwardIssue.fields?.summary || '', status: link.inwardIssue.fields?.status?.name || '' });
+            } else {
+              deps.relatesTo.push({ key: source, summary: link.inwardIssue.fields?.summary || '', type: linkType });
+            }
+          }
+        }
+        dependencyMap.set(issue.key, deps);
+      }
+
+      console.log(`✓ Fetched dependencies for ${allIssues.length} epics`);
+      return dependencyMap;
+    } catch (error) {
+      console.warn(`Failed to get epic dependencies: ${error.message}`);
+      return dependencyMap;
+    }
+  }
+
+  // Discover custom fields for prioritization (business value, WSJF, etc.)
+  async discoverCustomFields() {
+    try {
+      const fields = await this.getFields();
+
+      const prioritizationKeywords = [
+        'business value', 'value', 'urgency', 'risk', 'cost of delay',
+        'job size', 'time criticality', 'wsjf', 'rice', 'moscow',
+        'impact', 'confidence', 'reach', 'effort'
+      ];
+
+      const candidates = fields.filter(field => {
+        const name = (field.name || '').toLowerCase();
+        return field.id?.startsWith('customfield_') &&
+          prioritizationKeywords.some(keyword => name.includes(keyword));
+      });
+
+      console.log(`✓ Found ${candidates.length} prioritization-related custom fields`);
+      return candidates.map(f => ({
+        id: f.id,
+        name: f.name,
+        type: f.schema?.type || 'unknown'
+      }));
+    } catch (error) {
+      throw new Error(`Failed to discover custom fields: ${error.message}`);
+    }
+  }
+
   // Get burndown data for a version
   async getVersionBurndown(projectKey, versionName, startDate, endDate) {
     try {

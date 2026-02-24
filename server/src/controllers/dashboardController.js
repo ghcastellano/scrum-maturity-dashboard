@@ -1117,13 +1117,33 @@ class DashboardController {
       // Build summary
       const summary = epicMetricsService.buildSummary(epics);
 
+      // Build prioritization data (WSJF, MoSCoW, Value vs Effort)
+      const prioritizationData = epicMetricsService.buildPrioritizationData(epics, null);
+
+      // Build portfolio data (CFD, Lead/Cycle Time, WIP, Monte Carlo)
+      const cumulativeFlow = epicMetricsService.buildCumulativeFlow(epics);
+      const leadCycleTime = epicMetricsService.calculateEpicLeadCycleTime(epics);
+      const wipMetrics = epicMetricsService.calculateWIPMetrics(epics, initiatives);
+      const remainingItems = epics.filter(e => e.statusCategory !== 'done').length;
+      const forecast = forecastService.monteCarloForecast(throughput, remainingItems);
+
+      const portfolioData = {
+        cumulativeFlow,
+        leadCycleTime,
+        wipMetrics,
+        forecast,
+        throughput
+      };
+
       const responseData = {
         epics,
         initiatives,
         throughput,
         summary,
         projectKeys,
-        boardNames
+        boardNames,
+        prioritizationData,
+        portfolioData
       };
 
       // Cache for 10 minutes (in-memory)
@@ -1135,6 +1155,8 @@ class DashboardController {
       } catch (dbError) {
         console.warn('Failed to save product data to database:', dbError.message);
       }
+
+      console.log(`  ✓ All product data computed and saved (epics + prioritization + portfolio)`);
 
       res.json({
         success: true,

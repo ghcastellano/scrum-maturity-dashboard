@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Scatter, Doughnut } from 'react-chartjs-2';
-import api from '../../services/api';
 import FieldMappingConfig from './FieldMappingConfig';
 
 const MOSCOW_COLORS = {
@@ -17,42 +16,12 @@ const QUADRANT_INFO = {
   moneyPit: { label: 'Money Pit', desc: 'Low value, high effort', color: 'text-red-600', bg: 'bg-red-50' }
 };
 
-export default function PrioritizationTab({ credentials, selectedBoards, epicData }) {
-  const [priData, setPriData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+export default function PrioritizationTab({ credentials, selectedBoards, epicData, prioritizationData }) {
+  // Use pre-loaded data from parent (no separate API call needed)
+  const priData = prioritizationData || null;
   const [fieldMappings, setFieldMappings] = useState(null);
   const [sortBy, setSortBy] = useState('wsjf'); // 'wsjf' | 'value' | 'effort' | 'moscow'
   const [sortDir, setSortDir] = useState('desc');
-
-  const boardIds = selectedBoards.map(b => typeof b === 'object' ? b.id : b);
-
-  useEffect(() => {
-    loadPrioritization();
-  }, []);
-
-  const loadPrioritization = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const result = await api.getEpicPrioritization(
-        credentials.jiraUrl,
-        credentials.email,
-        credentials.apiToken,
-        boardIds,
-        fieldMappings
-      );
-      if (result.success) {
-        setPriData(result.data);
-      } else {
-        setError(result.message || 'Failed to load prioritization data');
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to load');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleMappingsChange = (newMappings) => {
     setFieldMappings(newMappings);
@@ -67,25 +36,13 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
     }
   };
 
-  if (loading && !priData) {
+  if (!priData) {
     return (
       <div className="card text-center py-16">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Calculating prioritization scores...</p>
+        <p className="text-gray-500">No prioritization data available. Click "Refresh from Jira" to load.</p>
       </div>
     );
   }
-
-  if (error) {
-    return (
-      <div className="card bg-red-50 border-red-200">
-        <p className="text-red-700 text-sm">{error}</p>
-        <button onClick={loadPrioritization} className="mt-2 text-xs text-red-600 underline">Try again</button>
-      </div>
-    );
-  }
-
-  if (!priData) return null;
 
   const { epics, moscowDistribution, quadrants, medianEffort, medianValue } = priData;
 

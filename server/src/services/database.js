@@ -335,6 +335,103 @@ class DatabaseService {
     }
   }
 
+  // ==============================
+  // PRODUCT MANAGEMENT DATA
+  // ==============================
+
+  // Save product management data (epic intelligence, prioritization, portfolio)
+  // Uses a dedicated table key based on boardIds hash
+  async saveProductData(boardIds, dataType, data) {
+    if (!this.client) return false;
+
+    const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
+    const storageKey = `product_${dataType}_${boardKey}`;
+
+    try {
+      // Upsert: update if exists, insert if not
+      const { error } = await this.client
+        .from('product_data_cache')
+        .upsert(
+          {
+            cache_key: storageKey,
+            board_ids: boardKey,
+            data_type: dataType,
+            data: data,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'cache_key' }
+        );
+
+      if (error) throw error;
+      console.log(`✓ Product ${dataType} saved for boards [${boardKey}]`);
+      return true;
+    } catch (err) {
+      console.warn(`Failed to save product ${dataType}:`, err.message);
+      return false;
+    }
+  }
+
+  // Get cached product management data
+  async getProductData(boardIds, dataType, maxAgeMs = 30 * 60 * 1000) {
+    if (!this.client) return null;
+
+    const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
+    const storageKey = `product_${dataType}_${boardKey}`;
+
+    try {
+      const { data, error } = await this.client
+        .from('product_data_cache')
+        .select('*')
+        .eq('cache_key', storageKey)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      if (!data) return null;
+
+      // Check freshness
+      const updatedAt = new Date(data.updated_at).getTime();
+      const age = Date.now() - updatedAt;
+      if (maxAgeMs > 0 && age > maxAgeMs) {
+        return { data: data.data, stale: true, age: Math.round(age / 60000) };
+      }
+
+      return { data: data.data, stale: false, age: Math.round(age / 60000) };
+    } catch (err) {
+      console.warn(`Failed to get product ${dataType}:`, err.message);
+      return null;
+    }
+  }
+
+  // Get all product data for given boards (any type), returns even if stale
+  async getAllProductData(boardIds) {
+    if (!this.client) return null;
+
+    const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
+
+    try {
+      const { data, error } = await this.client
+        .from('product_data_cache')
+        .select('*')
+        .eq('board_ids', boardKey);
+
+      if (error) throw error;
+      if (!data || data.length === 0) return null;
+
+      const result = {};
+      for (const row of data) {
+        result[row.data_type] = {
+          data: row.data,
+          updatedAt: row.updated_at,
+          age: Math.round((Date.now() - new Date(row.updated_at).getTime()) / 60000)
+        };
+      }
+      return result;
+    } catch (err) {
+      console.warn('Failed to get all product data:', err.message);
+      return null;
+    }
+  }
+
   // Clean old metrics (keep last 90 days)
   async cleanOldMetrics() {
     if (!this.client) return 0;

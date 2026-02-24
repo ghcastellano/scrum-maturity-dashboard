@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Scatter, Doughnut } from 'react-chartjs-2';
+import { Bubble, Doughnut } from 'react-chartjs-2';
 import FieldMappingConfig from './FieldMappingConfig';
 
 const MOSCOW_COLORS = {
@@ -7,6 +7,13 @@ const MOSCOW_COLORS = {
   'Should Have': { bg: 'rgba(245, 158, 11, 0.7)', border: 'rgb(245, 158, 11)', label: 'bg-amber-100 text-amber-700' },
   'Could Have': { bg: 'rgba(59, 130, 246, 0.7)', border: 'rgb(59, 130, 246)', label: 'bg-blue-100 text-blue-700' },
   "Won't Have": { bg: 'rgba(156, 163, 175, 0.7)', border: 'rgb(156, 163, 175)', label: 'bg-gray-100 text-gray-600' }
+};
+
+const QUADRANT_COLORS = {
+  quickWins: { bg: 'rgba(34, 197, 94, 0.5)', border: 'rgb(34, 197, 94)' },
+  bigBets: { bg: 'rgba(59, 130, 246, 0.5)', border: 'rgb(59, 130, 246)' },
+  fillIns: { bg: 'rgba(245, 158, 11, 0.5)', border: 'rgb(245, 158, 11)' },
+  moneyPit: { bg: 'rgba(239, 68, 68, 0.5)', border: 'rgb(239, 68, 68)' }
 };
 
 const QUADRANT_INFO = {
@@ -21,6 +28,12 @@ function percentile(arr, p) {
   const sorted = [...arr].sort((a, b) => a - b);
   const idx = Math.ceil(sorted.length * p / 100) - 1;
   return sorted[Math.max(0, idx)];
+}
+
+// Seeded jitter to spread overlapping points
+function jitter(val, range, seed) {
+  const hash = ((seed * 9301 + 49297) % 233280) / 233280;
+  return val + (hash - 0.5) * range;
 }
 
 export default function PrioritizationTab({ credentials, selectedBoards, epicData, prioritizationData }) {
@@ -64,61 +77,85 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
     }
   });
 
-  // Detect low-variance data
-  const uniqueValues = new Set(epics.map(e => e.value));
-  const hasLowValueVariance = uniqueValues.size <= 2;
+  // Use Cost of Delay as Y axis (much more variance than just businessValue)
+  const chartEpics = useMemo(() => {
+    return epics.filter(e => e.effort > 0);
+  }, [epics]);
 
-  // Cap effort outliers at 95th percentile for chart display
-  const effortArr = epics.filter(e => e.effort > 0).map(e => e.effort);
-  const effortP95 = percentile(effortArr, 95);
-  const effortCap = Math.max(effortP95 * 1.2, medianEffort * 3);
+  // Cap effort outliers at P90
+  const effortArr = chartEpics.map(e => e.effort);
+  const effortP90 = percentile(effortArr, 90);
+  const effortCap = Math.max(effortP90 * 1.3, 20);
 
-  // Build scatter data with capped effort
-  const buildScatterPoint = (e) => ({
-    x: Math.min(e.effort, effortCap),
-    y: e.value,
+  // Use CoD for Y axis
+  const codArr = chartEpics.map(e => e.wsjf.costOfDelay);
+  const medianCoD = codArr.length > 0
+    ? [...codArr].sort((a, b) => a - b)[Math.floor(codArr.length / 2)]
+    : 7;
+  const medianEffortCapped = Math.min(medianEffort, effortCap);
+
+  // Bubble radius from child count (scaled 4-16)
+  const maxChildren = Math.max(...chartEpics.map(e => e.wsjf.jobSize || 1), 1);
+  const bubbleRadius = (epic) => {
+    const size = epic.wsjf.jobSize || 1;
+    return Math.max(4, Math.min(16, 4 + (size / maxChildren) * 12));
+  };
+
+  // Build bubble data with jitter and capping
+  const buildPoint = (e, idx) => ({
+    x: jitter(Math.min(e.effort, effortCap), effortCap * 0.03, idx * 7 + 1),
+    y: jitter(e.wsjf.costOfDelay, 0.4, idx * 13 + 3),
+    r: bubbleRadius(e),
     epic: e,
     isCapped: e.effort > effortCap
   });
 
-  const scatterData = {
+  const bubbleData = {
     datasets: [
       {
         label: 'Quick Wins',
-        data: epics.filter(e => e.value >= medianValue && e.effort < medianEffort).map(buildScatterPoint),
-        backgroundColor: 'rgba(34, 197, 94, 0.6)',
+        data: chartEpics
+          .map((e, i) => ({ e, i }))
+          .filter(({ e }) => e.wsjf.costOfDelay >= medianCoD && e.effort < medianEffort)
+          .map(({ e, i }) => buildPoint(e, i)),
+        backgroundColor: 'rgba(34, 197, 94, 0.55)',
         borderColor: 'rgb(34, 197, 94)',
-        pointRadius: 7,
-        pointHoverRadius: 10
+        borderWidth: 1.5
       },
       {
         label: 'Big Bets',
-        data: epics.filter(e => e.value >= medianValue && e.effort >= medianEffort).map(buildScatterPoint),
-        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+        data: chartEpics
+          .map((e, i) => ({ e, i }))
+          .filter(({ e }) => e.wsjf.costOfDelay >= medianCoD && e.effort >= medianEffort)
+          .map(({ e, i }) => buildPoint(e, i)),
+        backgroundColor: 'rgba(59, 130, 246, 0.55)',
         borderColor: 'rgb(59, 130, 246)',
-        pointRadius: 7,
-        pointHoverRadius: 10
+        borderWidth: 1.5
       },
       {
         label: 'Fill-ins',
-        data: epics.filter(e => e.value < medianValue && e.effort < medianEffort).map(buildScatterPoint),
-        backgroundColor: 'rgba(245, 158, 11, 0.6)',
+        data: chartEpics
+          .map((e, i) => ({ e, i }))
+          .filter(({ e }) => e.wsjf.costOfDelay < medianCoD && e.effort < medianEffort)
+          .map(({ e, i }) => buildPoint(e, i)),
+        backgroundColor: 'rgba(245, 158, 11, 0.55)',
         borderColor: 'rgb(245, 158, 11)',
-        pointRadius: 7,
-        pointHoverRadius: 10
+        borderWidth: 1.5
       },
       {
         label: 'Money Pit',
-        data: epics.filter(e => e.value < medianValue && e.effort >= medianEffort).map(buildScatterPoint),
-        backgroundColor: 'rgba(239, 68, 68, 0.6)',
+        data: chartEpics
+          .map((e, i) => ({ e, i }))
+          .filter(({ e }) => e.wsjf.costOfDelay < medianCoD && e.effort >= medianEffort)
+          .map(({ e, i }) => buildPoint(e, i)),
+        backgroundColor: 'rgba(239, 68, 68, 0.55)',
         borderColor: 'rgb(239, 68, 68)',
-        pointRadius: 7,
-        pointHoverRadius: 10
+        borderWidth: 1.5
       }
     ]
   };
 
-  const scatterOptions = {
+  const bubbleOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -129,8 +166,8 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
             const epic = ctx.raw.epic;
             const lines = [
               `${epic.key}: ${epic.summary.substring(0, 50)}${epic.summary.length > 50 ? '...' : ''}`,
-              `Value: ${epic.value} | Effort: ${epic.effort} SP`,
-              `WSJF: ${epic.wsjf.wsjfScore}`
+              `Effort: ${epic.effort} SP | CoD: ${epic.wsjf.costOfDelay} | WSJF: ${epic.wsjf.wsjfScore}`,
+              `Value: ${epic.wsjf.businessValue} | Criticality: ${epic.wsjf.timeCriticality} | Risk: ${epic.wsjf.riskReduction}`
             ];
             if (ctx.raw.isCapped) lines.push(`(Effort capped for display, actual: ${epic.effort} SP)`);
             return lines;
@@ -139,21 +176,50 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
       },
       annotation: {
         annotations: {
+          // Quadrant background colors
+          quadTL: {
+            type: 'box', xMin: 0, xMax: medianEffortCapped, yMin: medianCoD, yMax: 'end',
+            backgroundColor: 'rgba(34, 197, 94, 0.06)', borderWidth: 0
+          },
+          quadTR: {
+            type: 'box', xMin: medianEffortCapped, xMax: 'end', yMin: medianCoD, yMax: 'end',
+            backgroundColor: 'rgba(59, 130, 246, 0.06)', borderWidth: 0
+          },
+          quadBL: {
+            type: 'box', xMin: 0, xMax: medianEffortCapped, yMin: 0, yMax: medianCoD,
+            backgroundColor: 'rgba(245, 158, 11, 0.06)', borderWidth: 0
+          },
+          quadBR: {
+            type: 'box', xMin: medianEffortCapped, xMax: 'end', yMin: 0, yMax: medianCoD,
+            backgroundColor: 'rgba(239, 68, 68, 0.06)', borderWidth: 0
+          },
+          // Quadrant divider lines
           vLine: {
-            type: 'line',
-            xMin: Math.min(medianEffort, effortCap),
-            xMax: Math.min(medianEffort, effortCap),
-            borderColor: 'rgba(0,0,0,0.2)',
-            borderDash: [6, 4],
-            borderWidth: 1.5
+            type: 'line', xMin: medianEffortCapped, xMax: medianEffortCapped,
+            borderColor: 'rgba(0,0,0,0.2)', borderDash: [6, 4], borderWidth: 1.5,
+            label: { display: true, content: `${medianEffort} SP`, position: 'end', font: { size: 9 }, color: 'rgba(0,0,0,0.4)' }
           },
           hLine: {
-            type: 'line',
-            yMin: medianValue,
-            yMax: medianValue,
-            borderColor: 'rgba(0,0,0,0.2)',
-            borderDash: [6, 4],
-            borderWidth: 1.5
+            type: 'line', yMin: medianCoD, yMax: medianCoD,
+            borderColor: 'rgba(0,0,0,0.2)', borderDash: [6, 4], borderWidth: 1.5,
+            label: { display: true, content: `CoD ${medianCoD}`, position: 'end', font: { size: 9 }, color: 'rgba(0,0,0,0.4)' }
+          },
+          // Quadrant labels
+          labelTL: {
+            type: 'label', xValue: medianEffortCapped * 0.25, yValue: medianCoD + (Math.max(...codArr, medianCoD + 1) - medianCoD) * 0.85,
+            content: 'QUICK WINS', font: { size: 11, weight: 'bold' }, color: 'rgba(34, 197, 94, 0.3)'
+          },
+          labelTR: {
+            type: 'label', xValue: medianEffortCapped + (effortCap - medianEffortCapped) * 0.5, yValue: medianCoD + (Math.max(...codArr, medianCoD + 1) - medianCoD) * 0.85,
+            content: 'BIG BETS', font: { size: 11, weight: 'bold' }, color: 'rgba(59, 130, 246, 0.3)'
+          },
+          labelBL: {
+            type: 'label', xValue: medianEffortCapped * 0.25, yValue: medianCoD * 0.2,
+            content: 'FILL-INS', font: { size: 11, weight: 'bold' }, color: 'rgba(245, 158, 11, 0.3)'
+          },
+          labelBR: {
+            type: 'label', xValue: medianEffortCapped + (effortCap - medianEffortCapped) * 0.5, yValue: medianCoD * 0.2,
+            content: 'MONEY PIT', font: { size: 11, weight: 'bold' }, color: 'rgba(239, 68, 68, 0.3)'
           }
         }
       }
@@ -161,13 +227,13 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
     scales: {
       x: {
         title: { display: true, text: 'Effort (Story Points)', font: { size: 12 } },
-        grid: { color: 'rgba(0,0,0,0.05)' },
+        grid: { color: 'rgba(0,0,0,0.04)' },
         beginAtZero: true,
-        max: effortCap > 0 ? Math.ceil(effortCap) : undefined
+        max: Math.ceil(effortCap)
       },
       y: {
-        title: { display: true, text: 'Business Value (composite)', font: { size: 12 } },
-        grid: { color: 'rgba(0,0,0,0.05)' },
+        title: { display: true, text: 'Cost of Delay (Value + Criticality + Risk)', font: { size: 12 } },
+        grid: { color: 'rgba(0,0,0,0.04)' },
         beginAtZero: true
       }
     }
@@ -199,6 +265,8 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
     return sortDir === 'desc' ? '↓' : '↑';
   };
 
+  const hasLowValueVariance = new Set(epics.map(e => e.value)).size <= 2;
+
   return (
     <div className="space-y-6">
       {/* Field Mapping */}
@@ -215,9 +283,9 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
             <div>
               <p className="text-sm font-medium text-amber-800">Limited data differentiation</p>
               <p className="text-xs text-amber-600 mt-1">
-                Business Value has low variance (most epics share the same priority in Jira).
-                The chart uses a composite score based on priority, child issues, progress and health.
-                For more accurate results, configure custom field mappings above (Business Value, WSJF fields).
+                Business Value has low variance (most epics share the same Jira priority).
+                The chart uses Cost of Delay (composite) as the Y axis for better spread.
+                Configure custom field mappings above for more accurate results.
               </p>
             </div>
           </div>
@@ -237,16 +305,22 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
 
       {/* Value vs Effort Matrix */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Value vs Effort Matrix</h3>
-        <div style={{ height: '400px' }}>
-          <Scatter data={scatterData} options={scatterOptions} />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Value vs Effort Matrix</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {chartEpics.length} epics with effort data · Bubble size = job size
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-gray-400 mt-2 text-center">
-          Dashed lines show median effort ({medianEffort} SP) and median value ({medianValue})
-          {effortArr.some(e => e > effortCap) && (
-            <span> · Effort axis capped at {Math.ceil(effortCap)} SP (outliers truncated)</span>
-          )}
-        </p>
+        <div style={{ height: '450px' }}>
+          <Bubble data={bubbleData} options={bubbleOptions} />
+        </div>
+        {effortArr.some(e => e > effortCap) && (
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            Effort axis capped at {Math.ceil(effortCap)} SP (outliers truncated to edge)
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

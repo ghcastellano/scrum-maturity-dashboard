@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 
 const WIP_LIMIT_DEFAULT = 10;
 
 export default function PortfolioTab({ credentials, selectedBoards, portfolioData }) {
-  // Use pre-loaded data from parent (no separate API call needed)
   const data = portfolioData || null;
   const [wipLimit, setWipLimit] = useState(WIP_LIMIT_DEFAULT);
 
@@ -16,20 +15,87 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
     );
   }
 
-  const { cumulativeFlow, leadCycleTime, wipMetrics, forecast } = data;
+  const { cumulativeFlow, leadCycleTime, wipMetrics, forecast, throughput } = data;
 
-  // ===== CFD Chart =====
+  // ===== Insights =====
+  const insights = useMemo(() => {
+    const items = [];
+    const latestCFD = cumulativeFlow[cumulativeFlow.length - 1];
+    const prevCFD = cumulativeFlow.length > 4 ? cumulativeFlow[cumulativeFlow.length - 5] : null;
+
+    // WIP trend
+    if (prevCFD && latestCFD) {
+      const wipNow = latestCFD.inProgress;
+      const wipBefore = prevCFD.inProgress;
+      if (wipNow > wipBefore + 2) {
+        items.push({ type: 'warning', text: `WIP increased from ${wipBefore} to ${wipNow} in-progress epics over the last month. Growing WIP leads to longer lead times.` });
+      } else if (wipNow < wipBefore - 2) {
+        items.push({ type: 'success', text: `WIP decreased from ${wipBefore} to ${wipNow} in-progress epics. Less WIP means better focus and faster delivery.` });
+      }
+    }
+
+    // Throughput trend
+    if (throughput && throughput.length >= 3) {
+      const recent = throughput.slice(-3).reduce((s, t) => s + t.count, 0) / 3;
+      const older = throughput.slice(-6, -3).reduce((s, t) => s + t.count, 0) / Math.max(throughput.slice(-6, -3).length, 1);
+      if (older > 0 && recent > older * 1.2) {
+        items.push({ type: 'success', text: `Throughput is trending up: ${recent.toFixed(1)} epics/month (last 3) vs ${older.toFixed(1)} (prior 3).` });
+      } else if (older > 0 && recent < older * 0.7) {
+        items.push({ type: 'warning', text: `Throughput is declining: ${recent.toFixed(1)} epics/month (last 3) vs ${older.toFixed(1)} (prior 3). Consider reducing WIP or removing blockers.` });
+      }
+    }
+
+    // Lead time vs age
+    if (leadCycleTime.average > 0 && wipMetrics.avgAge > leadCycleTime.average * 1.5) {
+      items.push({ type: 'danger', text: `Average WIP age (${wipMetrics.avgAge}d) is much higher than average lead time (${leadCycleTime.average}d). Some epics may be stalled.` });
+    }
+
+    // p85 vs p50 spread
+    if (leadCycleTime.percentiles.p85 > 0 && leadCycleTime.percentiles.p50 > 0) {
+      const spread = leadCycleTime.percentiles.p85 / leadCycleTime.percentiles.p50;
+      if (spread > 3) {
+        items.push({ type: 'warning', text: `High lead time variability: p85 (${leadCycleTime.percentiles.p85}d) is ${spread.toFixed(1)}x the p50 (${leadCycleTime.percentiles.p50}d). Predictability is low — look for systemic blockers.` });
+      }
+    }
+
+    // Aging WIP items
+    const oldItems = wipMetrics.wipAge.filter(w => w.ageDays > 90);
+    if (oldItems.length > 0) {
+      items.push({ type: 'danger', text: `${oldItems.length} epic${oldItems.length > 1 ? 's' : ''} in progress for over 90 days: ${oldItems.slice(0, 3).map(w => w.key).join(', ')}${oldItems.length > 3 ? ` and ${oldItems.length - 3} more` : ''}. Consider splitting or deprioritizing.` });
+    }
+
+    // Forecast
+    if (forecast.percentiles?.p85?.date) {
+      items.push({ type: 'info', text: `At current throughput, 85% chance of completing all remaining ${forecast.remainingItems} epics by ${forecast.percentiles.p85.date}.` });
+    }
+
+    // Backlog ratio
+    if (latestCFD) {
+      const total = latestCFD.done + latestCFD.inProgress + latestCFD.todo;
+      const doneRatio = total > 0 ? Math.round((latestCFD.done / total) * 100) : 0;
+      if (doneRatio < 20) {
+        items.push({ type: 'info', text: `Only ${doneRatio}% of epics are completed. ${latestCFD.todo} still in backlog, ${latestCFD.inProgress} in progress.` });
+      } else if (doneRatio > 70) {
+        items.push({ type: 'success', text: `${doneRatio}% of epics are completed (${latestCFD.done} done). Portfolio is maturing well.` });
+      }
+    }
+
+    return items;
+  }, [cumulativeFlow, leadCycleTime, wipMetrics, forecast, throughput]);
+
+  // ===== CFD Chart (order: To Do bottom, In Progress middle, Done top) =====
   const cfdData = {
     labels: cumulativeFlow.map(s => s.week),
     datasets: [
       {
-        label: 'Done',
-        data: cumulativeFlow.map(s => s.done),
-        backgroundColor: 'rgba(34, 197, 94, 0.4)',
-        borderColor: 'rgb(34, 197, 94)',
+        label: 'To Do',
+        data: cumulativeFlow.map(s => s.todo),
+        backgroundColor: 'rgba(156, 163, 175, 0.3)',
+        borderColor: 'rgb(156, 163, 175)',
         borderWidth: 1,
         fill: true,
-        tension: 0.3
+        tension: 0.3,
+        order: 3
       },
       {
         label: 'In Progress',
@@ -38,16 +104,18 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
         borderColor: 'rgb(59, 130, 246)',
         borderWidth: 1,
         fill: true,
-        tension: 0.3
+        tension: 0.3,
+        order: 2
       },
       {
-        label: 'To Do',
-        data: cumulativeFlow.map(s => s.todo),
-        backgroundColor: 'rgba(156, 163, 175, 0.3)',
-        borderColor: 'rgb(156, 163, 175)',
+        label: 'Done',
+        data: cumulativeFlow.map(s => s.done),
+        backgroundColor: 'rgba(34, 197, 94, 0.4)',
+        borderColor: 'rgb(34, 197, 94)',
         borderWidth: 1,
         fill: true,
-        tension: 0.3
+        tension: 0.3,
+        order: 1
       }
     ]
   };
@@ -56,8 +124,16 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'top', labels: { font: { size: 11 }, usePointStyle: true } },
-      tooltip: { mode: 'index', intersect: false }
+      legend: {
+        position: 'top',
+        labels: { font: { size: 11 }, usePointStyle: true },
+        reverse: true // Show Done first in legend
+      },
+      tooltip: {
+        mode: 'index',
+        intersect: false,
+        itemSort: (a, b) => a.datasetIndex - b.datasetIndex // To Do, In Progress, Done order in tooltip
+      }
     },
     scales: {
       x: {
@@ -67,7 +143,7 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
       y: {
         stacked: true,
         beginAtZero: true,
-        ticks: { font: { size: 11 }, stepSize: 1 },
+        ticks: { font: { size: 11 } },
         grid: { color: 'rgba(0,0,0,0.05)' }
       }
     },
@@ -109,6 +185,37 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
         ticks: { stepSize: 1, font: { size: 11 } },
         grid: { color: 'rgba(0,0,0,0.05)' }
       }
+    }
+  };
+
+  // ===== Throughput Trend =====
+  const throughputData = throughput && throughput.length > 0 ? {
+    labels: throughput.map(t => t.period),
+    datasets: [{
+      label: 'Epics Completed',
+      data: throughput.map(t => t.count),
+      backgroundColor: 'rgba(124, 58, 237, 0.5)',
+      borderColor: 'rgb(124, 58, 237)',
+      borderWidth: 1.5,
+      borderRadius: 4,
+      type: 'bar'
+    }]
+  } : null;
+
+  const throughputOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (item) => `${item.raw} epic${item.raw !== 1 ? 's' : ''} completed`
+        }
+      }
+    },
+    scales: {
+      x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } },
+      y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } }
     }
   };
 
@@ -163,6 +270,15 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
   // WIP gauge color
   const wipOverLimit = wipMetrics.totalWIP > wipLimit;
 
+  const insightIcon = (type) => {
+    switch (type) {
+      case 'success': return { icon: 'checkmark', cls: 'bg-green-100 text-green-700 border-green-200' };
+      case 'warning': return { icon: 'warning', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+      case 'danger': return { icon: 'alert', cls: 'bg-red-50 text-red-700 border-red-200' };
+      default: return { icon: 'info', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Portfolio KPIs */}
@@ -198,13 +314,30 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
         </div>
       </div>
 
+      {/* Insights Panel */}
+      {insights.length > 0 && (
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Portfolio Insights</h3>
+          <div className="space-y-2">
+            {insights.map((insight, idx) => {
+              const style = insightIcon(insight.type);
+              return (
+                <div key={idx} className={`px-3 py-2 rounded-lg border text-xs ${style.cls}`}>
+                  {insight.text}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Cumulative Flow Diagram */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Epic Cumulative Flow</h3>
         <div style={{ height: '300px' }}>
           <Line data={cfdData} options={cfdOptions} />
         </div>
-        <p className="text-xs text-gray-400 mt-2 text-center">Weekly snapshot of epic statuses (last 12 weeks)</p>
+        <p className="text-xs text-gray-400 mt-2 text-center">Weekly snapshot of epic statuses (last 12 weeks). Widening bands indicate bottlenecks.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -229,6 +362,21 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
           )}
         </div>
 
+        {/* Throughput Trend */}
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Delivery Throughput</h3>
+          <p className="text-xs text-gray-400 mb-4">Epics completed per month</p>
+          {throughputData ? (
+            <div style={{ height: '220px' }}>
+              <Bar data={throughputData} options={throughputOptions} />
+            </div>
+          ) : (
+            <p className="text-center text-gray-400 text-sm py-8">No throughput data available</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Monte Carlo Forecast */}
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Monte Carlo Forecast</h3>
@@ -258,6 +406,64 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
           ) : (
             <p className="text-center text-gray-400 text-sm py-8">Insufficient throughput data for simulation</p>
           )}
+        </div>
+
+        {/* Flow Efficiency Summary */}
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Flow Health Summary</h3>
+          <div className="space-y-3">
+            {/* Lead Time SLA */}
+            <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <div>
+                <p className="text-xs font-medium text-gray-700">Lead Time SLA (p85)</p>
+                <p className="text-xs text-gray-400">85% of epics complete within this time</p>
+              </div>
+              <span className={`text-lg font-bold ${
+                leadCycleTime.percentiles.p85 <= 60 ? 'text-green-600' :
+                leadCycleTime.percentiles.p85 <= 120 ? 'text-amber-600' : 'text-red-600'
+              }`}>
+                {leadCycleTime.percentiles.p85}d
+              </span>
+            </div>
+
+            {/* WIP:Throughput ratio (Little's Law) */}
+            {forecast.avgThroughput > 0 && (
+              <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                <div>
+                  <p className="text-xs font-medium text-gray-700">WIP / Throughput Ratio</p>
+                  <p className="text-xs text-gray-400">Expected lead time via Little's Law</p>
+                </div>
+                <span className="text-lg font-bold text-purple-600">
+                  {Math.round(wipMetrics.totalWIP / forecast.avgThroughput * 30)}d
+                </span>
+              </div>
+            )}
+
+            {/* Predictability */}
+            {leadCycleTime.percentiles.p50 > 0 && (
+              <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                <div>
+                  <p className="text-xs font-medium text-gray-700">Predictability</p>
+                  <p className="text-xs text-gray-400">p85/p50 ratio (lower = more predictable)</p>
+                </div>
+                <span className={`text-lg font-bold ${
+                  leadCycleTime.percentiles.p85 / leadCycleTime.percentiles.p50 <= 2 ? 'text-green-600' :
+                  leadCycleTime.percentiles.p85 / leadCycleTime.percentiles.p50 <= 3 ? 'text-amber-600' : 'text-red-600'
+                }`}>
+                  {(leadCycleTime.percentiles.p85 / leadCycleTime.percentiles.p50).toFixed(1)}x
+                </span>
+              </div>
+            )}
+
+            {/* Total epics resolved */}
+            <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <div>
+                <p className="text-xs font-medium text-gray-700">Epics Resolved</p>
+                <p className="text-xs text-gray-400">Total completed epics in dataset</p>
+              </div>
+              <span className="text-lg font-bold text-green-600">{leadCycleTime.totalResolved}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -351,8 +557,9 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
         <div className="text-xs text-purple-700 space-y-1">
           <p><strong>Cumulative Flow</strong>: Weekly snapshot of epics by status. Widening bands indicate bottlenecks.</p>
           <p><strong>Lead Time</strong>: Days from epic creation to resolution. Use p85 for SLA commitments.</p>
+          <p><strong>Little's Law</strong>: Lead Time = WIP / Throughput. Reducing WIP is the fastest way to reduce lead time.</p>
           <p><strong>Monte Carlo</strong>: {forecast.simulations?.toLocaleString() || '10,000'} simulations using historical monthly throughput to forecast completion dates.</p>
-          <p><strong>WIP</strong>: Limiting work-in-progress reduces lead time and improves flow (Little's Law).</p>
+          <p><strong>Predictability</strong>: p85/p50 ratio. Below 2x means predictable delivery; above 3x means high variability.</p>
         </div>
       </div>
     </div>

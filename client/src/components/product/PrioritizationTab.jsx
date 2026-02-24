@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Scatter, Doughnut } from 'react-chartjs-2';
 import FieldMappingConfig from './FieldMappingConfig';
 
@@ -16,11 +16,17 @@ const QUADRANT_INFO = {
   moneyPit: { label: 'Money Pit', desc: 'Low value, high effort', color: 'text-red-600', bg: 'bg-red-50' }
 };
 
+function percentile(arr, p) {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.ceil(sorted.length * p / 100) - 1;
+  return sorted[Math.max(0, idx)];
+}
+
 export default function PrioritizationTab({ credentials, selectedBoards, epicData, prioritizationData }) {
-  // Use pre-loaded data from parent (no separate API call needed)
   const priData = prioritizationData || null;
   const [fieldMappings, setFieldMappings] = useState(null);
-  const [sortBy, setSortBy] = useState('wsjf'); // 'wsjf' | 'value' | 'effort' | 'moscow'
+  const [sortBy, setSortBy] = useState('wsjf');
   const [sortDir, setSortDir] = useState('desc');
 
   const handleMappingsChange = (newMappings) => {
@@ -58,43 +64,55 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
     }
   });
 
-  // Value vs Effort scatter chart
+  // Detect low-variance data
+  const uniqueValues = new Set(epics.map(e => e.value));
+  const hasLowValueVariance = uniqueValues.size <= 2;
+
+  // Cap effort outliers at 95th percentile for chart display
+  const effortArr = epics.filter(e => e.effort > 0).map(e => e.effort);
+  const effortP95 = percentile(effortArr, 95);
+  const effortCap = Math.max(effortP95 * 1.2, medianEffort * 3);
+
+  // Build scatter data with capped effort
+  const buildScatterPoint = (e) => ({
+    x: Math.min(e.effort, effortCap),
+    y: e.value,
+    epic: e,
+    isCapped: e.effort > effortCap
+  });
+
   const scatterData = {
     datasets: [
       {
         label: 'Quick Wins',
-        data: epics.filter(e => e.value >= medianValue && e.effort < medianEffort)
-          .map(e => ({ x: e.effort, y: e.value, epic: e })),
+        data: epics.filter(e => e.value >= medianValue && e.effort < medianEffort).map(buildScatterPoint),
         backgroundColor: 'rgba(34, 197, 94, 0.6)',
         borderColor: 'rgb(34, 197, 94)',
-        pointRadius: 8,
+        pointRadius: 7,
         pointHoverRadius: 10
       },
       {
         label: 'Big Bets',
-        data: epics.filter(e => e.value >= medianValue && e.effort >= medianEffort)
-          .map(e => ({ x: e.effort, y: e.value, epic: e })),
+        data: epics.filter(e => e.value >= medianValue && e.effort >= medianEffort).map(buildScatterPoint),
         backgroundColor: 'rgba(59, 130, 246, 0.6)',
         borderColor: 'rgb(59, 130, 246)',
-        pointRadius: 8,
+        pointRadius: 7,
         pointHoverRadius: 10
       },
       {
         label: 'Fill-ins',
-        data: epics.filter(e => e.value < medianValue && e.effort < medianEffort)
-          .map(e => ({ x: e.effort, y: e.value, epic: e })),
+        data: epics.filter(e => e.value < medianValue && e.effort < medianEffort).map(buildScatterPoint),
         backgroundColor: 'rgba(245, 158, 11, 0.6)',
         borderColor: 'rgb(245, 158, 11)',
-        pointRadius: 8,
+        pointRadius: 7,
         pointHoverRadius: 10
       },
       {
         label: 'Money Pit',
-        data: epics.filter(e => e.value < medianValue && e.effort >= medianEffort)
-          .map(e => ({ x: e.effort, y: e.value, epic: e })),
+        data: epics.filter(e => e.value < medianValue && e.effort >= medianEffort).map(buildScatterPoint),
         backgroundColor: 'rgba(239, 68, 68, 0.6)',
         borderColor: 'rgb(239, 68, 68)',
-        pointRadius: 8,
+        pointRadius: 7,
         pointHoverRadius: 10
       }
     ]
@@ -109,11 +127,13 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
         callbacks: {
           label: (ctx) => {
             const epic = ctx.raw.epic;
-            return [
-              `${epic.key}: ${epic.summary.substring(0, 40)}...`,
+            const lines = [
+              `${epic.key}: ${epic.summary.substring(0, 50)}${epic.summary.length > 50 ? '...' : ''}`,
               `Value: ${epic.value} | Effort: ${epic.effort} SP`,
               `WSJF: ${epic.wsjf.wsjfScore}`
             ];
+            if (ctx.raw.isCapped) lines.push(`(Effort capped for display, actual: ${epic.effort} SP)`);
+            return lines;
           }
         }
       },
@@ -121,19 +141,19 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
         annotations: {
           vLine: {
             type: 'line',
-            xMin: medianEffort,
-            xMax: medianEffort,
-            borderColor: 'rgba(0,0,0,0.15)',
+            xMin: Math.min(medianEffort, effortCap),
+            xMax: Math.min(medianEffort, effortCap),
+            borderColor: 'rgba(0,0,0,0.2)',
             borderDash: [6, 4],
-            borderWidth: 1
+            borderWidth: 1.5
           },
           hLine: {
             type: 'line',
             yMin: medianValue,
             yMax: medianValue,
-            borderColor: 'rgba(0,0,0,0.15)',
+            borderColor: 'rgba(0,0,0,0.2)',
             borderDash: [6, 4],
-            borderWidth: 1
+            borderWidth: 1.5
           }
         }
       }
@@ -142,10 +162,11 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
       x: {
         title: { display: true, text: 'Effort (Story Points)', font: { size: 12 } },
         grid: { color: 'rgba(0,0,0,0.05)' },
-        beginAtZero: true
+        beginAtZero: true,
+        max: effortCap > 0 ? Math.ceil(effortCap) : undefined
       },
       y: {
-        title: { display: true, text: 'Business Value', font: { size: 12 } },
+        title: { display: true, text: 'Business Value (composite)', font: { size: 12 } },
         grid: { color: 'rgba(0,0,0,0.05)' },
         beginAtZero: true
       }
@@ -186,18 +207,20 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
         onMappingsChange={handleMappingsChange}
       />
 
-      {/* Refresh button if mappings changed */}
-      {fieldMappings && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadPrioritization}
-            disabled={loading}
-            className="btn-primary text-xs px-3 py-1.5"
-            style={{ backgroundColor: '#7c3aed' }}
-          >
-            {loading ? 'Recalculating...' : 'Recalculate with mapped fields'}
-          </button>
-          <span className="text-xs text-gray-400">Custom field mappings detected</span>
+      {/* Low-variance warning */}
+      {hasLowValueVariance && !fieldMappings && (
+        <div className="card bg-amber-50 border-amber-200">
+          <div className="flex items-start gap-2">
+            <span className="text-amber-500 text-lg">!</span>
+            <div>
+              <p className="text-sm font-medium text-amber-800">Limited data differentiation</p>
+              <p className="text-xs text-amber-600 mt-1">
+                Business Value has low variance (most epics share the same priority in Jira).
+                The chart uses a composite score based on priority, child issues, progress and health.
+                For more accurate results, configure custom field mappings above (Business Value, WSJF fields).
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -220,6 +243,9 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
         </div>
         <p className="text-xs text-gray-400 mt-2 text-center">
           Dashed lines show median effort ({medianEffort} SP) and median value ({medianValue})
+          {effortArr.some(e => e > effortCap) && (
+            <span> · Effort axis capped at {Math.ceil(effortCap)} SP (outliers truncated)</span>
+          )}
         </p>
       </div>
 
@@ -231,9 +257,9 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
             <span className="text-xs text-gray-400">{epics.length} active epics</span>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" style={{ maxHeight: '500px', overflowY: 'auto' }}>
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 bg-white z-10">
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-2 px-2 text-xs font-medium text-gray-500 w-8">#</th>
                   <th className="text-left py-2 px-2 text-xs font-medium text-gray-500">Epic</th>
@@ -321,7 +347,8 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
           <p><strong>Cost of Delay</strong> = Business Value + Time Criticality + Risk Reduction</p>
           {!fieldMappings ? (
             <p className="text-purple-500 mt-2">
-              Using fallback: Business Value from Jira priority, Time Criticality from due date proximity, Job Size from story points.
+              Using composite fallback: Business Value from priority + child count + progress + health,
+              Time Criticality from due date proximity, Job Size from story points.
               Configure custom field mapping above for more accurate scores.
             </p>
           ) : (

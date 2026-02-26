@@ -774,7 +774,10 @@ class JiraService {
         'summary', 'status', 'priority', 'labels', 'components',
         'fixVersions', 'issuelinks', 'created', 'updated',
         'resolutiondate', 'duedate', 'parent', 'assignee',
-        'customfield_10061' // story points
+        'customfield_10061', // story points
+        'customfield_10015', // Target start (Jira Plans / Advanced Roadmaps)
+        'customfield_10016', // Target end (Jira Plans / Advanced Roadmaps)
+        'customfield_10011'  // Start date (some Jira instances)
       ];
 
       let allIssues = [];

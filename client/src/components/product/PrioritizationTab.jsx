@@ -327,7 +327,7 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
         {/* WSJF Table */}
         <div className="lg:col-span-2 card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">WSJF Ranking</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Epic WSJF Ranking</h3>
             <span className="text-xs text-gray-400">{epics.length} active epics</span>
           </div>
 
@@ -380,7 +380,10 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
                       <span className="font-bold text-purple-700 text-sm">{epic.wsjf.wsjfScore}</span>
                     </td>
                     <td className="py-2 px-2 text-center text-xs text-gray-600">{epic.wsjf.businessValue}</td>
-                    <td className="py-2 px-2 text-center text-xs text-gray-600">{epic.effort || '-'}</td>
+                    <td className="py-2 px-2 text-center text-xs text-gray-600" title={epic.effortSource === 'child_count' ? 'Estimated from child issue count' : 'Story Points'}>
+                      {epic.effort || '-'}
+                      {epic.effortSource === 'child_count' && epic.effort > 0 && <span className="text-gray-300 ml-0.5">*</span>}
+                    </td>
                     <td className="py-2 px-2 text-center text-xs text-gray-600">{epic.wsjf.costOfDelay}</td>
                     <td className="py-2 px-2">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${MOSCOW_COLORS[epic.moscow]?.label || 'bg-gray-100 text-gray-600'}`}>

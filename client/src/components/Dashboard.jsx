@@ -594,15 +594,29 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     return null;
   };
 
+  // Sort sprint metrics chronologically (oldest first) regardless of backend order
+  const sortedSprintMetrics = metrics
+    ? [...metrics.sprintMetrics].sort((a, b) => {
+        if (a.startDate && b.startDate) return new Date(a.startDate) - new Date(b.startDate);
+        // Fallback: parse date from sprint name like "[2/5 - 2/19] AISDR- S24"
+        const parseStart = (name) => {
+          const m = name.match(/\[(\d+\/\d+)/);
+          if (m) { const [mo, da] = m[1].split('/'); return new Date(2025, mo - 1, da).getTime(); }
+          return 0;
+        };
+        return parseStart(a.sprintName) - parseStart(b.sprintName);
+      })
+    : [];
+
   // Prepare chart data (safe even if metrics is null)
-  const sprintLabels = metrics ? metrics.sprintMetrics.map(s => s.sprintName) : [];
+  const sprintLabels = sortedSprintMetrics.map(s => s.sprintName);
   
   const sprintGoalData = {
     labels: sprintLabels,
     datasets: [
       {
         label: 'Commitment Completion (%)',
-        data: metrics ? metrics.sprintMetrics.map(s => s.sprintGoalAttainment) : [],
+        data: sortedSprintMetrics.map(s => s.sprintGoalAttainment),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
         tension: 0.3,
@@ -634,7 +648,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     datasets: [
       {
         label: 'Rollover Rate (%)',
-        data: metrics ? metrics.sprintMetrics.map(s => s.rolloverRate) : [],
+        data: sortedSprintMetrics.map(s => s.rolloverRate),
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         tension: 0.3,
@@ -1136,7 +1150,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 <Line data={rolloverData} options={chartOptions} />
               </div>
               <div className="mt-4 space-y-2">
-                {metrics.sprintMetrics.map(sprint => {
+                {sortedSprintMetrics.map(sprint => {
                   const issues = sprint.rolloverIssues || [];
                   const breakdown = sprint.rolloverReasonBreakdown || {};
                   if (issues.length === 0) return null;
@@ -1201,7 +1215,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             <div>
               <h3 className="font-semibold mb-4">Mid-Sprint Additions</h3>
               <div className="space-y-2">
-                {metrics.sprintMetrics.map(sprint => {
+                {sortedSprintMetrics.map(sprint => {
                   const msIssues = sprint.midSprintAdditions?.issues || [];
                   const msCount = sprint.midSprintAdditions?.count || 0;
                   if (msCount === 0) {

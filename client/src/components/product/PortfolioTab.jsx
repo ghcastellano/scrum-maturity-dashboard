@@ -3,7 +3,7 @@ import { Line, Bar, Doughnut } from 'react-chartjs-2';
 
 const WIP_LIMIT_DEFAULT = 10;
 
-export default function PortfolioTab({ credentials, selectedBoards, portfolioData }) {
+export default function PortfolioTab({ credentials, selectedBoards, portfolioData, epicData }) {
   const data = portfolioData || null;
   const [wipLimit, setWipLimit] = useState(WIP_LIMIT_DEFAULT);
 
@@ -16,6 +16,19 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
   }
 
   const { cumulativeFlow, leadCycleTime, wipMetrics, forecast, throughput } = data;
+
+  // Initiative-level summary from epicData
+  const initiativeSummary = useMemo(() => {
+    if (!epicData?.initiatives) return null;
+    const inits = epicData.initiatives.filter(i => i.key !== '_unlinked');
+    const totalInits = inits.length;
+    const completedInits = inits.filter(i => i.progress === 100).length;
+    const activeInits = inits.filter(i => i.progress > 0 && i.progress < 100).length;
+    const avgProgress = totalInits > 0 ? Math.round(inits.reduce((s, i) => s + i.progress, 0) / totalInits) : 0;
+    const totalEpicsInInits = inits.reduce((s, i) => s + i.totalEpics, 0);
+    const completedEpicsInInits = inits.reduce((s, i) => s + i.completedEpics, 0);
+    return { totalInits, completedInits, activeInits, avgProgress, totalEpicsInInits, completedEpicsInInits, initiatives: inits };
+  }, [epicData]);
 
   // ===== Insights =====
   const insights = useMemo(() => {
@@ -281,18 +294,62 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
 
   return (
     <div className="space-y-6">
-      {/* Portfolio KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      {/* Initiative Overview */}
+      {initiativeSummary && (
+        <div className="card">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Initiative Overview</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="text-center p-3 bg-purple-50 rounded-lg">
+              <p className="text-2xl font-bold text-purple-600">{initiativeSummary.totalInits}</p>
+              <p className="text-xs text-gray-500">Total Initiatives</p>
+            </div>
+            <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <p className="text-2xl font-bold text-blue-600">{initiativeSummary.activeInits}</p>
+              <p className="text-xs text-gray-500">Active Initiatives</p>
+            </div>
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <p className="text-2xl font-bold text-green-600">{initiativeSummary.completedInits}</p>
+              <p className="text-xs text-gray-500">Completed Initiatives</p>
+            </div>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <p className="text-2xl font-bold text-gray-700">{initiativeSummary.avgProgress}%</p>
+              <p className="text-xs text-gray-500">Avg Initiative Progress</p>
+            </div>
+          </div>
+          {/* Top initiatives with progress */}
+          <div className="space-y-2">
+            {initiativeSummary.initiatives
+              .sort((a, b) => b.totalEpics - a.totalEpics)
+              .slice(0, 8)
+              .map(init => (
+                <div key={init.key} className="flex items-center gap-3">
+                  <span className="text-xs font-medium text-purple-700 w-20 shrink-0">{init.key}</span>
+                  <span className="text-xs text-gray-600 flex-1 truncate">{init.summary}</span>
+                  <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0">
+                    <div className={`h-full rounded-full ${init.progress >= 80 ? 'bg-green-500' : init.progress >= 40 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                      style={{ width: `${init.progress}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-500 w-16 text-right shrink-0">
+                    {init.completedEpics}/{init.totalEpics} epics
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Epic-Level Portfolio KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="card text-center">
           <p className={`text-2xl font-bold ${wipOverLimit ? 'text-red-600' : 'text-blue-600'}`}>
             {wipMetrics.totalWIP}
           </p>
-          <p className="text-xs text-gray-500 mt-1">WIP Epics</p>
+          <p className="text-xs text-gray-500 mt-1">Epics In Progress (WIP)</p>
           {wipOverLimit && <p className="text-xs text-red-500">Over limit ({wipLimit})</p>}
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-gray-700">{wipMetrics.avgAge}d</p>
-          <p className="text-xs text-gray-500 mt-1">Avg WIP Age</p>
+          <p className="text-xs text-gray-500 mt-1">Avg Epic WIP Age</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-purple-600">{leadCycleTime.totalResolved}</p>
@@ -300,17 +357,17 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-gray-700">{leadCycleTime.average}d</p>
-          <p className="text-xs text-gray-500 mt-1">Avg Lead Time</p>
+          <p className="text-xs text-gray-500 mt-1">Avg Epic Lead Time</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-amber-600">{leadCycleTime.percentiles.p85}d</p>
-          <p className="text-xs text-gray-500 mt-1">p85 Lead Time</p>
+          <p className="text-xs text-gray-500 mt-1">p85 Epic Lead Time</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-green-600">
             {forecast.avgThroughput || '-'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Avg Monthly Throughput</p>
+          <p className="text-xs text-gray-500 mt-1">Epics/Month (Avg)</p>
         </div>
       </div>
 
@@ -470,7 +527,7 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
       {/* WIP Management */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">WIP Management</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Epic WIP Management</h3>
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500">WIP Limit:</label>
             <input
@@ -506,7 +563,7 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* WIP by Assignee */}
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">WIP by Assignee</h4>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Epics in Progress by Assignee</h4>
             {wipMetrics.wipByAssignee.length > 0 ? (
               <div className="space-y-2">
                 {wipMetrics.wipByAssignee.map(item => (
@@ -529,7 +586,7 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
 
           {/* WIP Aging */}
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Aging WIP Items</h4>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Oldest Epics in Progress</h4>
             {wipMetrics.wipAge.length > 0 ? (
               <div className="space-y-1 max-h-48 overflow-y-auto">
                 {wipMetrics.wipAge.slice(0, 10).map(item => (

@@ -99,32 +99,28 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="card text-center">
+          <p className="text-2xl font-bold text-purple-600">{initiatives.filter(i => i.key !== '_unlinked').length}</p>
+          <p className="text-xs text-gray-500 mt-1">Initiatives</p>
+        </div>
+        <div className="card text-center">
           <p className="text-2xl font-bold text-gray-900">{summary.total}</p>
           <p className="text-xs text-gray-500 mt-1">Total Epics</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-green-600">{summary.done}</p>
-          <p className="text-xs text-gray-500 mt-1">Completed</p>
+          <p className="text-xs text-gray-500 mt-1">Epics Completed</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-blue-600">{summary.inProgress}</p>
-          <p className="text-xs text-gray-500 mt-1">In Progress</p>
+          <p className="text-xs text-gray-500 mt-1">Epics In Progress</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-amber-600">{summary.atRisk}</p>
-          <p className="text-xs text-gray-500 mt-1">At Risk</p>
+          <p className="text-xs text-gray-500 mt-1">Epics At Risk</p>
         </div>
         <div className="card text-center">
           <p className="text-2xl font-bold text-red-600">{summary.blocked}</p>
-          <p className="text-xs text-gray-500 mt-1">Blocked</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-2xl font-bold text-purple-600">
-            {summary.totalStoryPoints > 0
-              ? Math.round((summary.completedStoryPoints / summary.totalStoryPoints) * 100) + '%'
-              : '-'}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">SP Completion</p>
+          <p className="text-xs text-gray-500 mt-1">Epics Blocked</p>
         </div>
       </div>
 

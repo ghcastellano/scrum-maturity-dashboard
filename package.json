@@ -2,6 +2,7 @@
   "name": "scrum-maturity-dashboard",
   "version": "1.0.0",
   "description": "Scrum Maturity Model Dashboard with Jira Cloud Integration",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",

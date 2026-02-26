@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import JiraConnection from './components/JiraConnection';
 import TeamSelector from './components/TeamSelector';
 import Dashboard from './components/Dashboard';
-import ProductManagement from './components/ProductManagement';
 
 const STORAGE_KEY_JIRA_URL = 'scrum-dashboard-jira-url';
 const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
@@ -18,7 +17,6 @@ function App() {
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [savedBoardsFromHistory, setSavedBoardsFromHistory] = useState([]);
   const [newlyAddedBoard, setNewlyAddedBoard] = useState(null);
-  const [activeSection, setActiveSection] = useState('scrum-maturity');
 
   useEffect(() => {
     initializeApp();
@@ -27,7 +25,6 @@ function App() {
   const initializeApp = async () => {
     let boardsFromHistory = [];
     try {
-      // Pre-load database boards (used after login to decide dashboard vs team selection)
       const historyResponse = await fetch(`${API_URL}/history/boards`);
       if (historyResponse.ok) {
         const historyData = await historyResponse.json();
@@ -43,15 +40,13 @@ function App() {
       console.error('Failed to check database:', err);
     }
 
-    // Try auto-login with saved credentials from localStorage
     try {
       const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
       const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
       const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
 
       if (savedUrl && savedEmail && savedToken) {
-        // Validate saved credentials with a quick API call
-        const response = await fetch(`${API_URL}/test-connection`, {
+        const response = await fetch(`${API_URL}/jira/test-connection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jiraUrl: savedUrl, email: savedEmail, apiToken: savedToken })
@@ -73,7 +68,6 @@ function App() {
             return;
           }
         }
-        // Token invalid/expired — remove it and show login
         localStorage.removeItem(STORAGE_KEY_TOKEN);
       }
     } catch (err) {
@@ -95,7 +89,6 @@ function App() {
 
     setCredentials(creds);
 
-    // If boards already exist in database, go straight to dashboard
     if (savedBoardsFromHistory.length > 0) {
       setSelectedBoards(savedBoardsFromHistory);
       setStep('dashboard');
@@ -105,7 +98,6 @@ function App() {
   };
 
   const handleTeamsSelected = (newBoards) => {
-    // Merge new boards with existing database boards (never lose saved ones)
     const existingIds = new Set(selectedBoards.map(b => typeof b === 'object' ? b.id : b));
     const merged = [...selectedBoards];
     for (const board of newBoards) {
@@ -122,7 +114,6 @@ function App() {
     }
 
     setSelectedBoards(merged);
-    // Track newly added boards so Dashboard can auto-select and load them
     if (newBoards.length > 0) {
       setNewlyAddedBoard(newBoards[0]);
     }
@@ -176,14 +167,8 @@ function App() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {activeSection === 'product-management' ? 'Product Management' : 'Scrum Maturity Dashboard'}
-            </h1>
-            <p className="text-sm text-gray-600">
-              {activeSection === 'product-management'
-                ? 'Epic intelligence, prioritization & portfolio'
-                : 'Analyze team health and maturity'}
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
+            <p className="text-sm text-gray-600">Analyze team health and maturity</p>
           </div>
 
           {step === 'dashboard' && credentials && (
@@ -198,34 +183,6 @@ function App() {
           )}
         </div>
       </header>
-
-      {/* Section Navigation */}
-      {step === 'dashboard' && (
-        <nav className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-6 flex gap-1">
-            <button
-              onClick={() => setActiveSection('scrum-maturity')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeSection === 'scrum-maturity'
-                  ? 'border-primary-600 text-primary-600 bg-primary-50'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              Scrum Maturity
-            </button>
-            <button
-              onClick={() => setActiveSection('product-management')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeSection === 'product-management'
-                  ? 'border-purple-600 text-purple-600 bg-purple-50'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              Product Management
-            </button>
-          </div>
-        </nav>
-      )}
 
       {/* Main Content */}
       <main className={step === 'dashboard' ? 'py-4' : 'py-8'}>
@@ -242,20 +199,13 @@ function App() {
           />
         )}
 
-        {step === 'dashboard' && activeSection === 'scrum-maturity' && (
+        {step === 'dashboard' && (
           <Dashboard
             credentials={credentials}
             selectedBoards={selectedBoards}
             newlyAddedBoard={newlyAddedBoard}
             onNewBoardHandled={() => setNewlyAddedBoard(null)}
             onBoardDeleted={handleBoardDeleted}
-          />
-        )}
-
-        {step === 'dashboard' && activeSection === 'product-management' && (
-          <ProductManagement
-            credentials={credentials}
-            selectedBoards={selectedBoards}
           />
         )}
       </main>

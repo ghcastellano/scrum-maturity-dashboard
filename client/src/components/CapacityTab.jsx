@@ -19,7 +19,13 @@ export default function CapacityTab({ capacityData, credentials }) {
     );
   }
 
-  const { sprintCapacity = [], workDistribution = [], summary = {} } = capacityData;
+  const { sprintCapacity: rawCapacity = [], workDistribution = [], summary = {} } = capacityData;
+  // Sort chronologically (oldest first) regardless of backend/cache order
+  const sprintCapacity = useMemo(() =>
+    [...rawCapacity].sort((a, b) => {
+      if (a.startDate && b.startDate) return new Date(a.startDate) - new Date(b.startDate);
+      return 0;
+    }), [rawCapacity]);
 
   // Sprint row expansion state
   const [expandedSprints, setExpandedSprints] = useState(new Set());

@@ -302,6 +302,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
               credentials={credentials}
               selectedBoards={selectedBoards}
               portfolioData={filteredData?.portfolioData}
+              epicData={filteredData}
             />
           )}
         </>

@@ -110,6 +110,9 @@ class EpicMetricsService {
       updated: epic.fields?.updated,
       dueDate: epic.fields?.duedate || null,
       resolutionDate: epic.fields?.resolutiondate || null,
+      // Jira Plans / Advanced Roadmaps date fields
+      targetStart: epic.fields?.customfield_10015 || epic.fields?.customfield_10011 || null,
+      targetEnd: epic.fields?.customfield_10016 || null,
       storyPoints: epic.fields?.customfield_10061 || 0,
       parentKey: epic.fields?.parent?.key || null,
       children: {
@@ -315,15 +318,28 @@ class EpicMetricsService {
       if (val.includes('wont') || val.includes("won't")) return "Won't Have";
     }
 
-    // Fallback: derive from Jira priority
-    const priorityMap = {
-      'Highest': 'Must Have',
-      'High': 'Must Have',
-      'Medium': 'Should Have',
-      'Low': 'Could Have',
-      'Lowest': "Won't Have"
-    };
-    return priorityMap[epic.priority] || 'Should Have';
+    // Fallback: derive from composite signals (not just priority alone)
+    // Use priority + health + child count + progress for better distribution
+    const priorityScore = { 'Highest': 5, 'High': 4, 'Medium': 3, 'Low': 2, 'Lowest': 1 }[epic.priority] || 3;
+    const childCount = epic.children?.total || 0;
+    const hasBlockers = epic.health === 'blocked';
+    const isAtRisk = epic.health === 'at-risk';
+    const hasDueDate = !!epic.dueDate;
+    const daysUntilDue = hasDueDate ? (new Date(epic.dueDate) - new Date()) / (1000 * 60 * 60 * 24) : 999;
+
+    // Composite score for MoSCoW classification
+    let score = priorityScore;
+    if (hasBlockers) score += 1.5; // blocked = urgent
+    if (isAtRisk) score += 1;
+    if (childCount >= 15) score += 1; // large epic = important
+    if (daysUntilDue < 30) score += 1.5; // due soon
+    else if (daysUntilDue < 60) score += 0.5;
+    if (childCount <= 2 && !hasDueDate) score -= 1; // small, no deadline
+
+    if (score >= 6) return 'Must Have';
+    if (score >= 4.5) return 'Should Have';
+    if (score >= 3) return 'Could Have';
+    return "Won't Have";
   }
 
   // Build prioritization data for all epics
@@ -333,6 +349,12 @@ class EpicMetricsService {
       .map(epic => {
         const wsjf = this.calculateWSJF(epic, fieldMappings);
         const moscow = this.categorizeMoSCoW(epic, fieldMappings);
+
+        // Effort: prefer story points, fallback to child issue count as proxy
+        const spEffort = epic.children?.totalPoints || epic.storyPoints || 0;
+        const childCount = epic.children?.total || 0;
+        // If no story points, use child count as effort proxy (1 child ≈ 2 SP)
+        const effort = spEffort > 0 ? spEffort : childCount * 2;
 
         return {
           key: epic.key,
@@ -345,7 +367,8 @@ class EpicMetricsService {
           progress: epic.progress,
           labels: epic.labels,
           // Value vs Effort coordinates
-          effort: epic.children?.totalPoints || epic.storyPoints || 0,
+          effort,
+          effortSource: spEffort > 0 ? 'story_points' : 'child_count',
           value: wsjf.businessValue,
           // WSJF breakdown
           wsjf,

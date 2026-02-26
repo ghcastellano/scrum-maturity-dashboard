@@ -26,7 +26,7 @@ function formatDate(ts) {
 
 export default function EpicTimelineChart({ epics, initiatives = [] }) {
   const [collapsed, setCollapsed] = useState(null); // null = auto (collapse all on large datasets)
-  const [showDone, setShowDone] = useState(false);
+  const [showDone, setShowDone] = useState(true);
   const [hovered, setHovered] = useState(null);
   const [zoomPreset, setZoomPreset] = useState('1Y');
   const [search, setSearch] = useState('');
@@ -56,12 +56,17 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
     let minTs = Infinity, maxTs = -Infinity;
 
     const processEpic = (epic) => {
-      const start = new Date(epic.created).getTime();
+      // Prefer Jira Plans dates (targetStart/targetEnd), fallback to created/dueDate
+      const start = epic.targetStart
+        ? new Date(epic.targetStart).getTime()
+        : new Date(epic.created).getTime();
       const end = epic.resolutionDate
         ? new Date(epic.resolutionDate).getTime()
-        : epic.dueDate
-          ? new Date(epic.dueDate).getTime()
-          : today + 30 * DAY;
+        : epic.targetEnd
+          ? new Date(epic.targetEnd).getTime()
+          : epic.dueDate
+            ? new Date(epic.dueDate).getTime()
+            : today + 30 * DAY;
       if (start < minTs) minTs = start;
       if (end > maxTs) maxTs = end;
       return { start, end };
@@ -283,9 +288,9 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Epic Roadmap Timeline</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Initiative & Epic Roadmap Timeline</h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            {totalEpics} epics across {tree.length} groups
+            {tree.length} initiatives · {totalEpics} epics
             {totalExpanded > 0 && totalExpanded < totalEpics && ` · ${totalExpanded} visible`}
           </p>
         </div>
@@ -351,147 +356,155 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
 
       {/* Timeline */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
-        {/* Header with month markers */}
-        <div className="flex border-b border-gray-200 bg-gray-50" style={{ height: HEADER_HEIGHT }}>
-          <div className="w-[300px] min-w-[300px] px-3 flex items-center text-xs font-medium text-gray-500 border-r border-gray-200">
-            Initiative / Epic
-          </div>
-          <div className="flex-1 relative overflow-hidden">
-            {monthMarkers.map(m => (
-              <div key={m.ts} className="absolute top-0 h-full flex items-center"
-                style={{ left: `${m.pct}%` }}>
-                <span className="text-[10px] text-gray-400 -translate-x-1/2 whitespace-nowrap">{m.label}</span>
+        {/* Scrollable container (both axes) */}
+        <div ref={scrollRef} style={{ maxHeight: MAX_VISIBLE_HEIGHT + HEADER_HEIGHT, overflow: 'auto' }}>
+          <div style={{ minWidth: Math.max(900, monthMarkers.length * 120) }}>
+            {/* Header with month markers */}
+            <div className="flex border-b border-gray-200 bg-gray-50 sticky top-0 z-20" style={{ height: HEADER_HEIGHT }}>
+              <div className="w-[300px] min-w-[300px] px-3 flex items-center text-xs font-medium text-gray-500 border-r border-gray-200 bg-gray-50">
+                Initiative / Epic
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Scrollable rows area */}
-        <div
-          ref={scrollRef}
-          style={{ maxHeight: MAX_VISIBLE_HEIGHT, overflowY: needsScroll ? 'auto' : 'hidden' }}
-        >
-          <div style={{ height: contentHeight }} className="relative">
-            {/* Grid lines */}
-            {monthMarkers.map(m => (
-              <div key={m.ts} className="absolute top-0 h-full border-l border-gray-100"
-                style={{ left: `calc(300px + (100% - 300px) * ${m.pct / 100})` }} />
-            ))}
-
-            {/* Today line */}
-            {todayPercent >= 0 && todayPercent <= 100 && (
-              <div className="absolute top-0 h-full border-l-2 border-purple-400 z-10"
-                style={{ left: `calc(300px + (100% - 300px) * ${todayPercent / 100})` }}>
-                <span className="absolute top-0 left-1 text-[9px] text-purple-500 font-medium bg-white px-0.5">Today</span>
+              <div className="flex-1 relative">
+                {monthMarkers.map(m => (
+                  <div key={m.ts} className="absolute top-0 h-full flex items-center"
+                    style={{ left: `${m.pct}%` }}>
+                    <span className="text-[10px] text-gray-400 -translate-x-1/2 whitespace-nowrap">{m.label}</span>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
 
-            {visibleRows.map((row, idx) => {
-              const isInit = row._type === 'initiative';
-              const isCollapsedNode = isInit && effectiveCollapsed.has(row.key);
-              const hasChildren = isInit && row._children && row._children.length > 0;
+            {/* Rows area */}
+            <div style={{ height: contentHeight }} className="relative">
+              {/* Grid lines */}
+              {monthMarkers.map(m => (
+                <div key={m.ts} className="absolute top-0 h-full border-l border-gray-100"
+                  style={{ left: `calc(300px + (100% - 300px) * ${m.pct / 100})` }} />
+              ))}
 
-              // Clamp bar to visible range
-              const rawLeft = toPercent(row._start);
-              const rawRight = toPercent(row._end);
-              const barLeft = Math.max(rawLeft, 0);
-              const barRight = Math.min(rawRight, 100);
-              const barWidth = Math.max(barRight - barLeft, 0.3);
-              const isVisible = barRight > 0 && rawLeft < 100;
-
-              const colors = HEALTH_COLORS[row.health] || HEALTH_COLORS['no-data'];
-              const isHovered = hovered === (row.key + '-' + idx);
-
-              return (
-                <div key={row.key + '-' + idx} className="flex absolute w-full"
-                  style={{ top: idx * ROW_HEIGHT, height: ROW_HEIGHT }}>
-                  {/* Label column */}
-                  <div
-                    className={`w-[300px] min-w-[300px] flex items-center gap-1 px-2 border-r border-gray-100 truncate ${
-                      isInit ? 'bg-gray-50/80 font-medium cursor-pointer hover:bg-gray-100' : 'pl-7'
-                    }`}
-                    style={{ borderBottom: '1px solid #f3f4f6' }}
-                    onClick={() => isInit && hasChildren && toggleCollapse(row.key)}
-                    title={`${row.key} — ${row.summary}`}
-                  >
-                    {isInit && hasChildren && (
-                      <span className="text-[10px] text-gray-400 w-3 flex-shrink-0">{isCollapsedNode ? '▶' : '▼'}</span>
-                    )}
-                    {isInit && !hasChildren && <span className="w-3 flex-shrink-0" />}
-                    {isInit ? (
-                      <span className="text-xs text-gray-700 truncate">
-                        <span className="text-purple-600 font-medium mr-1">{row.key !== '_unlinked' ? row.key : '—'}</span>
-                        {row.summary}
-                        <span className="ml-1 text-gray-400 font-normal">({row._children?.length || 0})</span>
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-600 truncate">
-                        <span className="text-purple-500 mr-1">{row.key}</span>
-                        {row.summary}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Timeline bar area */}
-                  <div className="flex-1 relative" style={{ borderBottom: '1px solid #f3f4f6' }}
-                    onMouseEnter={() => setHovered(row.key + '-' + idx)}
-                    onMouseLeave={() => setHovered(null)}>
-                    {/* The bar */}
-                    {isVisible && (
-                      <div
-                        className="absolute rounded transition-opacity"
-                        style={{
-                          left: `${barLeft}%`,
-                          width: `${barWidth}%`,
-                          height: isInit ? ROW_HEIGHT - 10 : ROW_HEIGHT - 14,
-                          top: isInit ? 5 : 7,
-                          backgroundColor: isInit ? colors.bgLight : colors.bg,
-                          border: isInit ? `2px solid ${colors.bg}` : 'none',
-                          opacity: isHovered ? 1 : 0.85
-                        }}
-                      >
-                        {/* Progress fill inside bar */}
-                        {row.progress > 0 && row.progress < 100 && !isInit && (
-                          <div className="absolute left-0 top-0 h-full rounded-l"
-                            style={{
-                              width: `${row.progress}%`,
-                              backgroundColor: colors.bg,
-                              opacity: 0.4
-                            }} />
-                        )}
-                      </div>
-                    )}
-
-                    {/* Tooltip */}
-                    {isHovered && (
-                      <div className="absolute z-30 bg-white border border-gray-200 rounded-lg shadow-lg p-2.5 text-xs pointer-events-none"
-                        style={{
-                          left: `${Math.max(5, Math.min(barLeft + barWidth / 2, 65))}%`,
-                          top: ROW_HEIGHT + 2,
-                          minWidth: 220,
-                          maxWidth: 320
-                        }}>
-                        <div className="font-medium text-gray-800 mb-1">{row.key} — {row.summary}</div>
-                        <div className="text-gray-500">{formatDate(row._start)} → {formatDate(row._end)}</div>
-                        {row.progress !== undefined && (
-                          <div className="flex items-center gap-2 mt-1">
-                            <span>Progress: {row.progress}%</span>
-                            {row.health && (
-                              <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.bgLight, color: colors.text }}>
-                                {row.health}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {isInit && row._children && (
-                          <div className="text-gray-400 mt-1">{row._children.length} epics</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+              {/* Today line */}
+              {todayPercent >= 0 && todayPercent <= 100 && (
+                <div className="absolute top-0 h-full border-l-2 border-purple-400 z-10"
+                  style={{ left: `calc(300px + (100% - 300px) * ${todayPercent / 100})` }}>
+                  <span className="absolute top-0 left-1 text-[9px] text-purple-500 font-medium bg-white px-0.5">Today</span>
                 </div>
-              );
-            })}
+              )}
+
+              {visibleRows.map((row, idx) => {
+                const isInit = row._type === 'initiative';
+                const isCollapsedNode = isInit && effectiveCollapsed.has(row.key);
+                const hasChildren = isInit && row._children && row._children.length > 0;
+
+                // Clamp bar to visible range
+                const rawLeft = toPercent(row._start);
+                const rawRight = toPercent(row._end);
+                const barLeft = Math.max(rawLeft, 0);
+                const barRight = Math.min(rawRight, 100);
+                const barWidth = Math.max(barRight - barLeft, 0.3);
+                const isVisible = barRight > 0 && rawLeft < 100;
+
+                const colors = HEALTH_COLORS[row.health] || HEALTH_COLORS['no-data'];
+                const isHovered = hovered === (row.key + '-' + idx);
+
+                return (
+                  <div key={row.key + '-' + idx} className="flex absolute w-full"
+                    style={{ top: idx * ROW_HEIGHT, height: ROW_HEIGHT }}>
+                    {/* Label column */}
+                    <div
+                      className={`w-[300px] min-w-[300px] flex items-center gap-1 px-2 border-r border-gray-100 truncate ${
+                        isInit ? 'bg-gray-50/80 font-medium cursor-pointer hover:bg-gray-100' : 'pl-7'
+                      }`}
+                      style={{ borderBottom: '1px solid #f3f4f6' }}
+                      onClick={() => isInit && hasChildren && toggleCollapse(row.key)}
+                      title={`${row.key} — ${row.summary}`}
+                    >
+                      {isInit && hasChildren && (
+                        <span className="text-[10px] text-gray-400 w-3 flex-shrink-0">{isCollapsedNode ? '▶' : '▼'}</span>
+                      )}
+                      {isInit && !hasChildren && <span className="w-3 flex-shrink-0" />}
+                      {isInit ? (
+                        <span className="text-xs text-gray-700 truncate">
+                          <span className="text-xs text-purple-400 mr-0.5">INI</span>
+                          <span className="text-purple-600 font-medium mr-1">{row.key !== '_unlinked' ? row.key : '—'}</span>
+                          {row.summary}
+                          <span className="ml-1 text-gray-400 font-normal">({row._children?.length || 0})</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600 truncate">
+                          <span className="text-xs text-blue-400 mr-0.5">EP</span>
+                          <span className="text-purple-500 mr-1">{row.key}</span>
+                          {row.summary}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Timeline bar area */}
+                    <div className="flex-1 relative" style={{ borderBottom: '1px solid #f3f4f6' }}
+                      onMouseEnter={() => setHovered(row.key + '-' + idx)}
+                      onMouseLeave={() => setHovered(null)}>
+                      {/* The bar */}
+                      {isVisible && (
+                        <div
+                          className="absolute rounded transition-opacity"
+                          style={{
+                            left: `${barLeft}%`,
+                            width: `${barWidth}%`,
+                            height: isInit ? ROW_HEIGHT - 10 : ROW_HEIGHT - 14,
+                            top: isInit ? 5 : 7,
+                            backgroundColor: isInit ? colors.bgLight : colors.bg,
+                            border: isInit ? `2px solid ${colors.bg}` : 'none',
+                            opacity: isHovered ? 1 : 0.85
+                          }}
+                        >
+                          {/* Progress fill inside bar */}
+                          {row.progress > 0 && row.progress < 100 && !isInit && (
+                            <div className="absolute left-0 top-0 h-full rounded-l"
+                              style={{
+                                width: `${row.progress}%`,
+                                backgroundColor: colors.bg,
+                                opacity: 0.4
+                              }} />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tooltip */}
+                      {isHovered && (
+                        <div className="absolute z-30 bg-white border border-gray-200 rounded-lg shadow-lg p-2.5 text-xs pointer-events-none"
+                          style={{
+                            left: `${Math.max(5, Math.min(barLeft + barWidth / 2, 65))}%`,
+                            top: ROW_HEIGHT + 2,
+                            minWidth: 220,
+                            maxWidth: 320
+                          }}>
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className={`text-[9px] px-1 rounded ${isInit ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                              {isInit ? 'Initiative' : 'Epic'}
+                            </span>
+                            <span className="font-medium text-gray-800">{row.key}</span>
+                          </div>
+                          <div className="text-gray-700 mb-1">{row.summary}</div>
+                          <div className="text-gray-500">{formatDate(row._start)} → {formatDate(row._end)}</div>
+                          {row.progress !== undefined && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <span>Progress: {row.progress}%</span>
+                              {row.health && (
+                                <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.bgLight, color: colors.text }}>
+                                  {row.health}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {isInit && row._children && (
+                            <div className="text-gray-400 mt-1">{row._children.length} epics</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

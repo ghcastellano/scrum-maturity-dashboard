@@ -22,8 +22,20 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
     );
   }
 
-  const { sprintCapacity = [], workDistribution = [], summary: capSummary = {} } = capacityData || {};
-  const { sprintMetrics = [], aggregated = {} } = metrics || {};
+  const { sprintCapacity: rawCapacity = [], workDistribution = [], summary: capSummary = {} } = capacityData || {};
+  const { sprintMetrics: rawSprintMetrics = [], aggregated = {} } = metrics || {};
+
+  // Sort chronologically (oldest first) regardless of backend/cache order
+  const sprintCapacity = useMemo(() =>
+    [...rawCapacity].sort((a, b) => {
+      if (a.startDate && b.startDate) return new Date(a.startDate) - new Date(b.startDate);
+      return 0;
+    }), [rawCapacity]);
+  const sprintMetrics = useMemo(() =>
+    [...rawSprintMetrics].sort((a, b) => {
+      if (a.startDate && b.startDate) return new Date(a.startDate) - new Date(b.startDate);
+      return 0;
+    }), [rawSprintMetrics]);
   const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
 
   // Sprint selector for burndown — auto-select active sprint if available, otherwise last

@@ -143,11 +143,11 @@ class JiraService {
         console.log(`  Deduplicated: ${allSprints.length} → ${dedupedSprints.length} sprints (removed ${allSprints.length - dedupedSprints.length} duplicates)`);
       }
 
-      // Sort sprints by end date, most recent first
+      // Sort sprints by start date, chronological order (oldest first)
       dedupedSprints.sort((a, b) => {
-        const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
-        const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
-        return dateB - dateA;
+        const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+        const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+        return dateA - dateB;
       });
 
       console.log(`Most recent 3 sprints:`);

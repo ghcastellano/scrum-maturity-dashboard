@@ -595,14 +595,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   };
 
   // Prepare chart data (safe even if metrics is null)
-  const sprintLabels = metrics ? metrics.sprintMetrics.map(s => s.sprintName).reverse() : [];
+  const sprintLabels = metrics ? metrics.sprintMetrics.map(s => s.sprintName) : [];
   
   const sprintGoalData = {
     labels: sprintLabels,
     datasets: [
       {
         label: 'Commitment Completion (%)',
-        data: metrics ? metrics.sprintMetrics.map(s => s.sprintGoalAttainment).reverse() : [],
+        data: metrics ? metrics.sprintMetrics.map(s => s.sprintGoalAttainment) : [],
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
         tension: 0.3,
@@ -634,7 +634,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     datasets: [
       {
         label: 'Rollover Rate (%)',
-        data: metrics ? metrics.sprintMetrics.map(s => s.rolloverRate).reverse() : [],
+        data: metrics ? metrics.sprintMetrics.map(s => s.rolloverRate) : [],
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         tension: 0.3,
@@ -1136,7 +1136,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 <Line data={rolloverData} options={chartOptions} />
               </div>
               <div className="mt-4 space-y-2">
-                {metrics.sprintMetrics.slice().reverse().map(sprint => {
+                {metrics.sprintMetrics.map(sprint => {
                   const issues = sprint.rolloverIssues || [];
                   const breakdown = sprint.rolloverReasonBreakdown || {};
                   if (issues.length === 0) return null;
@@ -1201,7 +1201,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             <div>
               <h3 className="font-semibold mb-4">Mid-Sprint Additions</h3>
               <div className="space-y-2">
-                {metrics.sprintMetrics.slice().reverse().map(sprint => {
+                {metrics.sprintMetrics.map(sprint => {
                   const msIssues = sprint.midSprintAdditions?.issues || [];
                   const msCount = sprint.midSprintAdditions?.count || 0;
                   if (msCount === 0) {

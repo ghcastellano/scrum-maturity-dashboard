@@ -182,18 +182,19 @@ class DashboardController {
       }
 
       // If specific sprint IDs were provided, use those; otherwise take most recent N
+      // matchedSprints is already in chronological order (oldest first)
       let recentSprints;
       if (sprintIds && sprintIds.length > 0) {
         const idSet = new Set(sprintIds);
         recentSprints = matchedSprints.filter(s => idSet.has(s.id));
-        // Sort by endDate descending (most recent first) to maintain consistent order
+        // Keep chronological order (oldest first)
         recentSprints.sort((a, b) => {
-          const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
-          const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
-          return dateB - dateA;
+          const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+          const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+          return dateA - dateB;
         });
       } else {
-        recentSprints = matchedSprints.slice(0, sprintCount);
+        recentSprints = matchedSprints.slice(-sprintCount);
       }
 
       console.log(`\n📋 Board ${boardId} (${boardName}) - Analyzing ${recentSprints.length} sprints:`);
@@ -249,7 +250,8 @@ class DashboardController {
         }
 
         // Get next sprint for rollover calculation (already pre-fetched)
-        const nextSprint = recentSprints[i - 1];
+        // In chronological order, next sprint is i + 1
+        const nextSprint = recentSprints[i + 1];
         const nextSprintIssues = nextSprint ? sprintIssuesMap.get(nextSprint.id) : [];
 
         // Calculate metrics
@@ -392,17 +394,18 @@ class DashboardController {
       const matchedSprints = filteredSprints.length > 0 ? filteredSprints : allSprints;
 
       // If specific sprint IDs were provided, use those; otherwise take most recent N
+      // matchedSprints is already in chronological order (oldest first)
       let recentSprints;
       if (sprintIds && sprintIds.length > 0) {
         const idSet = new Set(sprintIds);
         recentSprints = matchedSprints.filter(s => idSet.has(s.id));
         recentSprints.sort((a, b) => {
-          const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
-          const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
-          return dateB - dateA;
+          const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+          const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+          return dateA - dateB;
         });
       } else {
-        recentSprints = matchedSprints.slice(0, sprintCount);
+        recentSprints = matchedSprints.slice(-sprintCount);
       }
 
       console.log(`\n📊 Flow Metrics for board ${boardId} (${boardName}) - ${recentSprints.length} sprints:`);
@@ -758,20 +761,21 @@ class DashboardController {
       const matchedSprints = filterByBoard(allSprints);
       const matchedActiveSprints = filterByBoard(activeSprints);
 
+      // matchedSprints is already in chronological order (oldest first)
       let recentSprints;
       if (sprintIds && sprintIds.length > 0) {
         const idSet = new Set(sprintIds);
         recentSprints = matchedSprints.filter(s => idSet.has(s.id));
         recentSprints.sort((a, b) => {
-          const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
-          const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
-          return dateB - dateA;
+          const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+          const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+          return dateA - dateB;
         });
       } else {
-        recentSprints = matchedSprints.slice(0, sprintCount);
+        recentSprints = matchedSprints.slice(-sprintCount);
       }
 
-      // Append active sprint(s) if not already included
+      // Append active sprint(s) if not already included (at the end = chronological)
       const activeSprintToInclude = matchedActiveSprints.length > 0 ? matchedActiveSprints[0] : null;
       if (activeSprintToInclude && !recentSprints.some(s => s.id === activeSprintToInclude.id)) {
         recentSprints.push(activeSprintToInclude);
@@ -932,10 +936,10 @@ class DashboardController {
         velocityTrend: (() => {
           if (velocities.length < 2) return 0;
           // Compare average of recent half vs older half for a smoother trend
-          // velocities are in most-recent-first order (before .reverse())
-          const mid = Math.ceil(velocities.length / 2);
-          const recentHalf = velocities.slice(0, mid);
-          const olderHalf = velocities.slice(mid);
+          // velocities are in chronological order (oldest first)
+          const mid = Math.floor(velocities.length / 2);
+          const olderHalf = velocities.slice(0, mid);
+          const recentHalf = velocities.slice(mid);
           const avgRecent = avg(recentHalf);
           const avgOlder = avg(olderHalf);
           return Math.round((avgRecent - avgOlder) * 10) / 10;
@@ -944,7 +948,7 @@ class DashboardController {
       };
 
       const responseData = {
-        sprintCapacity: sprintCapacity.reverse(), // chronological order
+        sprintCapacity, // already in chronological order (oldest first)
         workDistribution,
         summary
       };

@@ -26,7 +26,7 @@ function formatDate(ts) {
 
 export default function EpicTimelineChart({ epics, initiatives = [] }) {
   const [collapsed, setCollapsed] = useState(null); // null = auto (collapse all on large datasets)
-  const [showDone, setShowDone] = useState(true);
+  const [hideDone, setHideDone] = useState(false);
   const [hovered, setHovered] = useState(null);
   const [zoomPreset, setZoomPreset] = useState('1Y');
   const [search, setSearch] = useState('');
@@ -36,7 +36,7 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
 
   // Build the tree: initiatives → epics, plus unlinked epics
   const { tree, fullTimeRange } = useMemo(() => {
-    const filtered = showDone ? epics : epics.filter(e => e.statusCategory !== 'done');
+    const filtered = hideDone ? epics.filter(e => e.statusCategory !== 'done') : epics;
 
     const epicsByInitiative = new Map();
     const unlinked = [];
@@ -75,7 +75,7 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
     for (const initiative of initiatives) {
       if (initiative.key === '_unlinked') continue;
       const childEpics = epicsByInitiative.get(initiative.key) || [];
-      if (childEpics.length === 0 && !showDone) continue;
+      if (childEpics.length === 0 && hideDone) continue;
 
       let initStart = Infinity, initEnd = -Infinity;
       const epicRows = [];
@@ -145,7 +145,7 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
 
     if (minTs === Infinity) { minTs = today - QUARTER; maxTs = today + QUARTER; }
     return { tree, fullTimeRange: { min: minTs, max: maxTs } };
-  }, [epics, initiatives, showDone, today]);
+  }, [epics, initiatives, hideDone, today]);
 
   // Auto-collapse: collapse all if >20 groups, or use explicit state
   const effectiveCollapsed = useMemo(() => {
@@ -266,7 +266,7 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
     return markers;
   }, [timeRange, totalRange]);
 
-  const totalEpics = epics.filter(e => showDone || e.statusCategory !== 'done').length;
+  const totalEpics = epics.filter(e => !hideDone || e.statusCategory !== 'done').length;
   const totalExpanded = visibleRows.filter(r => r._type === 'epic').length;
 
   if (filteredTree.length === 0 && !search) {
@@ -305,9 +305,9 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
           />
           {/* Show completed */}
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-            <input type="checkbox" checked={showDone} onChange={() => setShowDone(!showDone)}
+            <input type="checkbox" checked={hideDone} onChange={() => setHideDone(!hideDone)}
               className="rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
-            Show completed
+            Hide completed
           </label>
         </div>
       </div>

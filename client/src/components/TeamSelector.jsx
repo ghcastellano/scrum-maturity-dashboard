@@ -23,58 +23,80 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
     }
   }, []);
 
+  // Helper: load boards from any available cache (DB → localStorage)
+  const loadBoardsFromCache = async () => {
+    // 1) Try DB cache first (fast, no Jira API call)
+    try {
+      const cacheResult = await api.getCachedBoards();
+      if (cacheResult.success && cacheResult.boards?.length > 0) {
+        console.log('✅ Boards loaded from DB cache');
+        return cacheResult.boards;
+      }
+    } catch (e) {
+      console.warn('DB cache miss');
+    }
+
+    // 2) Try localStorage cache (no TTL check — stale boards are better than none)
+    try {
+      const cached = localStorage.getItem(BOARDS_CACHE_KEY);
+      if (cached) {
+        const { boards: cachedBoards } = JSON.parse(cached);
+        if (cachedBoards?.length > 0) {
+          console.log('✅ Boards loaded from localStorage cache');
+          return cachedBoards;
+        }
+      }
+    } catch (e) { /* ignore parse errors */ }
+
+    return null;
+  };
+
   const loadBoards = async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError('');
 
-      // If forcing refresh, fetch from Jira API
+      // If forcing refresh, fetch from Jira API (with cache fallback on error)
       if (forceRefresh) {
-        const result = await api.getBoards(
-          credentials.jiraUrl,
-          credentials.email,
-          credentials.apiToken
-        );
-        setBoards(result.boards);
-        localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
-          boards: result.boards,
-          timestamp: Date.now()
-        }));
-        setLoading(false);
+        try {
+          const result = await api.getBoards(
+            credentials.jiraUrl,
+            credentials.email,
+            credentials.apiToken
+          );
+          setBoards(result.boards);
+          localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
+            boards: result.boards,
+            timestamp: Date.now()
+          }));
+          return;
+        } catch (refreshErr) {
+          console.error('Jira API refresh failed:', refreshErr);
+          const errMsg = refreshErr.response?.data?.message || refreshErr.message || '';
+          // Try to fall back to cached boards
+          const cached = await loadBoardsFromCache();
+          if (cached) {
+            setBoards(cached);
+            setError(`Failed to refresh from Jira (${errMsg}). Showing cached boards.`);
+          } else {
+            setError(`Failed to load boards from Jira: ${errMsg}`);
+          }
+          return;
+        }
+      }
+
+      // Normal load: try caches
+      const cached = await loadBoardsFromCache();
+      if (cached) {
+        setBoards(cached);
         return;
       }
 
-      // 1) Try DB cache first (fast, no Jira API call)
-      try {
-        const cacheResult = await api.getCachedBoards();
-        if (cacheResult.success && cacheResult.boards?.length > 0) {
-          console.log('✅ Boards loaded from DB cache');
-          setBoards(cacheResult.boards);
-          setLoading(false);
-          return;
-        }
-      } catch (e) {
-        console.warn('DB cache miss');
-      }
-
-      // 2) Try localStorage cache
-      const cached = localStorage.getItem(BOARDS_CACHE_KEY);
-      if (cached) {
-        try {
-          const { boards: cachedBoards, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < BOARDS_CACHE_TTL && cachedBoards?.length > 0) {
-            console.log('✅ Boards loaded from localStorage cache');
-            setBoards(cachedBoards);
-            setLoading(false);
-            return;
-          }
-        } catch (e) { /* ignore parse errors */ }
-      }
-
-      // 3) No cache available — show empty state (user clicks "Refresh from Jira")
+      // No cache available — show empty state (user clicks "Refresh from Jira")
       setBoards([]);
     } catch (err) {
-      setError('Failed to load boards');
+      console.error('Failed to load boards:', err);
+      setError(`Failed to load boards: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

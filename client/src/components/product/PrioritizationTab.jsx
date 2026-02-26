@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Bubble, Doughnut } from 'react-chartjs-2';
 import FieldMappingConfig from './FieldMappingConfig';
+import { IssueTypeIcon, JiraLink } from './JiraIcons';
 
 const MOSCOW_COLORS = {
   'Must Have': { bg: 'rgba(239, 68, 68, 0.7)', border: 'rgb(239, 68, 68)', label: 'bg-red-100 text-red-700' },
@@ -37,6 +38,7 @@ function jitter(val, range, seed) {
 }
 
 export default function PrioritizationTab({ credentials, selectedBoards, epicData, prioritizationData }) {
+  const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
   const priData = prioritizationData || null;
   const [fieldMappings, setFieldMappings] = useState(null);
   const [sortBy, setSortBy] = useState('wsjf');
@@ -369,9 +371,10 @@ export default function PrioritizationTab({ credentials, selectedBoards, epicDat
                   <tr key={epic.key} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-2 px-2 text-xs text-gray-400">{idx + 1}</td>
                     <td className="py-2 px-2">
-                      <div>
-                        <span className="text-xs font-medium text-purple-700">{epic.key}</span>
-                        <span className="text-xs text-gray-600 ml-2">
+                      <div className="flex items-center gap-1.5">
+                        <IssueTypeIcon type="Epic" size={13} />
+                        <JiraLink issueKey={epic.key} jiraBaseUrl={jiraBaseUrl} className="text-xs font-medium text-purple-700" />
+                        <span className="text-xs text-gray-600 truncate">
                           {epic.summary.length > 40 ? epic.summary.substring(0, 40) + '...' : epic.summary}
                         </span>
                       </div>

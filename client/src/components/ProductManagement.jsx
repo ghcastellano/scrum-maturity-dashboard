@@ -285,7 +285,7 @@ export default function ProductManagement({ credentials, selectedBoards }) {
 
           {/* Tab Content */}
           {activeTab === 'epic-intelligence' && (
-            <EpicIntelligenceTab epicData={filteredData} loading={loading} />
+            <EpicIntelligenceTab epicData={filteredData} loading={loading} credentials={credentials} />
           )}
 
           {activeTab === 'prioritization' && (

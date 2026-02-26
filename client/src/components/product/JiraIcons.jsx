@@ -2,7 +2,7 @@
 // Colors follow Jira's standard palette
 
 const ICON_STYLES = {
-  Initiative: { bg: '#6554C0', icon: 'lightning' },
+  Initiative: { bg: '#FFAB00', icon: 'lightbulb' },
   Epic: { bg: '#904EE2', icon: 'lightning' },
   Story: { bg: '#63BA3C', icon: 'bookmark' },
   Task: { bg: '#4BADE8', icon: 'check' },
@@ -20,6 +20,17 @@ export function IssueTypeIcon({ type, size = 14, className = '' }) {
 
   const renderIcon = () => {
     switch (style.icon) {
+      case 'lightbulb':
+        return (
+          <>
+            {/* Bulb */}
+            <ellipse cx={s / 2} cy={s * 0.38} rx={s * 0.22} ry={s * 0.24} fill="white" />
+            {/* Neck */}
+            <rect x={s * 0.38} y={s * 0.55} width={s * 0.24} height={s * 0.14} rx={1} fill="white" />
+            {/* Base */}
+            <rect x={s * 0.4} y={s * 0.68} width={s * 0.2} height={s * 0.06} rx={1} fill="white" />
+          </>
+        );
       case 'lightning':
         return (
           <path

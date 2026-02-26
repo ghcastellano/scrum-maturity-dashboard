@@ -1039,10 +1039,215 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </div>
         </div>
 
-        {/* Pillar 2: Team Ownership */}
+        {/* Pillar 2: Flow & Quality */}
+        {metrics.flowQuality && (
         <div className="card mb-8">
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
-            👥 Pillar 2: Team Ownership & Execution
+            🔄 Pillar 2: Flow & Quality
+          </h2>
+          <p className="text-sm text-gray-500 -mt-4 mb-6">Is work flowing smoothly and producing quality outcomes?</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Col 1: Lead Time by Type */}
+            <div>
+              <h3 className="font-semibold mb-2">Lead Time by Work Type</h3>
+              <p className="text-xs text-gray-500 mb-4">Average days from creation to resolution</p>
+              {Object.keys(metrics.flowQuality.leadTimeByType).length > 0 ? (
+                <>
+                  <div className="h-56">
+                    <Bar
+                      data={{
+                        labels: Object.keys(metrics.flowQuality.leadTimeByType),
+                        datasets: [{
+                          label: 'Avg Lead Time (days)',
+                          data: Object.values(metrics.flowQuality.leadTimeByType),
+                          backgroundColor: Object.keys(metrics.flowQuality.leadTimeByType).map((type) =>
+                            type === 'Bug' ? 'rgba(239, 68, 68, 0.7)' :
+                            type === 'Story' ? 'rgba(59, 130, 246, 0.7)' :
+                            'rgba(107, 114, 128, 0.7)'
+                          ),
+                          borderRadius: 6
+                        }]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.raw} days` } } },
+                        scales: { y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { ticks: { font: { size: 11 } }, grid: { display: false } } }
+                      }}
+                    />
+                  </div>
+                  {/* Trend by sprint */}
+                  {metrics.flowQuality.leadTimeByTypeBySprint.length > 1 && (() => {
+                    const sprints = metrics.flowQuality.leadTimeByTypeBySprint;
+                    const types = [...new Set(sprints.flatMap(s => Object.keys(s).filter(k => k !== 'sprint')))];
+                    const colors = { Story: 'rgb(59, 130, 246)', Bug: 'rgb(239, 68, 68)', Task: 'rgb(107, 114, 128)', 'Tech Debt': 'rgb(168, 85, 247)' };
+                    return (
+                      <div className="mt-4">
+                        <p className="text-xs text-gray-500 mb-2 font-medium">Trend by Sprint</p>
+                        <div className="h-40">
+                          <Line
+                            data={{
+                              labels: sprints.map(s => s.sprint),
+                              datasets: types.map(type => ({
+                                label: type,
+                                data: sprints.map(s => s[type] ?? null),
+                                borderColor: colors[type] || 'rgb(156, 163, 175)',
+                                backgroundColor: 'transparent',
+                                tension: 0.3,
+                                pointRadius: 3,
+                                borderWidth: 2,
+                                spanGaps: true
+                              }))
+                            }}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} days` } } },
+                              scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' }, title: { display: true, text: 'days', font: { size: 10 } } }, x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } } }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">No resolved issues with lead time data</p>
+              )}
+            </div>
+
+            {/* Col 2: WIP Aging */}
+            <div>
+              <h3 className="font-semibold mb-2">WIP Aging</h3>
+              <p className="text-xs text-gray-500 mb-4">Work sitting idle — longest in-progress items</p>
+              {metrics.flowQuality.wipAging.length > 0 ? (
+                <div className="space-y-1.5 max-h-96 overflow-y-auto">
+                  {metrics.flowQuality.wipAging.map(item => (
+                    <div key={item.key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                      item.daysInProgress > 30 ? 'bg-red-50 border-red-200' :
+                      item.daysInProgress > 14 ? 'bg-amber-50 border-amber-200' :
+                      'bg-gray-50 border-gray-200'
+                    }`}>
+                      <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${item.key}`} target="_blank" rel="noopener noreferrer"
+                        className="font-mono text-xs font-semibold text-purple-700 shrink-0 hover:underline">{item.key}</a>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
+                        item.type === 'Bug' ? 'bg-red-100 text-red-700' :
+                        item.type === 'Story' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>{item.type}</span>
+                      <span className="text-xs text-gray-700 flex-1 truncate" title={item.summary}>{item.summary}</span>
+                      <span className={`text-xs font-bold shrink-0 ${
+                        item.daysInProgress > 30 ? 'text-red-600' :
+                        item.daysInProgress > 14 ? 'text-amber-600' :
+                        'text-gray-500'
+                      }`}>{item.daysInProgress}d</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">No items currently in progress</p>
+              )}
+            </div>
+
+            {/* Col 3: Defect Distribution */}
+            <div>
+              <h3 className="font-semibold mb-2">Defects Found</h3>
+              <p className="text-xs text-gray-500 mb-4">Where defects are caught in the lifecycle</p>
+              {metrics.flowQuality.defects.total.total > 0 ? (
+                <>
+                  <div className="h-48 flex items-center justify-center">
+                    <Doughnut
+                      data={{
+                        labels: ['Pre-merge', 'QA', 'Post-release'],
+                        datasets: [{
+                          data: [
+                            metrics.flowQuality.defects.total.preMerge,
+                            metrics.flowQuality.defects.total.inQA,
+                            metrics.flowQuality.defects.total.postRelease
+                          ],
+                          backgroundColor: ['rgba(34, 197, 94, 0.7)', 'rgba(59, 130, 246, 0.7)', 'rgba(239, 68, 68, 0.7)'],
+                          borderWidth: 1
+                        }]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } }
+                      }}
+                    />
+                  </div>
+                  {/* Defect trend by sprint */}
+                  {metrics.flowQuality.defects.bySprint.filter(s => s.total > 0).length > 1 && (
+                    <div className="mt-4">
+                      <p className="text-xs text-gray-500 mb-2 font-medium">Trend by Sprint</p>
+                      <div className="h-36">
+                        <Bar
+                          data={{
+                            labels: metrics.flowQuality.defects.bySprint.map(s => s.sprint),
+                            datasets: [
+                              { label: 'Pre-merge', data: metrics.flowQuality.defects.bySprint.map(s => s.preMerge), backgroundColor: 'rgba(34, 197, 94, 0.7)' },
+                              { label: 'QA', data: metrics.flowQuality.defects.bySprint.map(s => s.inQA), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+                              { label: 'Post-release', data: metrics.flowQuality.defects.bySprint.map(s => s.postRelease), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
+                            ]
+                          }}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+                            scales: { x: { stacked: true, ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } } }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">No bug-type issues found in analyzed sprints</p>
+              )}
+            </div>
+          </div>
+
+          {/* Healthy Signals */}
+          <div className="mt-8 border-t border-gray-200 pt-6">
+            <h3 className="font-semibold mb-4 text-gray-700">Healthy Signals</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
+                metrics.flowQuality.healthySignals.stableLeadTime ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <span className="text-xl">{metrics.flowQuality.healthySignals.stableLeadTime ? '✅' : '⚠️'}</span>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Stable Lead Time</p>
+                  <p className="text-xs text-gray-500">Lead time not increasing significantly</p>
+                </div>
+              </div>
+              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
+                metrics.flowQuality.healthySignals.earlyDefectDetection ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <span className="text-xl">{metrics.flowQuality.healthySignals.earlyDefectDetection ? '✅' : '⚠️'}</span>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Early Defect Detection</p>
+                  <p className="text-xs text-gray-500">Defects caught before release</p>
+                </div>
+              </div>
+              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
+                metrics.flowQuality.healthySignals.minimalRework ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Minimal Rework</p>
+                  <p className="text-xs text-gray-500">QA rework rate: {metrics.flowQuality.reworkRate}%</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Pillar 3: Team Ownership */}
+        <div className="card mb-8">
+          <h2 className="text-2xl font-bold mb-6 text-gray-800">
+            👥 Pillar 3: Team Ownership & Execution
           </h2>
 
           {/* Overall Backlog Health Score */}

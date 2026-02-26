@@ -80,30 +80,6 @@ app.post('/api/diagnostics', (req, res) =>
   dashboardController.diagnostics(req, res)
 );
 
-// Releases / Versions endpoints
-app.post('/api/releases', (req, res) =>
-  dashboardController.getReleases(req, res)
-);
-
-app.post('/api/releases/details', (req, res) =>
-  dashboardController.getReleaseDetails(req, res)
-);
-
-app.post('/api/releases/burndown', (req, res) =>
-  dashboardController.getReleaseBurndown(req, res)
-);
-
-// Save releases cache (details + burndown) to DB
-app.post('/api/releases/save-cache', async (req, res) => {
-  try {
-    const { boardId, releasesData } = req.body;
-    const success = await database.updateLatestWithReleases(parseInt(boardId), releasesData);
-    res.json({ success });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 // Cached boards endpoint (fast, no credentials needed)
 app.get('/api/jira/boards/cached', async (req, res) => {
   try {
@@ -170,33 +146,6 @@ app.delete('/api/history/board/:boardId', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
-// ==============================
-// PRODUCT MANAGEMENT endpoints
-// ==============================
-app.post('/api/product/epics', (req, res) =>
-  dashboardController.getEpics(req, res)
-);
-
-app.post('/api/product/dependencies', (req, res) =>
-  dashboardController.getEpicDependencies(req, res)
-);
-
-app.post('/api/product/prioritization', (req, res) =>
-  dashboardController.getEpicPrioritization(req, res)
-);
-
-app.post('/api/product/portfolio', (req, res) =>
-  dashboardController.getPortfolioView(req, res)
-);
-
-app.post('/api/product/cached', (req, res) =>
-  dashboardController.getCachedProductData(req, res)
-);
-
-app.post('/api/product/discover-fields', (req, res) =>
-  dashboardController.discoverFields(req, res)
-);
 
 // Health check
 app.get('/health', (req, res) => {

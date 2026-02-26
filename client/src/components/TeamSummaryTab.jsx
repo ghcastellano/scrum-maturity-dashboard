@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, Fragment } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 
 const formatNumber = (num, decimals = 1) => {
@@ -38,12 +38,27 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
     }), [rawSprintMetrics]);
   const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
 
-  // Sprint selector for burndown — auto-select active sprint if available, otherwise last
-  const [selectedSprintIdx, setSelectedSprintIdx] = useState(() => {
+  // Sprint selector: null = "All Sprints" (aggregated), number = specific sprint index
+  const [selectedSprintIdx, setSelectedSprintIdx] = useState(null);
+
+  // When "All Sprints", burndown defaults to active/last sprint
+  const defaultBurndownIdx = useMemo(() => {
     const activeIdx = sprintCapacity.findIndex(s => s.isActive);
     return activeIdx >= 0 ? activeIdx : sprintCapacity.length - 1;
-  });
-  const selectedSprint = sprintCapacity[selectedSprintIdx] || null;
+  }, [sprintCapacity]);
+
+  const burndownSprintIdx = selectedSprintIdx !== null ? selectedSprintIdx : defaultBurndownIdx;
+  const selectedSprint = sprintCapacity[burndownSprintIdx] || null;
+
+  // Expandable sprint rows in comparison table
+  const [expandedCompSprints, setExpandedCompSprints] = useState(new Set());
+  const toggleCompSprint = useCallback((sprintId) => {
+    setExpandedCompSprints(prev => {
+      const next = new Set(prev);
+      if (next.has(sprintId)) next.delete(sprintId); else next.add(sprintId);
+      return next;
+    });
+  }, []);
 
   // ── KPI Calculations ──
   const avgPointsPerDev = capSummary.avgTeamSize > 0
@@ -249,24 +264,28 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
   // ── Committed vs Completed Bar Chart ──
   const comparisonChartData = useMemo(() => {
     if (sprintCapacity.length === 0) return null;
+    const sprints = selectedSprintIdx !== null
+      ? [sprintCapacity[selectedSprintIdx]].filter(Boolean)
+      : sprintCapacity;
+    if (sprints.length === 0) return null;
     return {
-      labels: sprintCapacity.map(s => s.sprintName),
+      labels: sprints.map(s => s.sprintName),
       datasets: [
         {
           label: 'Committed (SP)',
-          data: sprintCapacity.map(s => s.committedPoints),
+          data: sprints.map(s => s.committedPoints),
           backgroundColor: 'rgba(156, 163, 175, 0.5)',
           borderRadius: 4
         },
         {
           label: 'Completed (SP)',
-          data: sprintCapacity.map(s => s.completedPoints),
+          data: sprints.map(s => s.completedPoints),
           backgroundColor: 'rgba(59, 130, 246, 0.7)',
           borderRadius: 4
         }
       ]
     };
-  }, [sprintCapacity]);
+  }, [sprintCapacity, selectedSprintIdx]);
 
   const barChartOptions = {
     responsive: true,
@@ -281,45 +300,92 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
   };
 
   // ── Issue Type Breakdown (Doughnut) ──
+  const issueTypeColors = {
+    Story: 'rgba(59, 130, 246, 0.8)',
+    Bug: 'rgba(239, 68, 68, 0.8)',
+    Task: 'rgba(107, 114, 128, 0.8)',
+    Epic: 'rgba(168, 85, 247, 0.8)',
+    'Sub-task': 'rgba(249, 115, 22, 0.8)',
+    Improvement: 'rgba(16, 185, 129, 0.8)',
+    Request: 'rgba(156, 163, 175, 0.7)'
+  };
+
   const issueTypeData = useMemo(() => {
-    if (workDistribution.length === 0) return null;
     const typeCounts = {};
-    workDistribution.forEach(d => {
-      if (d.types) {
-        Object.entries(d.types).forEach(([type, count]) => {
-          typeCounts[type] = (typeCounts[type] || 0) + count;
-        });
-      }
-    });
+
+    if (selectedSprintIdx !== null) {
+      // Per-sprint: compute from issues array
+      const sprint = sprintCapacity[selectedSprintIdx];
+      const issues = sprint?.issues || [];
+      if (issues.length === 0) return null;
+      issues.forEach(issue => {
+        const type = issue.issueType || 'Unknown';
+        typeCounts[type] = (typeCounts[type] || 0) + 1;
+      });
+    } else {
+      // Aggregated: from workDistribution
+      if (workDistribution.length === 0) return null;
+      workDistribution.forEach(d => {
+        if (d.types) {
+          Object.entries(d.types).forEach(([type, count]) => {
+            typeCounts[type] = (typeCounts[type] || 0) + count;
+          });
+        }
+      });
+    }
+
     const labels = Object.keys(typeCounts);
     if (labels.length === 0) return null;
-
-    const colors = {
-      Story: 'rgba(59, 130, 246, 0.8)',
-      Bug: 'rgba(239, 68, 68, 0.8)',
-      Task: 'rgba(107, 114, 128, 0.8)',
-      Epic: 'rgba(168, 85, 247, 0.8)',
-      'Sub-task': 'rgba(249, 115, 22, 0.8)'
-    };
 
     return {
       labels,
       datasets: [{
         data: labels.map(l => typeCounts[l]),
-        backgroundColor: labels.map(l => colors[l] || 'rgba(156, 163, 175, 0.7)'),
+        backgroundColor: labels.map(l => issueTypeColors[l] || 'rgba(156, 163, 175, 0.7)'),
         borderWidth: 2,
         borderColor: '#fff'
       }]
     };
-  }, [workDistribution]);
+  }, [workDistribution, sprintCapacity, selectedSprintIdx]);
 
   // ── Top Contributors ──
   const topContributors = useMemo(() => {
+    if (selectedSprintIdx !== null) {
+      // Per-sprint: compute from issues array
+      const sprint = sprintCapacity[selectedSprintIdx];
+      const issues = sprint?.issues || [];
+      const byAssignee = {};
+      issues.forEach(issue => {
+        const name = issue.assignee || 'Unassigned';
+        if (!byAssignee[name]) {
+          byAssignee[name] = { name, committed: 0, completed: 0, issuesAssigned: 0, issuesCompleted: 0 };
+        }
+        byAssignee[name].committed += (issue.points || 0);
+        byAssignee[name].issuesAssigned += 1;
+        if (issue.completedInSprint || issue.statusCategory === 'done') {
+          byAssignee[name].completed += (issue.points || 0);
+          byAssignee[name].issuesCompleted += 1;
+        }
+      });
+      return Object.values(byAssignee)
+        .filter(d => d.completed > 0)
+        .sort((a, b) => b.completed - a.completed)
+        .slice(0, 5);
+    }
+    // Aggregated: from workDistribution
     return workDistribution
       .filter(d => d.completed > 0)
       .sort((a, b) => b.completed - a.completed)
       .slice(0, 5);
-  }, [workDistribution]);
+  }, [workDistribution, sprintCapacity, selectedSprintIdx]);
+
+  // Filtered sprint metrics for health indicators
+  const filteredSprintMetrics = useMemo(() => {
+    if (selectedSprintIdx !== null) {
+      return sprintMetrics.filter(m => m.sprintId === sprintCapacity[selectedSprintIdx]?.sprintId);
+    }
+    return sprintMetrics;
+  }, [sprintMetrics, sprintCapacity, selectedSprintIdx]);
 
   // ── Rollover label colors ──
   const rolloverLabelColors = {
@@ -430,6 +496,16 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         {/* Sprint selector buttons */}
         {sprintCapacity.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-5">
+            <button
+              onClick={() => setSelectedSprintIdx(null)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                selectedSprintIdx === null
+                  ? 'bg-gray-800 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All Sprints
+            </button>
             {sprintCapacity.map((sprint, idx) => (
               <button
                 key={sprint.sprintId}
@@ -452,6 +528,13 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
             ))}
           </div>
         )}
+        {selectedSprintIdx !== null && (
+          <div className="mb-4">
+            <span className="text-xs text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+              Filtering all charts to: {sprintCapacity[selectedSprintIdx]?.sprintName}
+            </span>
+          </div>
+        )}
 
         {/* Burndown Chart */}
         {burndownChartData ? (
@@ -472,7 +555,11 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         {/* Committed vs Completed */}
         <div className="card">
           <h2 className="text-xl font-bold mb-2 text-gray-800">Committed vs Completed</h2>
-          <p className="text-sm text-gray-500 mb-4">Story points per sprint</p>
+          <p className="text-sm text-gray-500 mb-4">
+            {selectedSprintIdx !== null
+              ? `Story points for ${sprintCapacity[selectedSprintIdx]?.sprintName}`
+              : 'Story points per sprint'}
+          </p>
           {comparisonChartData ? (
             <div className="h-72">
               <Bar data={comparisonChartData} options={barChartOptions} />
@@ -485,9 +572,13 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         {/* Scope Changes & Rollover Summary */}
         <div className="card">
           <h2 className="text-xl font-bold mb-2 text-gray-800">Sprint Health Indicators</h2>
-          <p className="text-sm text-gray-500 mb-4">Scope changes and rollover across sprints</p>
+          <p className="text-sm text-gray-500 mb-4">
+            {selectedSprintIdx !== null
+              ? `Scope changes and rollover for ${sprintCapacity[selectedSprintIdx]?.sprintName}`
+              : 'Scope changes and rollover across sprints'}
+          </p>
           <div className="space-y-3 max-h-[300px] overflow-y-auto">
-            {sprintMetrics.map(sprint => {
+            {filteredSprintMetrics.map(sprint => {
               const midSprintPct = sprint.midSprintAdditions?.percentage || 0;
               const rolloverPct = sprint.rolloverRate || 0;
               const rolloverCount = sprint.rolloverIssues?.length || 0;
@@ -538,7 +629,7 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
                 </div>
               );
             })}
-            {sprintMetrics.length === 0 && (
+            {filteredSprintMetrics.length === 0 && (
               <div className="text-center text-gray-400 py-6">No sprint metrics available</div>
             )}
           </div>
@@ -550,7 +641,11 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         {/* Top Contributors */}
         <div className="card">
           <h2 className="text-xl font-bold mb-2 text-gray-800">Top Contributors</h2>
-          <p className="text-sm text-gray-500 mb-4">By completed story points across analyzed sprints</p>
+          <p className="text-sm text-gray-500 mb-4">
+            {selectedSprintIdx !== null
+              ? `By completed story points in ${sprintCapacity[selectedSprintIdx]?.sprintName}`
+              : 'By completed story points across analyzed sprints'}
+          </p>
           {topContributors.length > 0 ? (
             <div className="space-y-3">
               {topContributors.map((dev, idx) => {
@@ -593,7 +688,11 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
         {/* Issue Type Breakdown */}
         <div className="card">
           <h2 className="text-xl font-bold mb-2 text-gray-800">Work Type Breakdown</h2>
-          <p className="text-sm text-gray-500 mb-4">Distribution of issue types across all analyzed sprints</p>
+          <p className="text-sm text-gray-500 mb-4">
+            {selectedSprintIdx !== null
+              ? `Distribution of issue types in ${sprintCapacity[selectedSprintIdx]?.sprintName}`
+              : 'Distribution of issue types across all analyzed sprints'}
+          </p>
           {issueTypeData ? (
             <div className="flex items-center justify-center h-64">
               <div className="w-64 h-64">
@@ -628,7 +727,7 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
       {sprintCapacity.length > 0 && sprintMetrics.length > 0 && (
         <div className="card">
           <h2 className="text-xl font-bold mb-2 text-gray-800">Sprint-over-Sprint Comparison</h2>
-          <p className="text-sm text-gray-500 mb-4">Key metrics side by side for retrospective analysis</p>
+          <p className="text-sm text-gray-500 mb-4">Key metrics side by side for retrospective analysis. Click a sprint to expand details.</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
@@ -636,6 +735,8 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
                   <th className="px-3 py-2 text-left font-medium text-gray-600">Sprint</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Committed</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Completed</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-600">Velocity</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-600">Throughput</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Completion %</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Hit Rate</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Team</th>
@@ -644,49 +745,186 @@ export default function TeamSummaryTab({ metrics, capacityData, flowMetrics, cre
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {sprintCapacity.map((sprint, idx) => {
+                {sprintCapacity.map((sprint) => {
                   const metricsSprint = sprintMetrics.find(m => m.sprintId === sprint.sprintId) || {};
                   const completionPct = sprint.committedPoints > 0
                     ? (sprint.completedPoints / sprint.committedPoints) * 100 : 0;
                   const hitRate = metricsSprint.sprintHitRate || 0;
                   const rollover = metricsSprint.rolloverRate || 0;
                   const scopeChurn = metricsSprint.midSprintAdditions?.percentage || 0;
+                  const isExpanded = expandedCompSprints.has(sprint.sprintId);
+                  const issues = sprint.issues || [];
+
+                  // Compute team breakdown when expanded
+                  const teamBreakdown = isExpanded ? (() => {
+                    const byMember = {};
+                    issues.forEach(issue => {
+                      const name = issue.assignee || 'Unassigned';
+                      if (!byMember[name]) byMember[name] = { name, issues: 0, completedIssues: 0, completedSP: 0, committedSP: 0 };
+                      byMember[name].issues += 1;
+                      byMember[name].committedSP += (issue.points || 0);
+                      if (issue.completedInSprint || issue.statusCategory === 'done') {
+                        byMember[name].completedIssues += 1;
+                        byMember[name].completedSP += (issue.points || 0);
+                      }
+                    });
+                    return Object.values(byMember).sort((a, b) => b.completedSP - a.completedSP);
+                  })() : [];
 
                   return (
-                    <tr key={sprint.sprintId} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium text-gray-800">{sprint.sprintName}</td>
-                      <td className="px-3 py-2 text-center text-gray-600">{sprint.committedPoints} SP</td>
-                      <td className="px-3 py-2 text-center font-semibold text-blue-600">{sprint.completedPoints} SP</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          completionPct >= 80 ? 'bg-green-100 text-green-700' :
-                          completionPct >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>{formatNumber(completionPct)}%</span>
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          hitRate >= 80 ? 'bg-green-100 text-green-700' :
-                          hitRate >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>{formatNumber(hitRate)}%</span>
-                      </td>
-                      <td className="px-3 py-2 text-center text-orange-600">{sprint.teamSize}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          rollover > 25 ? 'bg-red-100 text-red-700' :
-                          rollover > 15 ? 'bg-amber-100 text-amber-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>{formatNumber(rollover)}%</span>
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          scopeChurn > 25 ? 'bg-red-100 text-red-700' :
-                          scopeChurn > 10 ? 'bg-amber-100 text-amber-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>{formatNumber(scopeChurn)}%</span>
-                      </td>
-                    </tr>
+                    <Fragment key={sprint.sprintId}>
+                      <tr
+                        className="hover:bg-gray-50 cursor-pointer select-none"
+                        onClick={() => toggleCompSprint(sprint.sprintId)}
+                      >
+                        <td className="px-3 py-2 font-medium text-gray-800">
+                          <span className="inline-flex items-center gap-1.5">
+                            <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            {sprint.sprintName}
+                            {sprint.isActive && (
+                              <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-semibold rounded-full">
+                                Active
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-center text-gray-600">{sprint.committedPoints} SP</td>
+                        <td className="px-3 py-2 text-center font-semibold text-blue-600">{sprint.completedPoints} SP</td>
+                        <td className="px-3 py-2 text-center font-semibold text-blue-700">{sprint.velocity || sprint.completedPoints} SP</td>
+                        <td className="px-3 py-2 text-center text-purple-600">{sprint.throughput || sprint.completedIssues} issues</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            completionPct >= 80 ? 'bg-green-100 text-green-700' :
+                            completionPct >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>{formatNumber(completionPct)}%</span>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            hitRate >= 80 ? 'bg-green-100 text-green-700' :
+                            hitRate >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>{formatNumber(hitRate)}%</span>
+                        </td>
+                        <td className="px-3 py-2 text-center text-orange-600">{sprint.teamSize}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            rollover > 25 ? 'bg-red-100 text-red-700' :
+                            rollover > 15 ? 'bg-amber-100 text-amber-700' :
+                            'bg-green-100 text-green-700'
+                          }`}>{formatNumber(rollover)}%</span>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            scopeChurn > 25 ? 'bg-red-100 text-red-700' :
+                            scopeChurn > 10 ? 'bg-amber-100 text-amber-700' :
+                            'bg-green-100 text-green-700'
+                          }`}>{formatNumber(scopeChurn)}%</span>
+                        </td>
+                      </tr>
+
+                      {/* Expanded: Team Breakdown + Sprint Issues */}
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={10} className="px-0 py-0">
+                            <div className="bg-gray-50 border-t border-b border-gray-200 px-4 py-3">
+                              {/* Team Breakdown */}
+                              {teamBreakdown.length > 0 && (
+                                <div className="mb-4">
+                                  <div className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wider">
+                                    Team Breakdown ({teamBreakdown.length} members)
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {teamBreakdown.map(member => (
+                                      <div key={member.name} className="bg-white rounded-lg px-3 py-2 border border-gray-200 text-xs min-w-[160px]">
+                                        <div className="font-medium text-gray-800 truncate">{member.name}</div>
+                                        <div className="flex items-center gap-3 text-gray-500 mt-1">
+                                          <span>{member.completedIssues}/{member.issues} issues</span>
+                                          <span className="font-semibold text-blue-600">{member.completedSP} SP</span>
+                                        </div>
+                                        {member.committedSP > 0 && (
+                                          <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1.5">
+                                            <div
+                                              className="bg-blue-500 rounded-full h-1.5"
+                                              style={{ width: `${Math.min(100, (member.completedSP / member.committedSP) * 100)}%` }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Sprint Issues */}
+                              {issues.length > 0 ? (
+                                <div>
+                                  <div className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wider">
+                                    Sprint Issues ({issues.length})
+                                  </div>
+                                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="bg-gray-100 text-gray-500 uppercase tracking-wider">
+                                          <th className="px-2 py-1.5 text-left font-medium">Key</th>
+                                          <th className="px-2 py-1.5 text-left font-medium">Summary</th>
+                                          <th className="px-2 py-1.5 text-left font-medium">Type</th>
+                                          <th className="px-2 py-1.5 text-left font-medium">Assignee</th>
+                                          <th className="px-2 py-1.5 text-center font-medium">SP</th>
+                                          <th className="px-2 py-1.5 text-center font-medium">Status</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100 bg-white">
+                                        {issues.map(issue => (
+                                          <tr key={issue.key} className={`hover:bg-gray-50 ${
+                                            issue.statusCategory === 'done' ? 'bg-green-50/40' :
+                                            issue.statusCategory === 'indeterminate' ? 'bg-blue-50/30' : ''
+                                          }`}>
+                                            <td className="px-2 py-1.5 text-left">
+                                              {jiraBaseUrl ? (
+                                                <a href={`${jiraBaseUrl}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer"
+                                                  className="font-mono font-semibold text-blue-600 hover:underline"
+                                                  onClick={e => e.stopPropagation()}>
+                                                  {issue.key}
+                                                </a>
+                                              ) : (
+                                                <span className="font-mono font-semibold text-gray-800">{issue.key}</span>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-left text-gray-600 max-w-[300px] truncate" title={issue.summary}>
+                                              {issue.summary}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-left">
+                                              <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600">{issue.issueType}</span>
+                                            </td>
+                                            <td className="px-2 py-1.5 text-left text-gray-600 truncate max-w-[120px]">{issue.assignee || 'Unassigned'}</td>
+                                            <td className="px-2 py-1.5 text-center font-medium">{issue.points || '-'}</td>
+                                            <td className="px-2 py-1.5 text-center">
+                                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                issue.statusCategory === 'done' ? 'bg-green-100 text-green-700' :
+                                                issue.statusCategory === 'indeterminate' ? 'bg-blue-100 text-blue-700' :
+                                                'bg-gray-100 text-gray-600'
+                                              }`}>{issue.status}</span>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-400 text-center py-3">
+                                  No issue details available for this sprint.
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

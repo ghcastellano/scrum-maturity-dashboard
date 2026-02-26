@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { IssueTypeIcon, JiraLink } from './JiraIcons';
 
 const WIP_LIMIT_DEFAULT = 10;
 
 export default function PortfolioTab({ credentials, selectedBoards, portfolioData, epicData }) {
+  const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
   const data = portfolioData || null;
   const [wipLimit, setWipLimit] = useState(WIP_LIMIT_DEFAULT);
 
@@ -323,7 +325,10 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
               .slice(0, 8)
               .map(init => (
                 <div key={init.key} className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-purple-700 w-20 shrink-0">{init.key}</span>
+                  <span className="inline-flex items-center gap-1 w-24 shrink-0">
+                    <IssueTypeIcon type="Initiative" size={12} />
+                    <JiraLink issueKey={init.key} jiraBaseUrl={jiraBaseUrl} className="text-xs font-medium text-purple-700" />
+                  </span>
                   <span className="text-xs text-gray-600 flex-1 truncate">{init.summary}</span>
                   <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0">
                     <div className={`h-full rounded-full ${init.progress >= 80 ? 'bg-green-500' : init.progress >= 40 ? 'bg-amber-500' : 'bg-blue-500'}`}
@@ -591,7 +596,10 @@ export default function PortfolioTab({ credentials, selectedBoards, portfolioDat
               <div className="space-y-1 max-h-48 overflow-y-auto">
                 {wipMetrics.wipAge.slice(0, 10).map(item => (
                   <div key={item.key} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-50">
-                    <span className="text-xs font-medium text-purple-700 w-20">{item.key}</span>
+                    <span className="inline-flex items-center gap-1 w-24 shrink-0">
+                      <IssueTypeIcon type="Epic" size={12} />
+                      <JiraLink issueKey={item.key} jiraBaseUrl={jiraBaseUrl} className="text-xs font-medium text-purple-700" />
+                    </span>
                     <span className="text-xs text-gray-600 flex-1 truncate">{item.summary}</span>
                     <span className={`text-xs font-medium ${
                       item.ageDays > 90 ? 'text-red-600' : item.ageDays > 30 ? 'text-amber-600' : 'text-gray-500'

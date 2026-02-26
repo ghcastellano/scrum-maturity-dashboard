@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { Bar } from 'react-chartjs-2';
 import EpicTimelineChart from './EpicTimelineChart';
 import DependencyMatrix from './DependencyMatrix';
+import { IssueTypeIcon, JiraLink } from './JiraIcons';
 
 const HEALTH_COLORS = {
   'on-track': { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
@@ -11,7 +12,7 @@ const HEALTH_COLORS = {
   'no-data': { bg: 'bg-gray-50', text: 'text-gray-400', dot: 'bg-gray-300' }
 };
 
-export default function EpicIntelligenceTab({ epicData, loading }) {
+export default function EpicIntelligenceTab({ epicData, loading, credentials }) {
   const [viewMode, setViewMode] = useState('epics'); // 'epics' | 'initiatives'
   const [expandedEpic, setExpandedEpic] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -20,6 +21,7 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
   if (!epicData) return null;
 
   const { epics, initiatives, throughput, summary } = epicData;
+  const jiraBaseUrl = credentials?.jiraUrl?.replace(/\/$/, '') || '';
 
   // Apply filters
   const filteredEpics = epics.filter(e => {
@@ -75,7 +77,7 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
     return (
       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${colors.dot}`}></span>
-        {health === 'no-data' ? 'no data' : health.replace('-', ' ')}
+        {health === 'no-data' ? 'no children' : health.replace('-', ' ')}
       </span>
     );
   };
@@ -125,7 +127,7 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
       </div>
 
       {/* Epic Timeline */}
-      <EpicTimelineChart epics={epics} initiatives={initiatives} />
+      <EpicTimelineChart epics={epics} initiatives={initiatives} jiraBaseUrl={jiraBaseUrl} />
 
       {/* View Toggle + Filters */}
       <div className="card">
@@ -204,7 +206,10 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
                       onClick={() => setExpandedEpic(expandedEpic === epic.key ? null : epic.key)}
                     >
                       <td className="py-2 px-3">
-                        <span className="font-medium text-purple-700 text-xs">{epic.key}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <IssueTypeIcon type="Epic" size={14} />
+                          <JiraLink issueKey={epic.key} jiraBaseUrl={jiraBaseUrl} className="font-medium text-purple-700 text-xs" />
+                        </span>
                       </td>
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-2">
@@ -248,7 +253,10 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
                           <div className="grid gap-1">
                             {epic.children.issues.map(child => (
                               <div key={child.key} className="flex items-center gap-3 py-1 px-2 rounded hover:bg-gray-100">
-                                <span className="text-purple-600 font-medium text-xs w-20">{child.key}</span>
+                                <span className="inline-flex items-center gap-1 w-24">
+                                  <IssueTypeIcon type={child.type} size={12} />
+                                  <JiraLink issueKey={child.key} jiraBaseUrl={jiraBaseUrl} className="text-purple-600 font-medium text-xs" />
+                                </span>
                                 <span className={`w-2 h-2 rounded-full ${
                                   child.statusCategory === 'done' ? 'bg-green-500' :
                                   child.statusCategory === 'indeterminate' ? 'bg-blue-500' :
@@ -279,7 +287,10 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
                   <div>
                     <div className="flex items-center gap-2">
                       {initiative.key !== '_unlinked' && (
-                        <span className="text-xs font-medium text-purple-700">{initiative.key}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <IssueTypeIcon type="Initiative" size={14} />
+                          <JiraLink issueKey={initiative.key} jiraBaseUrl={jiraBaseUrl} className="text-xs font-medium text-purple-700" />
+                        </span>
                       )}
                       <span className="font-medium text-gray-900">{initiative.summary}</span>
                     </div>
@@ -311,7 +322,10 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
                 <div className="grid gap-2">
                   {initiative.epics.map(epic => (
                     <div key={epic.key} className="flex items-center gap-3 py-1.5 px-3 bg-gray-50 rounded">
-                      <span className="text-xs font-medium text-purple-700 w-20">{epic.key}</span>
+                      <span className="inline-flex items-center gap-1 w-24">
+                        <IssueTypeIcon type="Epic" size={12} />
+                        <JiraLink issueKey={epic.key} jiraBaseUrl={jiraBaseUrl} className="text-xs font-medium text-purple-700" />
+                      </span>
                       <span className="text-xs text-gray-700 flex-1">{epic.summary}</span>
                       {healthBadge(epic.health)}
                       <div className="w-20">{progressBar(epic.progress)}</div>
@@ -325,7 +339,7 @@ export default function EpicIntelligenceTab({ epicData, loading }) {
       </div>
 
       {/* Dependencies */}
-      <DependencyMatrix epics={epics} />
+      <DependencyMatrix epics={epics} jiraBaseUrl={jiraBaseUrl} />
 
       {/* Delivery Throughput */}
       {throughput.length > 0 && (

@@ -1,4 +1,6 @@
-export default function DependencyMatrix({ epics }) {
+import { IssueTypeIcon, JiraLink } from './JiraIcons';
+
+export default function DependencyMatrix({ epics, jiraBaseUrl = '' }) {
   // Filter epics that have dependencies
   const epicsWithDeps = epics.filter(e =>
     e.dependencies.blocks.length > 0 ||
@@ -49,13 +51,12 @@ export default function DependencyMatrix({ epics }) {
           const isDone = (link.status || '').toLowerCase().includes('done') ||
                          (link.status || '').toLowerCase().includes('closed');
           return (
-            <span
+            <JiraLink
               key={idx}
+              issueKey={link.key}
+              jiraBaseUrl={jiraBaseUrl}
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${isDone ? 'bg-gray-100 text-gray-400 line-through' : colorClass}`}
-              title={link.summary || link.type || ''}
-            >
-              {link.key}
-            </span>
+            />
           );
         })}
       </div>
@@ -89,9 +90,10 @@ export default function DependencyMatrix({ epics }) {
             {epicsWithDeps.map(epic => (
               <tr key={epic.key} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2 px-3">
-                  <div>
-                    <span className="font-medium text-purple-700">{epic.key}</span>
-                    <span className="text-gray-500 ml-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <IssueTypeIcon type="Epic" size={14} />
+                    <JiraLink issueKey={epic.key} jiraBaseUrl={jiraBaseUrl} className="font-medium text-purple-700" />
+                    <span className="text-gray-500 text-xs truncate">
                       {epic.summary.length > 40 ? epic.summary.substring(0, 40) + '...' : epic.summary}
                     </span>
                   </div>

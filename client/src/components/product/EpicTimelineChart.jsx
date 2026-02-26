@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
+import { IssueTypeIcon, JiraLink } from './JiraIcons';
 
 const HEALTH_COLORS = {
   'on-track': { bg: '#22c55e', bgLight: '#dcfce7', text: '#15803d' },
@@ -24,7 +25,7 @@ function formatDate(ts) {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
 }
 
-export default function EpicTimelineChart({ epics, initiatives = [] }) {
+export default function EpicTimelineChart({ epics, initiatives = [], jiraBaseUrl = '' }) {
   const [collapsed, setCollapsed] = useState(null); // null = auto (collapse all on large datasets)
   const [hideDone, setHideDone] = useState(false);
   const [hovered, setHovered] = useState(null);
@@ -423,17 +424,25 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
                       )}
                       {isInit && !hasChildren && <span className="w-3 flex-shrink-0" />}
                       {isInit ? (
-                        <span className="text-xs text-gray-700 truncate">
-                          <span className="text-xs text-purple-400 mr-0.5">INI</span>
-                          <span className="text-purple-600 font-medium mr-1">{row.key !== '_unlinked' ? row.key : '—'}</span>
-                          {row.summary}
-                          <span className="ml-1 text-gray-400 font-normal">({row._children?.length || 0})</span>
+                        <span className="text-xs text-gray-700 truncate inline-flex items-center gap-1">
+                          <IssueTypeIcon type="Initiative" size={12} />
+                          {row.key !== '_unlinked' ? (
+                            <JiraLink issueKey={row.key} jiraBaseUrl={jiraBaseUrl} className="text-purple-600 font-medium" />
+                          ) : '—'}
+                          <span className="truncate">{row.summary}</span>
+                          <span className="text-gray-400 font-normal shrink-0">({row._children?.length || 0})</span>
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-600 truncate">
-                          <span className="text-xs text-blue-400 mr-0.5">EP</span>
-                          <span className="text-purple-500 mr-1">{row.key}</span>
-                          {row.summary}
+                        <span className="text-xs text-gray-600 truncate inline-flex items-center gap-1">
+                          <IssueTypeIcon type="Epic" size={12} />
+                          <JiraLink issueKey={row.key} jiraBaseUrl={jiraBaseUrl} className="text-purple-500" />
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            row.health === 'done' ? 'bg-gray-400' :
+                            row.health === 'on-track' ? 'bg-green-500' :
+                            row.health === 'at-risk' ? 'bg-amber-500' :
+                            row.health === 'blocked' ? 'bg-red-500' : 'bg-gray-300'
+                          }`} title={row.health}></span>
+                          <span className="truncate">{row.summary}</span>
                         </span>
                       )}
                     </div>
@@ -477,11 +486,16 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
                             minWidth: 220,
                             maxWidth: 320
                           }}>
-                          <div className="flex items-center gap-1 mb-1">
-                            <span className={`text-[9px] px-1 rounded ${isInit ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
-                              {isInit ? 'Initiative' : 'Epic'}
-                            </span>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <IssueTypeIcon type={isInit ? 'Initiative' : 'Epic'} size={12} />
                             <span className="font-medium text-gray-800">{row.key}</span>
+                            {row.status && (
+                              <span className={`text-[9px] px-1 rounded ${
+                                row.health === 'done' ? 'bg-green-100 text-green-700' :
+                                row.health === 'blocked' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>{row.status}</span>
+                            )}
                           </div>
                           <div className="text-gray-700 mb-1">{row.summary}</div>
                           <div className="text-gray-500">{formatDate(row._start)} → {formatDate(row._end)}</div>
@@ -490,7 +504,7 @@ export default function EpicTimelineChart({ epics, initiatives = [] }) {
                               <span>Progress: {row.progress}%</span>
                               {row.health && (
                                 <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: colors.bgLight, color: colors.text }}>
-                                  {row.health}
+                                  {row.health === 'no-data' ? 'no children' : row.health}
                                 </span>
                               )}
                             </div>

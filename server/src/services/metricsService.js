@@ -599,6 +599,140 @@ class MetricsService {
     };
   }
 
+  // Calculate Flow & Quality metrics from all sprint data
+  calculateFlowQuality(sprintIssuesMap, sprintMetrics, recentSprints) {
+    // 1. Collect all resolved non-subtask issues (deduplicated)
+    const allIssuesMap = new Map();
+    const sprintIssuesBySprintId = new Map();
+
+    for (const sprint of recentSprints) {
+      const issues = sprintIssuesMap.get(sprint.id) || [];
+      const parentIssues = issues.filter(i => !i.fields.issuetype?.subtask);
+      sprintIssuesBySprintId.set(sprint.id, parentIssues);
+      for (const issue of parentIssues) {
+        allIssuesMap.set(issue.key, issue);
+      }
+    }
+
+    // 2. Lead time by work type (average days: created → resolutiondate)
+    const leadTimeByType = {};
+    const leadTimeItems = {};
+
+    for (const issue of allIssuesMap.values()) {
+      const lt = this.calculateLeadTime(issue);
+      if (lt === null) continue;
+      const type = issue.fields.issuetype?.name || 'Other';
+      if (!leadTimeByType[type]) { leadTimeByType[type] = []; leadTimeItems[type] = []; }
+      leadTimeByType[type].push(lt);
+      leadTimeItems[type].push({ key: issue.key, days: lt });
+    }
+
+    // Average per type
+    const leadTimeAvgByType = {};
+    for (const [type, times] of Object.entries(leadTimeByType)) {
+      leadTimeAvgByType[type] = times.length > 0
+        ? Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 10) / 10
+        : 0;
+    }
+
+    // 3. Lead time by sprint by type (trend)
+    const leadTimeByTypeBySprint = recentSprints.map(sprint => {
+      const issues = sprintIssuesBySprintId.get(sprint.id) || [];
+      const byType = {};
+      for (const issue of issues) {
+        const lt = this.calculateLeadTime(issue);
+        if (lt === null) continue;
+        const type = issue.fields.issuetype?.name || 'Other';
+        if (!byType[type]) byType[type] = [];
+        byType[type].push(lt);
+      }
+      const avgs = {};
+      for (const [type, times] of Object.entries(byType)) {
+        avgs[type] = Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 10) / 10;
+      }
+      return { sprint: sprint.name, ...avgs };
+    });
+
+    // 4. WIP aging — issues from last sprint still in progress
+    const lastSprint = recentSprints[recentSprints.length - 1];
+    const lastSprintIssues = lastSprint ? (sprintIssuesBySprintId.get(lastSprint.id) || []) : [];
+    const wipAging = lastSprintIssues
+      .filter(i => i.fields.status?.statusCategory?.key === 'indeterminate')
+      .map(issue => {
+        const created = new Date(issue.fields.created);
+        const daysInProgress = Math.round((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          key: issue.key,
+          summary: issue.fields.summary,
+          type: issue.fields.issuetype?.name || 'Unknown',
+          daysInProgress,
+          assignee: issue.fields.assignee?.displayName || 'Unassigned',
+          status: issue.fields.status?.name || 'Unknown'
+        };
+      })
+      .sort((a, b) => b.daysInProgress - a.daysInProgress);
+
+    // 5. Defect distribution — aggregate + by sprint
+    const totalDefects = { preMerge: 0, inQA: 0, postRelease: 0, total: 0 };
+    const defectsBySprint = sprintMetrics.map(sm => {
+      const d = sm.defectDistribution || { preMerge: 0, inQA: 0, postRelease: 0, total: 0 };
+      totalDefects.preMerge += d.preMerge;
+      totalDefects.inQA += d.inQA;
+      totalDefects.postRelease += d.postRelease;
+      totalDefects.total += d.total;
+      return { sprint: sm.sprintName, ...d };
+    });
+
+    // 6. QA rework — count dev-qa-spill labeled issues across all sprints
+    let totalReworkIssues = 0;
+    let totalIssueCount = 0;
+    for (const issues of sprintIssuesBySprintId.values()) {
+      totalIssueCount += issues.length;
+      totalReworkIssues += issues.filter(i =>
+        (i.fields.labels || []).includes('dev-qa-spill')
+      ).length;
+    }
+
+    // 7. Healthy Signals
+    // a) Stable lead time: compare last 2 sprints' avg lead time
+    let stableLeadTime = true;
+    if (leadTimeByTypeBySprint.length >= 3) {
+      const recent = leadTimeByTypeBySprint.slice(-2);
+      const earlier = leadTimeByTypeBySprint.slice(-4, -2);
+      const avgRecent = this._avgLeadTimeFromSprint(recent);
+      const avgEarlier = this._avgLeadTimeFromSprint(earlier);
+      if (avgEarlier > 0 && avgRecent > avgEarlier * 1.2) stableLeadTime = false;
+    }
+
+    // b) Early defect detection: pre-merge + QA > post-release
+    const earlyDefectDetection = totalDefects.total === 0 ||
+      (totalDefects.preMerge + totalDefects.inQA) >= totalDefects.postRelease;
+
+    // c) Minimal rework: dev-qa-spill < 15% of all issues
+    const reworkRate = totalIssueCount > 0 ? (totalReworkIssues / totalIssueCount) * 100 : 0;
+    const minimalRework = reworkRate < 15;
+
+    return {
+      leadTimeByType: leadTimeAvgByType,
+      leadTimeByTypeBySprint,
+      wipAging,
+      defects: { total: totalDefects, bySprint: defectsBySprint },
+      reworkRate: Math.round(reworkRate * 10) / 10,
+      healthySignals: { stableLeadTime, earlyDefectDetection, minimalRework }
+    };
+  }
+
+  // Helper: average lead time across sprint entries
+  _avgLeadTimeFromSprint(entries) {
+    let sum = 0, count = 0;
+    for (const e of entries) {
+      for (const [key, val] of Object.entries(e)) {
+        if (key !== 'sprint' && typeof val === 'number') { sum += val; count++; }
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  }
+
   // Aggregate metrics for multiple sprints
   aggregateSprintMetrics(sprintMetrics) {
     if (sprintMetrics.length === 0) return null;

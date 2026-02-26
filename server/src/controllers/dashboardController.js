@@ -306,12 +306,18 @@ class DashboardController {
         midSprintAdditions: aggregated.avgMidSprintAdditions || 0
       });
 
+      // Flow & Quality metrics (Pillar 2)
+      const flowQuality = this.metricsService.calculateFlowQuality(
+        sprintIssuesMap, sprintMetrics, recentSprints
+      );
+
       // Prepare response data
       const responseData = {
         sprintMetrics,
         aggregated,
         backlogHealth,
         maturityLevel,
+        flowQuality,
         boardId,
         boardName,
         sprintsAnalyzed: sprintMetrics.length

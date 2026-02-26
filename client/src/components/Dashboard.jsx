@@ -17,7 +17,6 @@ import {
 import api from '../services/api';
 import MaturityBadge from './MaturityBadge';
 import MaturityLevelsReference from './MaturityLevelsReference';
-import TeamSummaryTab from './TeamSummaryTab';
 
 ChartJS.register(
   CategoryScale,
@@ -35,15 +34,11 @@ ChartJS.register(
 
 export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled, onBoardDeleted }) {
   const [metrics, setMetrics] = useState(null);
-  const [flowMetrics, setFlowMetrics] = useState(null);
-  const [capacityData, setCapacityData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
   const [allBoardsData, setAllBoardsData] = useState({});
-  const [allFlowData, setAllFlowData] = useState({});
-  const [allCapacityData, setAllCapacityData] = useState({});
   const [history, setHistory] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
   const [localCredentials, setLocalCredentials] = useState(credentialsProp);
@@ -51,7 +46,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [selectedSprintIds, setSelectedSprintIds] = useState([]);
   const [showSprintSelector, setShowSprintSelector] = useState(false);
   const [loadingSprints, setLoadingSprints] = useState(false);
-  const [activeTab, setActiveTab] = useState('summary');
 
   // Use prop credentials or locally fetched ones
   const credentials = credentialsProp || localCredentials;
@@ -111,20 +105,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     if (newlyAddedBoard) {
       const boardId = typeof newlyAddedBoard === 'object' ? newlyAddedBoard.id : newlyAddedBoard;
       setSelectedBoard(newlyAddedBoard);
-      setActiveTab('metrics');
       onNewBoardHandled?.();
 
       // If board has cached data, use it immediately
       if (allBoardsData[String(boardId)]) {
         setMetrics(allBoardsData[String(boardId)]);
-        setFlowMetrics(allFlowData[String(boardId)] || allBoardsData[String(boardId)]?.flowMetrics || null);
-        setCapacityData(allCapacityData[String(boardId)] || allBoardsData[String(boardId)]?.capacityData || null);
         loadBoardHistory(boardId);
       } else {
         // Clear metrics so the auto-refresh useEffect triggers
         setMetrics(null);
-        setFlowMetrics(null);
-        setCapacityData(null);
         setError('');
       }
     }
@@ -139,22 +128,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       if (result.success && result.boards?.length > 0) {
         // Build lookup: boardId -> metrics_data (use String keys for consistency)
         const dataMap = {};
-        const flowMap = {};
-        const capMap = {};
         const boardsList = [];
         for (const board of result.boards) {
           dataMap[String(board.board_id)] = board.metrics_data;
-          if (board.metrics_data?.flowMetrics) {
-            flowMap[String(board.board_id)] = board.metrics_data.flowMetrics;
-          }
-          if (board.metrics_data?.capacityData) {
-            capMap[String(board.board_id)] = board.metrics_data.capacityData;
-          }
           boardsList.push({ id: board.board_id, name: board.board_name });
         }
         setAllBoardsData(dataMap);
-        setAllFlowData(flowMap);
-        setAllCapacityData(capMap);
         setDbBoards(boardsList);
 
         // Find the first board that has data
@@ -163,17 +142,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
         if (firstData) {
           setMetrics(firstData);
-          setFlowMetrics(flowMap[String(firstBoardId)] || firstData.flowMetrics || null);
-          setCapacityData(capMap[String(firstBoardId)] || firstData.capacityData || null);
           loadBoardHistory(firstBoardId);
           setLoading(false);
         } else {
           // Selected board has no data yet - use first available board with data
           const firstWithData = result.boards[0];
-          const md = firstWithData.metrics_data;
-          setMetrics(md);
-          setFlowMetrics(flowMap[String(firstWithData.board_id)] || md?.flowMetrics || null);
-          setCapacityData(capMap[String(firstWithData.board_id)] || md?.capacityData || null);
+          setMetrics(firstWithData.metrics_data);
           setSelectedBoard({ id: firstWithData.board_id, name: firstWithData.board_name });
           loadBoardHistory(firstWithData.board_id);
           setLoading(false);
@@ -243,17 +217,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     if (boardData) {
       // Board has data - instant switch
       setMetrics(boardData);
-      setFlowMetrics(allFlowData[String(boardId)] || boardData.flowMetrics || null);
-      setCapacityData(allCapacityData[String(boardId)] || boardData.capacityData || null);
       setSelectedHistoryId(null);
       setError('');
       loadBoardHistory(boardId);
     } else {
       // Board has no data - clear metrics so auto-refresh useEffect triggers
       setMetrics(null);
-      setFlowMetrics(null);
-      setCapacityData(null);
-      setReleasesData(null);
       setError('');
     }
   };
@@ -313,35 +282,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      // Step 1: Team metrics FIRST (creates the DB record)
       const teamData = await api.getTeamMetrics(
         credentials.jiraUrl, credentials.email, credentials.apiToken,
         boardId, selectedSprintIds.length, true, selectedSprintIds
       );
 
-      // Step 2: Flow + Capacity in parallel (update the DB record)
-      const [flowData, capData] = await Promise.all([
-        api.getFlowMetrics(
-          credentials.jiraUrl, credentials.email, credentials.apiToken,
-          boardId, selectedSprintIds.length, true, selectedSprintIds
-        ),
-        api.getCapacityMetrics(
-          credentials.jiraUrl, credentials.email, credentials.apiToken,
-          boardId, selectedSprintIds.length, true, selectedSprintIds
-        )
-      ]);
-
       if (teamData.success) {
         setMetrics(teamData.data);
-        setFlowMetrics(flowData.data || null);
-        setCapacityData(capData.data || null);
         setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
-        if (flowData.data) {
-          setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
-        }
-        if (capData.data) {
-          setAllCapacityData(prev => ({ ...prev, [String(boardId)]: capData.data }));
-        }
         setError('');
         await loadBoardHistory(boardId);
       }
@@ -369,16 +317,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         delete next[String(boardId)];
         return next;
       });
-      setAllFlowData(prev => {
-        const next = { ...prev };
-        delete next[String(boardId)];
-        return next;
-      });
-      setAllCapacityData(prev => {
-        const next = { ...prev };
-        delete next[String(boardId)];
-        return next;
-      });
       setDbBoards(prev => prev.filter(b => b.id !== boardId));
 
       // Notify parent to remove from selectedBoards
@@ -397,14 +335,10 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         const nextData = allBoardsData[String(nextId)];
         if (nextData) {
           setMetrics(nextData);
-          setFlowMetrics(allFlowData[String(nextId)] || nextData.flowMetrics || null);
-          setCapacityData(allCapacityData[String(nextId)] || nextData.capacityData || null);
           loadBoardHistory(nextId);
         }
       } else {
         setMetrics(null);
-        setFlowMetrics(null);
-        setCapacityData(null);
         setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
       }
     } catch (err) {
@@ -419,10 +353,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       setSelectedHistoryId(historyId);
       const result = await api.getHistoricalMetrics(historyId);
       if (result.success && result.data) {
-        const md = result.data.metrics_data;
-        setMetrics(md);
-        setFlowMetrics(md?.flowMetrics || null);
-        setCapacityData(md?.capacityData || null);
+        setMetrics(result.data.metrics_data);
       }
     } catch (err) {
       console.error('Failed to load historical metrics:', err);
@@ -441,34 +372,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
       const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
 
-      // Step 1: Team metrics FIRST (creates the DB record)
       const teamData = await api.getTeamMetrics(
         credentials.jiraUrl, credentials.email, credentials.apiToken,
         boardId, 6, true
       );
 
-      // Step 2: Flow + Capacity in parallel (update the DB record)
-      const [flowData, capData] = await Promise.all([
-        api.getFlowMetrics(
-          credentials.jiraUrl, credentials.email, credentials.apiToken,
-          boardId, 6, true
-        ),
-        api.getCapacityMetrics(
-          credentials.jiraUrl, credentials.email, credentials.apiToken,
-          boardId, 6, true
-        )
-      ]);
-
       setMetrics(teamData.data);
-      setFlowMetrics(flowData.data);
-      setCapacityData(capData.data || null);
-
-      // Update cache with new data
       setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
-      setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
-      if (capData.data) {
-        setAllCapacityData(prev => ({ ...prev, [String(boardId)]: capData.data }));
-      }
 
       // Reload history to include the new entry
       await loadBoardHistory(boardId);
@@ -492,26 +402,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       (async () => {
         try {
           setRefreshing(true);
-          // Step 1: Team metrics FIRST (creates the DB record)
           const teamData = await api.getTeamMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true);
-
-          // Step 2: Flow + Capacity in parallel (update the DB record)
-          const [flowData, capData] = await Promise.all([
-            api.getFlowMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true),
-            api.getCapacityMetrics(credentials.jiraUrl, credentials.email, credentials.apiToken, boardId, 6, true)
-          ]);
 
           if (teamData.success) {
             setMetrics(teamData.data);
-            setFlowMetrics(flowData.data || null);
-            setCapacityData(capData.data || null);
             setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
-            if (flowData.data) {
-              setAllFlowData(prev => ({ ...prev, [String(boardId)]: flowData.data }));
-            }
-            if (capData.data) {
-              setAllCapacityData(prev => ({ ...prev, [String(boardId)]: capData.data }));
-            }
             setDbBoards(prev => {
               if (prev.some(b => b.id === boardId)) return prev;
               return [...prev, { id: boardId, name: teamData.data?.boardName || boardName }];
@@ -854,41 +749,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </div>
           )}
 
-          {/* Tab Navigation */}
-          <div className="flex border-b border-gray-200 mt-6">
-            <button
-              onClick={() => setActiveTab('summary')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'summary'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Team Summary
-            </button>
-            <button
-              onClick={() => setActiveTab('metrics')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'metrics'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Scrum Maturity
-            </button>
-          </div>
         </div>
-
-        {/* Team Summary Tab */}
-        {activeTab === 'summary' && metrics && (
-          <TeamSummaryTab metrics={metrics} capacityData={capacityData} flowMetrics={flowMetrics} credentials={credentials} />
-        )}
 
         {/* Inline loading/empty state when no metrics available */}
         {!metrics && renderLoadingOrEmpty()}
 
-        {/* Metrics Tab Content */}
-        {activeTab === 'metrics' && metrics && (
+        {/* Scrum Maturity Content */}
+        {metrics && (
         <>
         {/* Maturity Level Card */}
         <div className="card mb-8">

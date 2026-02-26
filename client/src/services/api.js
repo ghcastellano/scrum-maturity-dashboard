@@ -54,20 +54,6 @@ class ApiService {
     return response.data;
   }
 
-  async getFlowMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false, sprintIds = null) {
-    const body = {
-      jiraUrl,
-      email,
-      apiToken,
-      boardId,
-      sprintCount,
-      forceRefresh
-    };
-    if (sprintIds) body.sprintIds = sprintIds;
-    const response = await this.client.post('/metrics/flow', body);
-    return response.data;
-  }
-
   // Cached boards (fast, no credentials needed)
   async getCachedBoards() {
     const response = await this.client.get('/jira/boards/cached');
@@ -97,14 +83,6 @@ class ApiService {
 
   async deleteBoard(boardId) {
     const response = await this.client.delete(`/history/board/${boardId}`);
-    return response.data;
-  }
-
-  // Capacity metrics
-  async getCapacityMetrics(jiraUrl, email, apiToken, boardId, sprintCount = 6, forceRefresh = false, sprintIds = null) {
-    const body = { jiraUrl, email, apiToken, boardId, sprintCount, forceRefresh };
-    if (sprintIds) body.sprintIds = sprintIds;
-    const response = await this.client.post('/metrics/capacity', body);
     return response.data;
   }
 

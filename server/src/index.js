@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import DashboardController from './controllers/dashboardController.js';
+import EpicMetricsService from './services/epicMetricsService.js';
 import database from './services/database.js';
 
 dotenv.config();
@@ -24,8 +25,9 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(frontendPath));
 }
 
-// Initialize controller
+// Initialize controllers
 const dashboardController = new DashboardController();
+const epicMetricsService = new EpicMetricsService();
 
 // API Routes
 // Get default Jira credentials (for team-wide access)
@@ -144,6 +146,19 @@ app.delete('/api/history/board/:boardId', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// Product Management endpoints (tenant-scoped)
+app.post('/api/product/epics', (req, res) =>
+  epicMetricsService.getEpics(req, res)
+);
+
+app.post('/api/product/dependencies', (req, res) =>
+  epicMetricsService.getDependencies(req, res)
+);
+
+app.post('/api/product/discover-fields', (req, res) =>
+  epicMetricsService.discoverFields(req, res)
+);
 
 // Health check
 app.get('/health', (req, res) => {

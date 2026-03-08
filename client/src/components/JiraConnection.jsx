@@ -5,7 +5,7 @@ const STORAGE_KEY_JIRA_URL = 'scrum-dashboard-jira-url';
 const STORAGE_KEY_EMAIL = 'scrum-dashboard-email';
 const STORAGE_KEY_TOKEN = 'scrum-dashboard-api-token';
 
-export default function JiraConnection({ onConnectionSuccess }) {
+export default function JiraConnection({ onConnectionSuccess, locale = 'en', t }) {
   const [formData, setFormData] = useState({
     jiraUrl: '',
     email: '',
@@ -20,11 +20,10 @@ export default function JiraConnection({ onConnectionSuccess }) {
       const savedUrl = localStorage.getItem(STORAGE_KEY_JIRA_URL);
       const savedEmail = localStorage.getItem(STORAGE_KEY_EMAIL);
       const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
-      const defaultJiraUrl = import.meta.env.VITE_JIRA_URL || 'https://indeed.atlassian.net/';
 
       setFormData(prev => ({
         ...prev,
-        jiraUrl: savedUrl || defaultJiraUrl,
+        jiraUrl: savedUrl || '',
         email: savedEmail || '',
         apiToken: savedToken || ''
       }));
@@ -55,13 +54,12 @@ export default function JiraConnection({ onConnectionSuccess }) {
       );
 
       if (result.success) {
-        // Save URL and email for convenience
         saveCredentials(formData.jiraUrl, formData.email);
-        // Token is saved by App.jsx for auto-login
-        onConnectionSuccess(formData);
+        // Pass tenant and locale from server response
+        onConnectionSuccess(formData, result.tenantId, result.locale);
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to connect to Jira');
+      setError(err.response?.data?.message || (locale === 'pt-BR' ? 'Falha ao conectar ao Jira' : 'Failed to connect to Jira'));
     } finally {
       setLoading(false);
     }
@@ -69,12 +67,12 @@ export default function JiraConnection({ onConnectionSuccess }) {
 
   return (
     <div className="max-w-2xl mx-auto card">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Connect to Jira Cloud</h2>
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('connectToJira')}</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Jira URL
+            {t('jiraUrl')}
           </label>
           <input
             type="url"
@@ -85,13 +83,13 @@ export default function JiraConnection({ onConnectionSuccess }) {
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            Pre-configured for your organization (saved automatically)
+            {t('preConfigured')}
           </p>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Email
+            {t('email')}
           </label>
           <input
             type="email"
@@ -102,18 +100,18 @@ export default function JiraConnection({ onConnectionSuccess }) {
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            Saved automatically for convenience
+            {t('savedAutomatically')}
           </p>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            API Token
+            {t('apiToken')}
           </label>
           <input
             type="password"
             className="input-field"
-            placeholder="Your Jira API token"
+            placeholder={locale === 'pt-BR' ? 'Seu token de API do Jira' : 'Your Jira API token'}
             value={formData.apiToken}
             onChange={(e) => setFormData({ ...formData, apiToken: e.target.value })}
             required
@@ -125,10 +123,10 @@ export default function JiraConnection({ onConnectionSuccess }) {
               rel="noopener noreferrer"
               className="text-primary-600 hover:underline"
             >
-              Create an API token here
+              {t('createTokenHere')}
             </a>
             {' • '}
-            <span className="text-orange-600">Saved locally for auto-login</span>
+            <span className="text-orange-600">{t('savedForAutoLogin')}</span>
           </p>
         </div>
 
@@ -143,27 +141,25 @@ export default function JiraConnection({ onConnectionSuccess }) {
           disabled={loading}
           className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Connecting...' : 'Connect to Jira'}
+          {loading ? t('connecting') : t('connectButton')}
         </button>
       </form>
 
       <div className="mt-6 space-y-4">
         <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-          <h3 className="font-semibold text-sm text-orange-900 mb-2">🔐 Security Notice</h3>
+          <h3 className="font-semibold text-sm text-orange-900 mb-2">{t('securityNotice')}</h3>
           <p className="text-sm text-orange-800">
-            Your credentials (including API token) will be saved in your browser's local storage
-            for automatic login. This data stays only on your device and is never sent to any server
-            except Jira. Use the "Disconnect" button to clear all saved data.
+            {t('securityText')}
           </p>
         </div>
 
         <div className="p-4 bg-blue-50 rounded-lg">
-          <h3 className="font-semibold text-sm text-blue-900 mb-2">How to get your API token:</h3>
+          <h3 className="font-semibold text-sm text-blue-900 mb-2">{t('howToGetToken')}</h3>
           <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-            <li>Go to Atlassian account settings</li>
-            <li>Click "Security" → "Create and manage API tokens"</li>
-            <li>Click "Create API token"</li>
-            <li>Copy the token and paste it above</li>
+            <li>{t('tokenStep1')}</li>
+            <li>{t('tokenStep2')}</li>
+            <li>{t('tokenStep3')}</li>
+            <li>{t('tokenStep4')}</li>
           </ol>
         </div>
       </div>

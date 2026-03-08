@@ -1,12 +1,25 @@
 import { differenceInDays, differenceInHours, parseISO } from 'date-fns';
 
 class MetricsService {
-  
+
+  constructor() {
+    // Default story points field (Indeed Jira). Can be overridden per-tenant via setStoryPointsField()
+    this.storyPointsField = 'customfield_10061';
+  }
+
+  // Set the story points custom field ID for the current tenant
+  setStoryPointsField(fieldId) {
+    if (fieldId) {
+      this.storyPointsField = fieldId;
+      console.log(`✓ Story points field set to: ${fieldId}`);
+    }
+  }
+
   // Calculate Sprint Goal Attainment
   // Only counts issues as "completed" if resolved before/on sprint close date.
   // Uses completeDate (when Scrum Master clicked "Complete Sprint") to match Jira Sprint Report.
   calculateSprintGoalAttainment(sprint, issues) {
-    const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
+    const storyPointsField = this.storyPointsField;
     const sprintEnd = new Date(sprint.completeDate || sprint.endDate);
     const statusCategoryMap = MetricsService.buildStatusCategoryMap(issues);
 
@@ -265,22 +278,19 @@ class MetricsService {
       this._loggedStatuses = true;
     }
 
-    // Find when issue moved to "IN PROGRESS" (Indeed Jira workflow)
+    // Find when issue moved to an in-progress status, then to a done status
+    // Supports multiple Jira workflow naming conventions
+    const inProgressNames = ['in progress', 'em progresso', 'em andamento', 'development', 'desenvolvimento', 'doing'];
+    const doneNames = ['closed', 'done', 'resolved', 'concluido', 'concluído', 'finalizado', 'complete', 'completed'];
+
     for (const change of changelog) {
       for (const item of change.items) {
         if (item.field === 'status') {
-          // Check for work-in-progress status (Indeed Jira uses "IN PROGRESS")
-          if (!startTime && (
-            item.toString === 'IN PROGRESS' ||
-            item.toString === 'In Progress'
-          )) {
+          const statusLower = (item.toString || '').toLowerCase();
+          if (!startTime && inProgressNames.some(s => statusLower.includes(s))) {
             startTime = parseISO(change.created);
           }
-          // Check for closed status (Indeed Jira uses "CLOSED")
-          if (startTime && (
-            item.toString === 'CLOSED' ||
-            item.toString === 'Closed'
-          )) {
+          if (startTime && doneNames.some(s => statusLower.includes(s))) {
             endTime = parseISO(change.created);
             break;
           }
@@ -314,7 +324,7 @@ class MetricsService {
     let withAcceptanceCriteria = 0;
     let withEstimates = 0;
     let linkedToGoals = 0;
-    const storyPointsField = 'customfield_10061'; // Indeed Jira Story Points field
+    const storyPointsField = this.storyPointsField;
 
     const missingAC = [];
     const missingEstimates = [];

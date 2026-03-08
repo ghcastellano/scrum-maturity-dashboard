@@ -2,12 +2,19 @@ import axios from 'axios';
 
 class JiraService {
   constructor(baseUrl, email, apiToken) {
-    this.baseUrl = baseUrl;
+    // Normalize the base URL: extract just the origin (protocol + host)
+    // Handles cases like "https://company.atlassian.net/jira/" → "https://company.atlassian.net"
+    try {
+      const parsed = new URL(baseUrl.endsWith('/') ? baseUrl : baseUrl + '/');
+      this.baseUrl = parsed.origin;
+    } catch {
+      this.baseUrl = baseUrl.replace(/\/+$/, '');
+    }
     this.auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
 
     // Agile API for boards and sprints
     this.agileApi = axios.create({
-      baseURL: `${baseUrl}/rest/agile/1.0`,
+      baseURL: `${this.baseUrl}/rest/agile/1.0`,
       headers: {
         'Authorization': `Basic ${this.auth}`,
         'Accept': 'application/json',
@@ -17,7 +24,7 @@ class JiraService {
 
     // Standard API for issues and fields
     this.api = axios.create({
-      baseURL: `${baseUrl}/rest/api/3`,
+      baseURL: `${this.baseUrl}/rest/api/3`,
       headers: {
         'Authorization': `Basic ${this.auth}`,
         'Accept': 'application/json',
@@ -41,37 +48,44 @@ class JiraService {
   }
 
   // Get all boards (paginated to fetch all)
+  // Fetch boards from Jira. By default fetches scrum boards, but also
+  // tries other types if no scrum boards are found.
   async getBoards() {
     try {
-      let allBoards = [];
-      let startAt = 0;
-      const maxResults = 50; // Jira API standard limit per page
-      let totalBoards = 0;
-      let fetchedThisRound = 0;
+      const fetchBoardsByType = async (type) => {
+        let boards = [];
+        let startAt = 0;
+        const maxResults = 50;
+        let totalBoards = 0;
+        let fetchedThisRound = 0;
 
-      // Fetch all boards with pagination
-      do {
-        const response = await this.agileApi.get('/board', {
-          params: {
-            type: 'scrum',
-            startAt,
-            maxResults
+        do {
+          const params = { startAt, maxResults };
+          if (type) params.type = type;
+
+          const response = await this.agileApi.get('/board', { params });
+
+          fetchedThisRound = response.data.values ? response.data.values.length : 0;
+          if (fetchedThisRound > 0) {
+            boards = boards.concat(response.data.values);
           }
-        });
+          totalBoards = response.data.total || 0;
+          startAt += fetchedThisRound;
 
-        fetchedThisRound = response.data.values ? response.data.values.length : 0;
+          console.log(`Fetched ${boards.length} of ${totalBoards} ${type || 'all'} boards...`);
+        } while (fetchedThisRound > 0 && boards.length < totalBoards && boards.length < 3000);
 
-        if (fetchedThisRound > 0) {
-          allBoards = allBoards.concat(response.data.values);
-        }
+        return boards;
+      };
 
-        totalBoards = response.data.total || 0;
-        startAt += fetchedThisRound;
+      // Try scrum first
+      let allBoards = await fetchBoardsByType('scrum');
 
-        console.log(`Fetched ${allBoards.length} of ${totalBoards} boards...`);
-
-        // Continue while we have more boards to fetch
-      } while (fetchedThisRound > 0 && allBoards.length < totalBoards && allBoards.length < 3000);
+      // If no scrum boards found, fetch all board types
+      if (allBoards.length === 0) {
+        console.log('No scrum boards found, fetching all board types...');
+        allBoards = await fetchBoardsByType(null);
+      }
 
       console.log(`✓ Fetched ${allBoards.length} boards total`);
 
@@ -81,6 +95,47 @@ class JiraService {
       return allBoards;
     } catch (error) {
       throw new Error(`Failed to fetch boards: ${error.message}`);
+    }
+  }
+
+  // Auto-detect the story points custom field by examining Jira fields metadata
+  async detectStoryPointsField() {
+    try {
+      const fields = await this.getFields();
+
+      // Common story points field names across different Jira instances
+      const storyPointsPatterns = [
+        /^story\s*points?$/i,
+        /^pontos?\s*de\s*hist[oó]ria$/i,  // Portuguese
+        /^story\s*point\s*estimate$/i,
+        /^sp$/i,
+        /^estimation$/i,
+        /^estimativa$/i  // Portuguese
+      ];
+
+      for (const field of fields) {
+        if (!field.id.startsWith('customfield_')) continue;
+        const name = (field.name || '').trim();
+        if (storyPointsPatterns.some(p => p.test(name))) {
+          console.log(`✓ Auto-detected story points field: ${field.id} (${field.name})`);
+          return field.id;
+        }
+      }
+
+      // Fallback: look for numeric custom fields commonly used for SP
+      for (const field of fields) {
+        if (!field.id.startsWith('customfield_')) continue;
+        if (field.schema?.type === 'number' && /point|story|estim/i.test(field.name || '')) {
+          console.log(`✓ Auto-detected story points field (fallback): ${field.id} (${field.name})`);
+          return field.id;
+        }
+      }
+
+      console.warn('⚠ Could not auto-detect story points field, using default customfield_10061');
+      return 'customfield_10061';
+    } catch (err) {
+      console.warn('⚠ Failed to auto-detect story points field:', err.message);
+      return 'customfield_10061';
     }
   }
 

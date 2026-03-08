@@ -4,10 +4,10 @@ class CacheService {
     this.defaultTTL = 30 * 60 * 1000; // 30 minutes in milliseconds
   }
 
-  // Generate cache key
-  generateKey(boardId, type = 'metrics') {
-    // Don't include date in key - let TTL handle expiration
-    return `${type}:${boardId}`;
+  // Generate cache key (tenant-scoped)
+  generateKey(boardId, type = 'metrics', tenantId = null) {
+    const prefix = tenantId ? `${tenantId}:` : '';
+    return `${prefix}${type}:${boardId}`;
   }
 
   // Set cache with TTL
@@ -47,6 +47,22 @@ class CacheService {
       console.log(`✓ Cache cleared: ${key}`);
     }
     return deleted;
+  }
+
+  // Clear all cache for a specific tenant
+  clearTenant(tenantId) {
+    if (!tenantId) return 0;
+    let cleared = 0;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${tenantId}:`)) {
+        this.cache.delete(key);
+        cleared++;
+      }
+    }
+    if (cleared > 0) {
+      console.log(`✓ Cleared ${cleared} cache entries for tenant ${tenantId}`);
+    }
+    return cleared;
   }
 
   // Clear all cache

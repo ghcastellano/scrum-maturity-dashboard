@@ -1,0 +1,400 @@
+// Internationalization service for report labels
+// Supports 'en' (English) and 'pt-BR' (Brazilian Portuguese)
+
+const translations = {
+  en: {
+    // Header
+    appTitle: 'Scrum Maturity Dashboard',
+    appSubtitle: 'Analyze team health and maturity',
+    addNewBoard: 'Add New Board',
+    logout: 'Logout',
+    loading: 'Loading...',
+
+    // Connection
+    connectToJira: 'Connect to Jira Cloud',
+    jiraUrl: 'Jira URL',
+    email: 'Email',
+    apiToken: 'API Token',
+    connecting: 'Connecting...',
+    connectButton: 'Connect to Jira',
+    securityNotice: 'Security Notice',
+    securityText: 'Your credentials (including API token) will be saved in your browser\'s local storage for automatic login. This data stays only on your device and is never sent to any server except Jira. Use the "Logout" button to clear all saved data.',
+    howToGetToken: 'How to get your API token:',
+    tokenStep1: 'Go to Atlassian account settings',
+    tokenStep2: 'Click "Security" → "Create and manage API tokens"',
+    tokenStep3: 'Click "Create API token"',
+    tokenStep4: 'Copy the token and paste it above',
+    createTokenHere: 'Create an API token here',
+    savedForAutoLogin: 'Saved locally for auto-login',
+    preConfigured: 'Pre-configured for your organization (saved automatically)',
+    savedAutomatically: 'Saved automatically for convenience',
+
+    // Team Selector
+    selectBoards: 'Select Boards to Analyze',
+    refreshFromJira: 'Refresh from Jira',
+    searchPlaceholder: 'Search by board name, project key, or ID...',
+    clearSelection: 'Clear Selection',
+    showing: 'Showing',
+    of: 'of',
+    boards: 'boards',
+    boardsSaved: 'board(s) saved',
+    noCachedBoards: 'No cached boards available.',
+    noMatchingBoards: 'No boards found matching',
+    analyzeSelected: 'Analyze Selected Teams',
+    teamsSelected: 'team(s) selected',
+    selectAtLeastOne: 'Please select at least one team',
+    boardSearchHint: 'Search by the board name in Jira (e.g. "GTMDOP Scrum Board"), not the team name. You can find your board name in Jira under Boards > View all boards.',
+    loadingTeams: 'Loading teams... This may take a minute for large instances.',
+
+    // Dashboard - Sections
+    scrumMaturity: 'Scrum Maturity',
+    productManagement: 'Product Management',
+    delivery: 'Delivery',
+    flowQuality: 'Flow & Quality',
+    ownership: 'Ownership',
+
+    // Dashboard - Metrics
+    sprintGoalAttainment: 'Sprint Goal Attainment',
+    rolloverRate: 'Rollover Rate',
+    sprintHitRate: 'Sprint Hit Rate',
+    midSprintAdditions: 'Mid-Sprint Additions',
+    backlogHealth: 'Backlog Health',
+    maturityLevel: 'Maturity Level',
+    overallScore: 'Overall Score',
+    withAcceptanceCriteria: 'With Acceptance Criteria',
+    withEstimates: 'With Estimates',
+    linkedToGoals: 'Linked to Goals',
+
+    // Dashboard - Actions
+    refresh: 'Refresh',
+    refreshing: 'Refreshing...',
+    delete: 'Delete',
+    selectSprints: 'Select Sprints',
+    history: 'History',
+    current: 'Current',
+
+    // Maturity Levels
+    level1Name: 'Assisted Scrum',
+    level1Desc: 'Scrum Manager Required',
+    level2Name: 'Supported Scrum',
+    level2Desc: 'Conditional Support',
+    level3Name: 'Self-Managed Scrum',
+    level3Desc: 'Scrum Manager Optional',
+
+    // Flow & Quality
+    leadTime: 'Lead Time',
+    wipAging: 'WIP Aging',
+    defectDistribution: 'Defect Distribution',
+    reworkRate: 'Rework Rate',
+    daysInProgress: 'days in progress',
+    preMerge: 'Pre-Merge',
+    inQA: 'In QA',
+    postRelease: 'Post-Release',
+
+    // Recommendations
+    recommendations: 'Recommendations',
+
+    // Rollover labels
+    'external-blockers': 'External Blockers',
+    'late-discovery': 'Late Discovery',
+    'resource-constraints': 'Resource Constraints',
+    'internal-blockers': 'Internal Blockers',
+    'req-gap': 'Requirement Gap',
+    'dev-qa-spill': 'Dev/QA Spill',
+
+    // Dashboard Detail Labels
+    teamMaturityLevel: 'Team Maturity Level',
+    basedOn: 'Based on',
+    supportModel: 'Support Model',
+    sprintCommitmentCompletion: 'Sprint Commitment Completion',
+    commitmentCompletionDesc: '% of all sprint items completed (includes mid-sprint additions and rollovers)',
+    rolledOver: 'rolled over',
+    hideSprints: 'Hide Sprints',
+    selectSprintsToAnalyze: 'Select Sprints to Analyze',
+    lastN: 'Last {n}',
+    selectAll: 'Select All',
+    clear: 'Clear',
+    loadingSprints: 'Loading sprints...',
+    sprintsSelected: 'sprint(s) selected',
+    analyzing: 'Analyzing...',
+    analyzeSelectedSprints: 'Analyze Selected Sprints',
+    noSavedMetrics: 'No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.',
+    loadingFromJira: 'Loading {name} from Jira...',
+    loadingMetrics: 'Loading metrics...',
+    mayTakeMinute: 'This may take a minute...',
+    pillar1: 'Pillar 1: Delivery Predictability',
+    pillar2: 'Pillar 2: Flow & Quality',
+    pillar2Subtitle: 'Is work flowing smoothly and producing quality outcomes?',
+    pillar3: 'Pillar 3: Team Ownership & Execution',
+    avgRolloverRate: 'Avg Rollover Rate',
+    avgCommitmentCompletion: 'Avg Commitment Completion',
+    backlogHealthScore: 'Backlog Health Score',
+    avgMidSprintInjection: 'Avg Mid-Sprint Injection',
+    targetLevel3: 'Target Level 3',
+    overallBacklogHealth: 'Overall Backlog Health',
+    avgAcrossMetrics: 'Average across all backlog quality metrics',
+    acceptanceCriteria: 'Acceptance Criteria',
+    acceptanceCriteriaDesc: 'Items with clearly defined acceptance criteria',
+    storyPointsEstimates: 'Story Points / Estimates',
+    storyPointsEstimatesDesc: 'Items with effort estimates assigned',
+    fixVersionsGoals: 'Fix Versions / Goals',
+    fixVersionsGoalsDesc: 'Items linked to a release or fix version',
+    missingAC: 'Missing AC',
+    missingEstimates: 'Missing Estimates',
+    missingFixVersions: 'Missing Fix Versions',
+    allItemsMeetCriteria: 'All items meet this criteria',
+    clickRefreshToLoad: 'Click "Refresh from Jira" to load item details',
+    ofItems: 'of {total} items',
+    ofMissing: '{count} of {total} missing',
+    leadTimeByType: 'Lead Time by Work Type',
+    leadTimeDesc: 'Average days from creation to resolution',
+    avgLeadTimeDays: 'Avg Lead Time (days)',
+    trendBySprint: 'Trend by Sprint',
+    noResolvedIssues: 'No resolved issues with lead time data',
+    wipAgingDesc: 'Work sitting idle — longest in-progress items',
+    noItemsInProgress: 'No items currently in progress',
+    defectsFound: 'Defects Found',
+    defectsFoundDesc: 'Where defects are caught in the lifecycle',
+    noBugIssues: 'No bug-type issues found in analyzed sprints',
+    healthySignals: 'Healthy Signals',
+    stableLeadTime: 'Stable Lead Time',
+    stableLeadTimeDesc: 'Lead time not increasing significantly',
+    earlyDefectDetection: 'Early Defect Detection',
+    earlyDefectDetectionDesc: 'Defects caught before release',
+    minimalRework: 'Minimal Rework',
+    qaReworkRate: 'QA rework rate',
+    needsForLevel: 'Needs {target} for Level {level}',
+    passing: 'Passing (target: {target})',
+    metricsBlocking: '{count} metric(s) blocking Level {level}',
+    allMetricsHighest: 'All metrics at highest level',
+
+    // General
+    noData: 'No data available',
+    error: 'Error',
+    board: 'Board',
+    sprint: 'Sprint',
+    sprints: 'sprints',
+    average: 'Average',
+    total: 'Total',
+    issues: 'issues',
+    points: 'points',
+    days: 'days',
+    remove: 'Remove',
+    confirmDelete: 'Remove "{name}" and all its saved metrics?',
+    sprintsAnalyzed: 'sprints analyzed',
+    failedToRefresh: 'Failed to refresh from Jira',
+    showingCachedBoards: 'Showing cached boards.',
+    failedToLoadBoards: 'Failed to load boards from Jira',
+    noSprintData: 'No valid sprint data available for analysis. Please ensure the board has closed sprints with issues.',
+  },
+  'pt-BR': {
+    // Header
+    appTitle: 'Dashboard de Maturidade Scrum',
+    appSubtitle: 'Analise a saude e maturidade do time',
+    addNewBoard: 'Adicionar Board',
+    logout: 'Sair',
+    loading: 'Carregando...',
+
+    // Connection
+    connectToJira: 'Conectar ao Jira Cloud',
+    jiraUrl: 'URL do Jira',
+    email: 'Email',
+    apiToken: 'Token de API',
+    connecting: 'Conectando...',
+    connectButton: 'Conectar ao Jira',
+    securityNotice: 'Aviso de Seguranca',
+    securityText: 'Suas credenciais (incluindo o token de API) serao salvas no armazenamento local do seu navegador para login automatico. Esses dados ficam apenas no seu dispositivo e nunca sao enviados a nenhum servidor exceto o Jira. Use o botao "Sair" para limpar todos os dados salvos.',
+    howToGetToken: 'Como obter seu token de API:',
+    tokenStep1: 'Acesse as configuracoes da conta Atlassian',
+    tokenStep2: 'Clique em "Seguranca" → "Criar e gerenciar tokens de API"',
+    tokenStep3: 'Clique em "Criar token de API"',
+    tokenStep4: 'Copie o token e cole acima',
+    createTokenHere: 'Crie um token de API aqui',
+    savedForAutoLogin: 'Salvo localmente para login automatico',
+    preConfigured: 'Pre-configurado para sua organizacao (salvo automaticamente)',
+    savedAutomatically: 'Salvo automaticamente por conveniencia',
+
+    // Team Selector
+    selectBoards: 'Selecione Boards para Analisar',
+    refreshFromJira: 'Atualizar do Jira',
+    searchPlaceholder: 'Buscar por nome do board, chave do projeto ou ID...',
+    clearSelection: 'Limpar Selecao',
+    showing: 'Mostrando',
+    of: 'de',
+    boards: 'boards',
+    boardsSaved: 'board(s) salvos',
+    noCachedBoards: 'Nenhum board em cache disponivel.',
+    noMatchingBoards: 'Nenhum board encontrado para',
+    analyzeSelected: 'Analisar Times Selecionados',
+    teamsSelected: 'time(s) selecionado(s)',
+    selectAtLeastOne: 'Selecione pelo menos um time',
+    boardSearchHint: 'Busque pelo nome do board no Jira (ex: "GTMDOP Scrum Board"), nao pelo nome do time. Voce pode encontrar o nome do board no Jira em Boards > Ver todos os boards.',
+    loadingTeams: 'Carregando times... Isso pode levar um minuto para instancias grandes.',
+
+    // Dashboard - Sections
+    scrumMaturity: 'Maturidade Scrum',
+    productManagement: 'Gestao de Produto',
+    delivery: 'Entrega',
+    flowQuality: 'Fluxo & Qualidade',
+    ownership: 'Autonomia',
+
+    // Dashboard - Metrics
+    sprintGoalAttainment: 'Atingimento de Meta da Sprint',
+    rolloverRate: 'Taxa de Rollover',
+    sprintHitRate: 'Taxa de Conclusao da Sprint',
+    midSprintAdditions: 'Adicoes Mid-Sprint',
+    backlogHealth: 'Saude do Backlog',
+    maturityLevel: 'Nivel de Maturidade',
+    overallScore: 'Pontuacao Geral',
+    withAcceptanceCriteria: 'Com Criterios de Aceite',
+    withEstimates: 'Com Estimativas',
+    linkedToGoals: 'Vinculado a Metas',
+
+    // Dashboard - Actions
+    refresh: 'Atualizar',
+    refreshing: 'Atualizando...',
+    delete: 'Excluir',
+    selectSprints: 'Selecionar Sprints',
+    history: 'Historico',
+    current: 'Atual',
+
+    // Maturity Levels
+    level1Name: 'Scrum Assistido',
+    level1Desc: 'Scrum Manager Necessario',
+    level2Name: 'Scrum Suportado',
+    level2Desc: 'Suporte Condicional',
+    level3Name: 'Scrum Autogerido',
+    level3Desc: 'Scrum Manager Opcional',
+
+    // Flow & Quality
+    leadTime: 'Lead Time',
+    wipAging: 'Envelhecimento WIP',
+    defectDistribution: 'Distribuicao de Defeitos',
+    reworkRate: 'Taxa de Retrabalho',
+    daysInProgress: 'dias em progresso',
+    preMerge: 'Pre-Merge',
+    inQA: 'Em QA',
+    postRelease: 'Pos-Release',
+
+    // Recommendations
+    recommendations: 'Recomendacoes',
+
+    // Rollover labels
+    'external-blockers': 'Bloqueios Externos',
+    'late-discovery': 'Descoberta Tardia',
+    'resource-constraints': 'Restricoes de Recurso',
+    'internal-blockers': 'Bloqueios Internos',
+    'req-gap': 'Lacuna de Requisito',
+    'dev-qa-spill': 'Excedente Dev/QA',
+
+    // Dashboard Detail Labels
+    teamMaturityLevel: 'Nivel de Maturidade do Time',
+    basedOn: 'Baseado em',
+    supportModel: 'Modelo de Suporte',
+    sprintCommitmentCompletion: 'Conclusao do Compromisso da Sprint',
+    commitmentCompletionDesc: '% de todos os itens da sprint concluidos (inclui adicoes mid-sprint e rollovers)',
+    rolledOver: 'nao concluidos',
+    hideSprints: 'Ocultar Sprints',
+    selectSprintsToAnalyze: 'Selecionar Sprints para Analisar',
+    lastN: 'Ultimas {n}',
+    selectAll: 'Selecionar Tudo',
+    clear: 'Limpar',
+    loadingSprints: 'Carregando sprints...',
+    sprintsSelected: 'sprint(s) selecionada(s)',
+    analyzing: 'Analisando...',
+    analyzeSelectedSprints: 'Analisar Sprints Selecionadas',
+    noSavedMetrics: 'Nenhuma metrica salva encontrada. Use "Atualizar do Jira" para calcular metricas pela primeira vez.',
+    loadingFromJira: 'Carregando {name} do Jira...',
+    loadingMetrics: 'Carregando metricas...',
+    mayTakeMinute: 'Isso pode levar um minuto...',
+    pillar1: 'Pilar 1: Previsibilidade de Entrega',
+    pillar2: 'Pilar 2: Fluxo & Qualidade',
+    pillar2Subtitle: 'O trabalho esta fluindo bem e produzindo resultados de qualidade?',
+    pillar3: 'Pilar 3: Autonomia & Execucao do Time',
+    avgRolloverRate: 'Taxa de Rollover Media',
+    avgCommitmentCompletion: 'Conclusao Media do Compromisso',
+    backlogHealthScore: 'Saude do Backlog',
+    avgMidSprintInjection: 'Injecao Mid-Sprint Media',
+    targetLevel3: 'Meta Nivel 3',
+    overallBacklogHealth: 'Saude Geral do Backlog',
+    avgAcrossMetrics: 'Media de todas as metricas de qualidade do backlog',
+    acceptanceCriteria: 'Criterios de Aceite',
+    acceptanceCriteriaDesc: 'Itens com criterios de aceite claramente definidos',
+    storyPointsEstimates: 'Story Points / Estimativas',
+    storyPointsEstimatesDesc: 'Itens com estimativas de esforco atribuidas',
+    fixVersionsGoals: 'Fix Versions / Metas',
+    fixVersionsGoalsDesc: 'Itens vinculados a uma release ou fix version',
+    missingAC: 'Sem Criterios de Aceite',
+    missingEstimates: 'Sem Estimativas',
+    missingFixVersions: 'Sem Fix Versions',
+    allItemsMeetCriteria: 'Todos os itens atendem este criterio',
+    clickRefreshToLoad: 'Clique em "Atualizar do Jira" para carregar detalhes dos itens',
+    ofItems: 'de {total} itens',
+    ofMissing: '{count} de {total} faltando',
+    leadTimeByType: 'Lead Time por Tipo de Trabalho',
+    leadTimeDesc: 'Media de dias da criacao ate a resolucao',
+    avgLeadTimeDays: 'Lead Time Medio (dias)',
+    trendBySprint: 'Tendencia por Sprint',
+    noResolvedIssues: 'Nenhum item resolvido com dados de lead time',
+    wipAgingDesc: 'Trabalho parado — itens mais antigos em progresso',
+    noItemsInProgress: 'Nenhum item em progresso atualmente',
+    defectsFound: 'Defeitos Encontrados',
+    defectsFoundDesc: 'Onde os defeitos sao encontrados no ciclo de vida',
+    noBugIssues: 'Nenhum item do tipo bug encontrado nas sprints analisadas',
+    healthySignals: 'Sinais Saudaveis',
+    stableLeadTime: 'Lead Time Estavel',
+    stableLeadTimeDesc: 'Lead time nao aumentando significativamente',
+    earlyDefectDetection: 'Deteccao Precoce de Defeitos',
+    earlyDefectDetectionDesc: 'Defeitos encontrados antes do release',
+    minimalRework: 'Retrabalho Minimo',
+    qaReworkRate: 'Taxa de retrabalho QA',
+    needsForLevel: 'Precisa {target} para Nivel {level}',
+    passing: 'Aprovado (meta: {target})',
+    metricsBlocking: '{count} metrica(s) bloqueando Nivel {level}',
+    allMetricsHighest: 'Todas as metricas no nivel mais alto',
+
+    // General
+    noData: 'Sem dados disponiveis',
+    error: 'Erro',
+    board: 'Board',
+    sprint: 'Sprint',
+    sprints: 'sprints',
+    average: 'Media',
+    total: 'Total',
+    issues: 'itens',
+    points: 'pontos',
+    days: 'dias',
+    remove: 'Remover',
+    confirmDelete: 'Remover "{name}" e todas as metricas salvas?',
+    sprintsAnalyzed: 'sprints analisadas',
+    failedToRefresh: 'Falha ao atualizar do Jira',
+    showingCachedBoards: 'Mostrando boards em cache.',
+    failedToLoadBoards: 'Falha ao carregar boards do Jira',
+    noSprintData: 'Nenhum dado de sprint valido disponivel para analise. Verifique se o board tem sprints fechadas com itens.',
+  }
+};
+
+// Get translation function for a given locale
+export function getTranslations(locale = 'en') {
+  const lang = translations[locale] || translations['en'];
+  return (key, replacements = {}) => {
+    let text = lang[key] || translations['en'][key] || key;
+    // Simple replacement: {name} → value
+    for (const [k, v] of Object.entries(replacements)) {
+      text = text.replace(`{${k}}`, v);
+    }
+    return text;
+  };
+}
+
+// Detect locale from tenant ID (matches server-side logic)
+export function detectLocale(tenantId) {
+  if (!tenantId) return 'en';
+  const brTenants = ['uolinc.atlassian.net'];
+  if (brTenants.includes(tenantId) || tenantId.includes('.com.br')) {
+    return 'pt-BR';
+  }
+  return 'en';
+}
+
+export default translations;

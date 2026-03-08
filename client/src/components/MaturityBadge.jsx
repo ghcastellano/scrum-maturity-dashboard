@@ -1,4 +1,4 @@
-export default function MaturityBadge({ level, name, description, size = 'default' }) {
+export default function MaturityBadge({ level, name, description, size = 'default', locale = 'en' }) {
   const config = {
     1: {
       bg: 'bg-red-600',
@@ -21,6 +21,7 @@ export default function MaturityBadge({ level, name, description, size = 'defaul
   };
 
   const c = config[level] || config[1];
+  const levelLabel = locale === 'pt-BR' ? 'Nivel' : 'Level';
 
   if (size === 'small') {
     const smallColors = {
@@ -30,7 +31,7 @@ export default function MaturityBadge({ level, name, description, size = 'defaul
     };
     return (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold border ${smallColors[level]}`}>
-        Level {level}
+        {levelLabel} {level}
       </span>
     );
   }

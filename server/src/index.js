@@ -72,10 +72,11 @@ app.post('/api/diagnostics', (req, res) =>
   dashboardController.diagnostics(req, res)
 );
 
-// Cached boards endpoint (fast, no credentials needed)
+// Cached boards endpoint (tenant-scoped via query param)
 app.get('/api/jira/boards/cached', async (req, res) => {
   try {
-    const cachedBoards = await database.getCachedBoards(24 * 3600 * 1000); // 24h TTL
+    const tenantId = req.query.tenant || null;
+    const cachedBoards = await database.getCachedBoards(24 * 3600 * 1000, tenantId);
     if (cachedBoards && cachedBoards.length > 0) {
       res.json({ success: true, boards: cachedBoards, source: 'cache' });
     } else {
@@ -86,10 +87,11 @@ app.get('/api/jira/boards/cached', async (req, res) => {
   }
 });
 
-// Metrics History endpoints
+// Metrics History endpoints (all tenant-scoped via query param)
 app.get('/api/history/boards', async (req, res) => {
   try {
-    const boards = await database.getAllBoardsWithMetrics();
+    const tenantId = req.query.tenant || null;
+    const boards = await database.getAllBoardsWithMetrics(tenantId);
     res.json({ success: true, boards });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -98,7 +100,8 @@ app.get('/api/history/boards', async (req, res) => {
 
 app.get('/api/history/all-latest', async (req, res) => {
   try {
-    const allMetrics = await database.getAllBoardsWithLatestMetrics();
+    const tenantId = req.query.tenant || null;
+    const allMetrics = await database.getAllBoardsWithLatestMetrics(tenantId);
     res.json({ success: true, boards: allMetrics });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -108,7 +111,8 @@ app.get('/api/history/all-latest', async (req, res) => {
 app.get('/api/history/board/:boardId', async (req, res) => {
   try {
     const { boardId } = req.params;
-    const history = await database.getMetricsHistory(parseInt(boardId), 30);
+    const tenantId = req.query.tenant || null;
+    const history = await database.getMetricsHistory(parseInt(boardId), 30, tenantId);
     res.json({ success: true, history });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -118,7 +122,8 @@ app.get('/api/history/board/:boardId', async (req, res) => {
 app.get('/api/history/metrics/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const metrics = await database.getMetricsById(parseInt(id));
+    const tenantId = req.query.tenant || null;
+    const metrics = await database.getMetricsById(parseInt(id), tenantId);
     if (metrics) {
       res.json({ success: true, data: metrics });
     } else {
@@ -132,7 +137,8 @@ app.get('/api/history/metrics/:id', async (req, res) => {
 app.delete('/api/history/board/:boardId', async (req, res) => {
   try {
     const { boardId } = req.params;
-    const removed = await database.deleteBoardMetrics(parseInt(boardId));
+    const tenantId = req.query.tenant || null;
+    const removed = await database.deleteBoardMetrics(parseInt(boardId), tenantId);
     res.json({ success: true, removed });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

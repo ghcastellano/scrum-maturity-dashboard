@@ -32,7 +32,7 @@ ChartJS.register(
   Filler
 );
 
-export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled, onBoardDeleted }) {
+export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled, onBoardDeleted, locale = 'en', t }) {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -306,7 +306,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     const boardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
     const boardName = typeof selectedBoard === 'object' ? selectedBoard.name : `Board ${selectedBoard}`;
 
-    if (!window.confirm(`Remove "${boardName}" and all its saved metrics?`)) return;
+    if (!window.confirm(t('confirmDelete', { name: boardName }))) return;
 
     try {
       await api.deleteBoard(boardId);
@@ -339,7 +339,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         }
       } else {
         setMetrics(null);
-        setError('No saved metrics found. Use "Refresh from Jira" to calculate metrics for the first time.');
+        setError(t('noSavedMetrics'));
       }
     } catch (err) {
       setError(`Failed to delete board: ${err.message}`);
@@ -433,9 +433,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto"></div>
             <p className="mt-4 text-gray-600 text-lg">
-              {refreshing ? `Loading ${boardName} from Jira...` : 'Loading metrics...'}
+              {refreshing
+                ? t('loadingFromJira', { name: boardName })
+                : t('loadingMetrics')}
             </p>
-            <p className="mt-2 text-sm text-gray-500">This may take a minute...</p>
+            <p className="mt-2 text-sm text-gray-500">{t('mayTakeMinute')}</p>
           </div>
         </div>
       );
@@ -455,7 +457,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <span>🔄</span>
-                {refreshing ? 'Refreshing...' : 'Refresh from Jira'}
+                {refreshing ? t('refreshing') : t('refreshFromJira')}
               </button>
             )}
           </div>
@@ -487,7 +489,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     labels: sprintLabels,
     datasets: [
       {
-        label: 'Commitment Completion (%)',
+        label: locale === 'pt-BR' ? 'Conclusao do Compromisso (%)' : 'Commitment Completion (%)',
         data: sortedSprintMetrics.map(s => s.sprintGoalAttainment),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -495,7 +497,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         fill: true
       },
       {
-        label: 'Level 3 Target (70%)',
+        label: locale === 'pt-BR' ? 'Meta Nivel 3 (70%)' : 'Level 3 Target (70%)',
         data: Array(sprintLabels.length).fill(70),
         borderColor: 'rgb(34, 197, 94)',
         borderDash: [5, 5],
@@ -504,7 +506,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         fill: false
       },
       {
-        label: 'Level 1 Threshold (50%)',
+        label: locale === 'pt-BR' ? 'Limite Nivel 1 (50%)' : 'Level 1 Threshold (50%)',
         data: Array(sprintLabels.length).fill(50),
         borderColor: 'rgb(239, 68, 68)',
         borderDash: [5, 5],
@@ -519,7 +521,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     labels: sprintLabels,
     datasets: [
       {
-        label: 'Rollover Rate (%)',
+        label: locale === 'pt-BR' ? 'Taxa de Rollover (%)' : 'Rollover Rate (%)',
         data: sortedSprintMetrics.map(s => s.rolloverRate),
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
@@ -527,7 +529,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         fill: true
       },
       {
-        label: 'Level 2 Upper Limit (20%)',
+        label: locale === 'pt-BR' ? 'Limite Nivel 2 (20%)' : 'Level 2 Upper Limit (20%)',
         data: Array(sprintLabels.length).fill(20),
         borderColor: 'rgb(251, 191, 36)',
         borderDash: [5, 5],
@@ -536,7 +538,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         fill: false
       },
       {
-        label: 'Level 3 Target (15%)',
+        label: locale === 'pt-BR' ? 'Meta Nivel 3 (15%)' : 'Level 3 Target (15%)',
         data: Array(sprintLabels.length).fill(15),
         borderColor: 'rgb(34, 197, 94)',
         borderDash: [5, 5],
@@ -548,9 +550,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   };
 
   const backlogHealthData = {
-    labels: ['With AC', 'With Estimates', 'Linked to Fix Versions'],
+    labels: locale === 'pt-BR'
+      ? ['Com Criterios de Aceite', 'Com Estimativas', 'Vinculado a Versoes']
+      : ['With AC', 'With Estimates', 'Linked to Fix Versions'],
     datasets: [{
-      label: 'Backlog Health (%)',
+      label: locale === 'pt-BR' ? 'Saude do Backlog (%)' : 'Backlog Health (%)',
       data: metrics ? [
         metrics.backlogHealth.withAcceptanceCriteria,
         metrics.backlogHealth.withEstimates,
@@ -566,9 +570,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
   const defectData = metrics?.sprintMetrics?.[0]?.defectDistribution || { preMerge: 0, inQA: 0, postRelease: 0 };
   const defectDistributionData = {
-    labels: ['Pre-Merge', 'In QA', 'Post-Release'],
+    labels: locale === 'pt-BR'
+      ? ['Pre-Merge', 'Em QA', 'Pos-Release']
+      : ['Pre-Merge', 'In QA', 'Post-Release'],
     datasets: [{
-      label: 'Defects',
+      label: locale === 'pt-BR' ? 'Defeitos' : 'Defects',
       data: [defectData.preMerge, defectData.inQA, defectData.postRelease],
       backgroundColor: [
         'rgba(34, 197, 94, 0.7)',
@@ -601,7 +607,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         {/* Header */}
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
-            <h1 className="text-4xl font-bold text-gray-900">Scrum Maturity Dashboard</h1>
+            <h1 className="text-4xl font-bold text-gray-900">{t('appTitle')}</h1>
             {credentials && (
               <button
                 onClick={() => refreshFromJira()}
@@ -609,7 +615,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <span>🔄</span>
-                {refreshing ? 'Refreshing...' : 'Refresh from Jira'}
+                {refreshing ? t('refreshing') : t('refreshFromJira')}
               </button>
             )}
           </div>
@@ -638,7 +644,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
-                  <span className="hidden sm:inline">Delete</span>
+                  <span className="hidden sm:inline">{t('delete')}</span>
                 </button>
               </div>
             )}
@@ -654,13 +660,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 }}
                 className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                {showSprintSelector ? 'Hide Sprints' : 'Select Sprints'}
+                {showSprintSelector ? t('hideSprints') : t('selectSprints')}
               </button>
             )}
 
             {history.length > 1 && (
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-600">History:</label>
+                <label className="text-sm font-medium text-gray-600">{t('history')}:</label>
                 <select
                   value={selectedHistoryId || ''}
                   onChange={(e) => loadHistoricalMetrics(Number(e.target.value))}
@@ -668,7 +674,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 >
                   {history.map(h => (
                     <option key={h.id} value={h.id}>
-                      {new Date(h.calculated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })} - Level {h.maturity_level}
+                      {new Date(h.calculated_at).toLocaleDateString(locale === 'pt-BR' ? 'pt-BR' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })} - {t('maturityLevel')} {h.maturity_level}
                     </option>
                   ))}
                 </select>
@@ -680,25 +686,25 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           {showSprintSelector && (
             <div className="mt-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="font-semibold text-gray-800">Select Sprints to Analyze</h3>
+                <h3 className="font-semibold text-gray-800">{t('selectSprintsToAnalyze')}</h3>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setSelectedSprintIds(availableSprints.slice(0, 6).map(s => s.id))}
                     className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
                   >
-                    Last 6
+                    {t('lastN', { n: '6' })}
                   </button>
                   <button
                     onClick={() => setSelectedSprintIds(availableSprints.map(s => s.id))}
                     className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
                   >
-                    Select All
+                    {t('selectAll')}
                   </button>
                   <button
                     onClick={() => setSelectedSprintIds([])}
                     className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
                   >
-                    Clear
+                    {t('clear')}
                   </button>
                 </div>
               </div>
@@ -706,7 +712,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               {loadingSprints ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-sm text-gray-500">Loading sprints...</p>
+                  <p className="mt-2 text-sm text-gray-500">{t('loadingSprints')}</p>
                 </div>
               ) : (
                 <>
@@ -734,14 +740,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-500">
-                      {selectedSprintIds.length} sprint{selectedSprintIds.length !== 1 ? 's' : ''} selected
+                      {selectedSprintIds.length} {t('sprintsSelected')}
                     </span>
                     <button
                       onClick={refreshWithSelectedSprints}
                       disabled={selectedSprintIds.length === 0 || refreshing}
                       className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {refreshing ? 'Analyzing...' : 'Analyze Selected Sprints'}
+                      {refreshing ? t('analyzing') : t('analyzeSelectedSprints')}
                     </button>
                   </div>
                 </>
@@ -761,10 +767,10 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         <div className="card mb-8">
           {/* Header row */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Team Maturity Level</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{t('teamMaturityLevel')}</h2>
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span>Based on</span>
-              <span className="font-semibold text-primary-600">{metrics.sprintsAnalyzed} sprints</span>
+              <span>{t('basedOn')}</span>
+              <span className="font-semibold text-primary-600">{metrics.sprintsAnalyzed} {t('sprints')}</span>
             </div>
           </div>
 
@@ -772,12 +778,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <div className="flex flex-col lg:flex-row gap-6">
             {/* Left: Badge */}
             <div className="lg:w-64 shrink-0">
-              <MaturityBadge {...metrics.maturityLevel} size="large" />
+              <MaturityBadge {...metrics.maturityLevel} size="large" locale={locale} />
 
               {/* Support Model for Level 2 */}
               {metrics.maturityLevel.supportModel && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-xs font-semibold text-yellow-900">Support Model:</p>
+                  <p className="text-xs font-semibold text-yellow-900">{t('supportModel')}:</p>
                   <p className="text-xs text-yellow-800">{metrics.maturityLevel.supportModel}</p>
                 </div>
               )}
@@ -799,10 +805,10 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 : null;
 
               const metricItems = [
-                { icon: '📉', label: 'Rollover Rate', value: rollover, blocking: thresholds ? rollover > thresholds.rollover.max : false, target: thresholds?.rollover.label, current: `${formatNumber(rollover)}%` },
-                { icon: '🎯', label: 'Sprint Commitment Completion', value: sprintGoal, blocking: thresholds ? sprintGoal < thresholds.sprintGoal.min : false, target: thresholds?.sprintGoal.label, current: `${formatNumber(sprintGoal)}%` },
-                { icon: '📋', label: 'Backlog Health', value: backlog, blocking: thresholds ? backlog < thresholds.backlog.min : false, target: thresholds?.backlog.label, current: `${formatNumber(backlog)}%` },
-                { icon: '🔄', label: 'Mid-Sprint Additions', value: midSprint, blocking: thresholds ? midSprint > thresholds.midSprint.max : false, target: thresholds?.midSprint.label, current: `${formatNumber(midSprint)}%` }
+                { icon: '📉', label: t('rolloverRate'), value: rollover, blocking: thresholds ? rollover > thresholds.rollover.max : false, target: thresholds?.rollover.label, current: `${formatNumber(rollover)}%` },
+                { icon: '🎯', label: t('sprintCommitmentCompletion'), value: sprintGoal, blocking: thresholds ? sprintGoal < thresholds.sprintGoal.min : false, target: thresholds?.sprintGoal.label, current: `${formatNumber(sprintGoal)}%` },
+                { icon: '📋', label: t('backlogHealth'), value: backlog, blocking: thresholds ? backlog < thresholds.backlog.min : false, target: thresholds?.backlog.label, current: `${formatNumber(backlog)}%` },
+                { icon: '🔄', label: t('midSprintAdditions'), value: midSprint, blocking: thresholds ? midSprint > thresholds.midSprint.max : false, target: thresholds?.midSprint.label, current: `${formatNumber(midSprint)}%` }
               ];
 
               const blockingCount = metricItems.filter(m => m.blocking).length;
@@ -826,8 +832,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                           {thresholds && (
                             <div className={`text-xs mt-0.5 ${item.blocking ? 'text-red-600 font-semibold' : 'text-green-600'}`}>
                               {item.blocking
-                                ? `Needs ${item.target} for Level ${thresholds.nextLevel}`
-                                : `Passing (target: ${item.target})`}
+                                ? t('needsForLevel', { target: item.target, level: thresholds.nextLevel })
+                                : t('passing', { target: item.target })}
                             </div>
                           )}
                         </div>
@@ -837,7 +843,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   {thresholds && blockingCount > 0 && (
                     <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                       <p className="text-sm font-semibold text-red-800">
-                        {blockingCount} metric{blockingCount > 1 ? 's' : ''} blocking Level {thresholds.nextLevel}
+                        {t('metricsBlocking', { count: blockingCount, level: thresholds.nextLevel })}
                       </p>
                       <p className="text-xs text-red-600 mt-1">
                         {metricItems.filter(m => m.blocking).map(m => `${m.label} (${m.current} → ${m.target})`).join(' · ')}
@@ -846,7 +852,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   )}
                   {level === 3 && (
                     <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm font-semibold text-green-800">All metrics at highest level</p>
+                      <p className="text-sm font-semibold text-green-800">{t('allMetricsHighest')}</p>
                     </div>
                   )}
                 </div>
@@ -858,7 +864,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           {metrics.maturityLevel.recommendations && (
             <details className="mt-6">
               <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900">
-                Recommendations ({metrics.maturityLevel.recommendations.length})
+                {t('recommendations')} ({metrics.maturityLevel.recommendations.length})
               </summary>
               <ul className="mt-3 space-y-2 pl-1">
                 {metrics.maturityLevel.recommendations.map((rec, idx) => (
@@ -875,58 +881,58 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Rollover Rate</div>
+            <div className="text-sm text-gray-600 mb-1">{t('avgRolloverRate')}</div>
             <div className="text-3xl font-bold text-red-600">
               {formatNumber(metrics.aggregated?.avgRolloverRate)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Target Level 3: &lt;10-15%
+              {t('targetLevel3')}: &lt;10-15%
             </div>
           </div>
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Commitment Completion</div>
+            <div className="text-sm text-gray-600 mb-1">{t('avgCommitmentCompletion')}</div>
             <div className="text-3xl font-bold text-primary-600">
               {formatNumber(metrics.aggregated?.avgSprintGoalAttainment)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Target Level 3: &gt;70%
+              {t('targetLevel3')}: &gt;70%
             </div>
           </div>
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Backlog Health Score</div>
+            <div className="text-sm text-gray-600 mb-1">{t('backlogHealthScore')}</div>
             <div className="text-3xl font-bold text-blue-600">
               {formatNumber(metrics.backlogHealth?.overallScore)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Target Level 3: &gt;80%
+              {t('targetLevel3')}: &gt;80%
             </div>
           </div>
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">Avg Mid-Sprint Injection</div>
+            <div className="text-sm text-gray-600 mb-1">{t('avgMidSprintInjection')}</div>
             <div className="text-3xl font-bold text-amber-600">
               {formatNumber(metrics.aggregated?.avgMidSprintAdditions)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Target Level 3: &lt;10%
+              {t('targetLevel3')}: &lt;10%
             </div>
           </div>
         </div>
 
         {/* Maturity Levels Reference */}
-        <MaturityLevelsReference />
+        <MaturityLevelsReference locale={locale} t={t} />
 
         {/* Pillar 1: Delivery Predictability */}
         <div className="card mb-8">
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
-            📊 Pillar 1: Delivery Predictability
+            📊 {t('pillar1')}
           </h2>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Sprint Commitment Completion */}
             <div>
-              <h3 className="font-semibold mb-2">Sprint Commitment Completion</h3>
+              <h3 className="font-semibold mb-2">{t('sprintCommitmentCompletion')}</h3>
               <p className="text-xs text-gray-500 mb-4">
-                % of all sprint items completed (includes mid-sprint additions and rollovers)
+                {t('commitmentCompletionDesc')}
               </p>
               <div className="h-80">
                 <Line data={sprintGoalData} options={chartOptions} />
@@ -935,7 +941,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
             {/* Rollover Rate + Issues */}
             <div>
-              <h3 className="font-semibold mb-4">Rollover Rate</h3>
+              <h3 className="font-semibold mb-4">{t('rolloverRate')}</h3>
               <div className="h-80">
                 <Line data={rolloverData} options={chartOptions} />
               </div>
@@ -948,7 +954,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     <details key={sprint.sprintId} className="bg-red-50 rounded-lg border border-red-100">
                       <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-red-800 hover:bg-red-100 rounded-lg flex justify-between items-center">
                         <span className="truncate mr-2">{sprint.sprintName}</span>
-                        <span className="shrink-0">{issues.length} rolled over ({formatNumber(sprint.rolloverRate)}%)</span>
+                        <span className="shrink-0">{issues.length} {t('rolledOver')} ({formatNumber(sprint.rolloverRate)}%)</span>
                       </summary>
                       <div className="px-3 pb-3">
                         {Object.keys(breakdown).length > 0 && (
@@ -963,13 +969,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                                 reason === 'dev-qa-spill' ? 'bg-cyan-100 text-cyan-800' :
                                 'bg-gray-100 text-gray-600'
                               }`}>
-                                {reason === 'external-blockers' ? 'External Blockers' :
-                                 reason === 'late-discovery' ? 'Late Discovery' :
-                                 reason === 'resource-constraints' ? 'Resource Constraints' :
-                                 reason === 'internal-blockers' ? 'Internal Blockers' :
-                                 reason === 'req-gap' ? 'Req Gap' :
-                                 reason === 'dev-qa-spill' ? 'Dev/QA Spill' : reason
-                                }: {count}
+                                {t(reason) !== reason ? t(reason) : reason}: {count}
                               </span>
                             ))}
                           </div>
@@ -1003,7 +1003,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
             {/* Mid-Sprint Additions + Issues */}
             <div>
-              <h3 className="font-semibold mb-4">Mid-Sprint Additions</h3>
+              <h3 className="font-semibold mb-4">{t('midSprintAdditions')}</h3>
               <div className="space-y-2">
                 {sortedSprintMetrics.map(sprint => {
                   const msIssues = sprint.midSprintAdditions?.issues || [];
@@ -1012,7 +1012,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     return (
                       <div key={sprint.sprintId} className="flex justify-between items-center px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
                         <span className="text-sm font-medium text-gray-600">{sprint.sprintName}</span>
-                        <span className="text-sm text-gray-400">0 issues (0.0%)</span>
+                        <span className="text-sm text-gray-400">0 {t('issues')} (0.0%)</span>
                       </div>
                     );
                   }
@@ -1020,7 +1020,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     <details key={sprint.sprintId} className="bg-amber-50 rounded-lg border border-amber-100">
                       <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-amber-800 hover:bg-amber-100 rounded-lg flex justify-between items-center">
                         <span className="truncate mr-2">{sprint.sprintName}</span>
-                        <span className="shrink-0">{msCount} issues ({formatNumber(sprint.midSprintAdditions?.percentage)}%)</span>
+                        <span className="shrink-0">{msCount} {t('issues')} ({formatNumber(sprint.midSprintAdditions?.percentage)}%)</span>
                       </summary>
                       <div className="px-3 pb-3 space-y-0">
                         {msIssues.map(issue => (
@@ -1043,15 +1043,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         {metrics.flowQuality && (
         <div className="card mb-8">
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
-            🔄 Pillar 2: Flow & Quality
+            🔄 {t('pillar2')}
           </h2>
-          <p className="text-sm text-gray-500 -mt-4 mb-6">Is work flowing smoothly and producing quality outcomes?</p>
+          <p className="text-sm text-gray-500 -mt-4 mb-6">{t('pillar2Subtitle')}</p>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Col 1: Lead Time by Type */}
             <div>
-              <h3 className="font-semibold mb-2">Lead Time by Work Type</h3>
-              <p className="text-xs text-gray-500 mb-4">Average days from creation to resolution</p>
+              <h3 className="font-semibold mb-2">{t('leadTimeByType')}</h3>
+              <p className="text-xs text-gray-500 mb-4">{t('leadTimeDesc')}</p>
               {Object.keys(metrics.flowQuality.leadTimeByType).length > 0 ? (
                 <>
                   <div className="h-56">
@@ -1059,7 +1059,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       data={{
                         labels: Object.keys(metrics.flowQuality.leadTimeByType),
                         datasets: [{
-                          label: 'Avg Lead Time (days)',
+                          label: t('avgLeadTimeDays'),
                           data: Object.values(metrics.flowQuality.leadTimeByType),
                           backgroundColor: Object.keys(metrics.flowQuality.leadTimeByType).map((type) =>
                             type === 'Bug' ? 'rgba(239, 68, 68, 0.7)' :
@@ -1084,7 +1084,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     const colors = { Story: 'rgb(59, 130, 246)', Bug: 'rgb(239, 68, 68)', Task: 'rgb(107, 114, 128)', 'Tech Debt': 'rgb(168, 85, 247)' };
                     return (
                       <div className="mt-4">
-                        <p className="text-xs text-gray-500 mb-2 font-medium">Trend by Sprint</p>
+                        <p className="text-xs text-gray-500 mb-2 font-medium">{t('trendBySprint')}</p>
                         <div className="h-40">
                           <Line
                             data={{
@@ -1113,14 +1113,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   })()}
                 </>
               ) : (
-                <p className="text-sm text-gray-400">No resolved issues with lead time data</p>
+                <p className="text-sm text-gray-400">{t('noResolvedIssues')}</p>
               )}
             </div>
 
             {/* Col 2: WIP Aging */}
             <div>
-              <h3 className="font-semibold mb-2">WIP Aging</h3>
-              <p className="text-xs text-gray-500 mb-4">Work sitting idle — longest in-progress items</p>
+              <h3 className="font-semibold mb-2">{t('wipAging')}</h3>
+              <p className="text-xs text-gray-500 mb-4">{t('wipAgingDesc')}</p>
               {metrics.flowQuality.wipAging.length > 0 ? (
                 <div className="space-y-1.5 max-h-96 overflow-y-auto">
                   {metrics.flowQuality.wipAging.map(item => (
@@ -1146,20 +1146,20 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No items currently in progress</p>
+                <p className="text-sm text-gray-400">{t('noItemsInProgress')}</p>
               )}
             </div>
 
             {/* Col 3: Defect Distribution */}
             <div>
-              <h3 className="font-semibold mb-2">Defects Found</h3>
-              <p className="text-xs text-gray-500 mb-4">Where defects are caught in the lifecycle</p>
+              <h3 className="font-semibold mb-2">{t('defectsFound')}</h3>
+              <p className="text-xs text-gray-500 mb-4">{t('defectsFoundDesc')}</p>
               {metrics.flowQuality.defects.total.total > 0 ? (
                 <>
                   <div className="h-48 flex items-center justify-center">
                     <Doughnut
                       data={{
-                        labels: ['Pre-merge', 'QA', 'Post-release'],
+                        labels: [t('preMerge'), 'QA', t('postRelease')],
                         datasets: [{
                           data: [
                             metrics.flowQuality.defects.total.preMerge,
@@ -1180,15 +1180,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   {/* Defect trend by sprint */}
                   {metrics.flowQuality.defects.bySprint.filter(s => s.total > 0).length > 1 && (
                     <div className="mt-4">
-                      <p className="text-xs text-gray-500 mb-2 font-medium">Trend by Sprint</p>
+                      <p className="text-xs text-gray-500 mb-2 font-medium">{t('trendBySprint')}</p>
                       <div className="h-36">
                         <Bar
                           data={{
                             labels: metrics.flowQuality.defects.bySprint.map(s => s.sprint),
                             datasets: [
-                              { label: 'Pre-merge', data: metrics.flowQuality.defects.bySprint.map(s => s.preMerge), backgroundColor: 'rgba(34, 197, 94, 0.7)' },
+                              { label: t('preMerge'), data: metrics.flowQuality.defects.bySprint.map(s => s.preMerge), backgroundColor: 'rgba(34, 197, 94, 0.7)' },
                               { label: 'QA', data: metrics.flowQuality.defects.bySprint.map(s => s.inQA), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                              { label: 'Post-release', data: metrics.flowQuality.defects.bySprint.map(s => s.postRelease), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
+                              { label: t('postRelease'), data: metrics.flowQuality.defects.bySprint.map(s => s.postRelease), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
                             ]
                           }}
                           options={{
@@ -1203,22 +1203,22 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   )}
                 </>
               ) : (
-                <p className="text-sm text-gray-400">No bug-type issues found in analyzed sprints</p>
+                <p className="text-sm text-gray-400">{t('noBugIssues')}</p>
               )}
             </div>
           </div>
 
           {/* Healthy Signals */}
           <div className="mt-8 border-t border-gray-200 pt-6">
-            <h3 className="font-semibold mb-4 text-gray-700">Healthy Signals</h3>
+            <h3 className="font-semibold mb-4 text-gray-700">{t('healthySignals')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className={`flex items-center gap-3 p-3 rounded-lg border ${
                 metrics.flowQuality.healthySignals.stableLeadTime ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
               }`}>
                 <span className="text-xl">{metrics.flowQuality.healthySignals.stableLeadTime ? '✅' : '⚠️'}</span>
                 <div>
-                  <p className="text-sm font-medium text-gray-800">Stable Lead Time</p>
-                  <p className="text-xs text-gray-500">Lead time not increasing significantly</p>
+                  <p className="text-sm font-medium text-gray-800">{t('stableLeadTime')}</p>
+                  <p className="text-xs text-gray-500">{t('stableLeadTimeDesc')}</p>
                 </div>
               </div>
               <div className={`flex items-center gap-3 p-3 rounded-lg border ${
@@ -1226,8 +1226,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               }`}>
                 <span className="text-xl">{metrics.flowQuality.healthySignals.earlyDefectDetection ? '✅' : '⚠️'}</span>
                 <div>
-                  <p className="text-sm font-medium text-gray-800">Early Defect Detection</p>
-                  <p className="text-xs text-gray-500">Defects caught before release</p>
+                  <p className="text-sm font-medium text-gray-800">{t('earlyDefectDetection')}</p>
+                  <p className="text-xs text-gray-500">{t('earlyDefectDetectionDesc')}</p>
                 </div>
               </div>
               <div className={`flex items-center gap-3 p-3 rounded-lg border ${
@@ -1235,8 +1235,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               }`}>
                 <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
                 <div>
-                  <p className="text-sm font-medium text-gray-800">Minimal Rework</p>
-                  <p className="text-xs text-gray-500">QA rework rate: {metrics.flowQuality.reworkRate}%</p>
+                  <p className="text-sm font-medium text-gray-800">{t('minimalRework')}</p>
+                  <p className="text-xs text-gray-500">{t('qaReworkRate')}: {metrics.flowQuality.reworkRate}%</p>
                 </div>
               </div>
             </div>
@@ -1247,7 +1247,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         {/* Pillar 3: Team Ownership */}
         <div className="card mb-8">
           <h2 className="text-2xl font-bold mb-6 text-gray-800">
-            👥 Pillar 3: Team Ownership & Execution
+            👥 {t('pillar3')}
           </h2>
 
           {/* Overall Backlog Health Score */}
@@ -1259,8 +1259,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               <div className={`flex items-center gap-4 p-4 rounded-xl border ${scoreBg} mb-6`}>
                 <div className={`text-4xl font-black ${scoreColor}`}>{formatNumber(overallScore)}%</div>
                 <div>
-                  <div className="font-semibold text-gray-800">Overall Backlog Health</div>
-                  <div className="text-sm text-gray-500">Average across all backlog quality metrics</div>
+                  <div className="font-semibold text-gray-800">{t('overallBacklogHealth')}</div>
+                  <div className="text-sm text-gray-500">{t('avgAcrossMetrics')}</div>
                 </div>
               </div>
             );
@@ -1270,27 +1270,27 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <div className="space-y-4">
             {[
               {
-                label: 'Acceptance Criteria',
-                description: 'Items with clearly defined acceptance criteria',
+                label: t('acceptanceCriteria'),
+                description: t('acceptanceCriteriaDesc'),
                 value: metrics.backlogHealth?.withAcceptanceCriteria ?? 0,
                 missing: metrics.backlogHealth?.missingAC || [],
-                missingLabel: 'Missing AC',
+                missingLabel: t('missingAC'),
                 color: { bar: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', hoverBg: 'hover:bg-blue-100', lightBar: 'bg-blue-100', badge: 'bg-blue-100 text-blue-800', link: 'text-blue-700', divider: 'border-blue-100' }
               },
               {
-                label: 'Story Points / Estimates',
-                description: 'Items with effort estimates assigned',
+                label: t('storyPointsEstimates'),
+                description: t('storyPointsEstimatesDesc'),
                 value: metrics.backlogHealth?.withEstimates ?? 0,
                 missing: metrics.backlogHealth?.missingEstimates || [],
-                missingLabel: 'Missing Estimates',
+                missingLabel: t('missingEstimates'),
                 color: { bar: 'bg-green-500', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', hoverBg: 'hover:bg-green-100', lightBar: 'bg-green-100', badge: 'bg-green-100 text-green-800', link: 'text-green-700', divider: 'border-green-100' }
               },
               {
-                label: 'Fix Versions / Goals',
-                description: 'Items linked to a release or fix version',
+                label: t('fixVersionsGoals'),
+                description: t('fixVersionsGoalsDesc'),
                 value: metrics.backlogHealth?.linkedToGoals ?? 0,
                 missing: metrics.backlogHealth?.missingFixVersions || [],
-                missingLabel: 'Missing Fix Versions',
+                missingLabel: t('missingFixVersions'),
                 color: { bar: 'bg-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', hoverBg: 'hover:bg-orange-100', lightBar: 'bg-orange-100', badge: 'bg-orange-100 text-orange-800', link: 'text-orange-700', divider: 'border-orange-100' }
               }
             ].map(metric => {
@@ -1313,7 +1313,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       <div className="text-right">
                         <div className={`text-2xl font-bold ${statusColor}`}>{formatNumber(metric.value)}%</div>
                         {!isComplete && total > 0 && (
-                          <div className="text-xs text-gray-400">{metric.missing.length > 0 ? `${metric.missing.length}` : '?'} of {total} missing</div>
+                          <div className="text-xs text-gray-400">{t('ofMissing', { count: metric.missing.length > 0 ? metric.missing.length : '?', total })}</div>
                         )}
                       </div>
                     </div>
@@ -1327,7 +1327,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     {hasDetails ? (
                       <>
                         <div className={`text-xs font-semibold ${metric.color.text} mb-2`}>
-                          {metric.missingLabel} ({metric.missing.length} of {total} items)
+                          {metric.missingLabel} ({metric.missing.length} {t('ofItems', { total })})
                         </div>
                         <div className="max-h-56 overflow-y-auto rounded-lg bg-white border border-gray-100">
                           {metric.missing.map((issue, idx) => (
@@ -1343,12 +1343,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     ) : isComplete ? (
                       <div className="flex items-center gap-2 text-sm text-green-700 py-2">
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        All items meet this criteria
+                        {t('allItemsMeetCriteria')}
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
                         <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        Click "Refresh from Jira" to load item details
+                        {t('clickRefreshToLoad')}
                       </div>
                     )}
                   </div>

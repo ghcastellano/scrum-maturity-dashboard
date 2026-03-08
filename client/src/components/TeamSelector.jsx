@@ -3,9 +3,8 @@ import api from '../services/api';
 
 const STORAGE_KEY = 'scrum-dashboard-selected-boards';
 const BOARDS_CACHE_KEY = 'scrum-dashboard-boards-cache';
-const BOARDS_CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
 
-export default function TeamSelector({ credentials, onTeamsSelected, existingBoards = [], onBack }) {
+export default function TeamSelector({ credentials, onTeamsSelected, existingBoards = [], onBack, locale = 'en', t }) {
   const [boards, setBoards] = useState([]);
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,24 +24,24 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
 
   // Helper: load boards from any available cache (DB → localStorage)
   const loadBoardsFromCache = async () => {
-    // 1) Try DB cache first (fast, no Jira API call)
+    // 1) Try DB cache first (tenant-scoped via api service)
     try {
       const cacheResult = await api.getCachedBoards();
       if (cacheResult.success && cacheResult.boards?.length > 0) {
-        console.log('✅ Boards loaded from DB cache');
+        console.log('Boards loaded from DB cache');
         return cacheResult.boards;
       }
     } catch (e) {
       console.warn('DB cache miss');
     }
 
-    // 2) Try localStorage cache (no TTL check — stale boards are better than none)
+    // 2) Try localStorage cache
     try {
       const cached = localStorage.getItem(BOARDS_CACHE_KEY);
       if (cached) {
         const { boards: cachedBoards } = JSON.parse(cached);
         if (cachedBoards?.length > 0) {
-          console.log('✅ Boards loaded from localStorage cache');
+          console.log('Boards loaded from localStorage cache');
           return cachedBoards;
         }
       }
@@ -56,7 +55,6 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
       setLoading(true);
       setError('');
 
-      // If forcing refresh, fetch from Jira API (with cache fallback on error)
       if (forceRefresh) {
         try {
           const result = await api.getBoards(
@@ -73,13 +71,12 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         } catch (refreshErr) {
           console.error('Jira API refresh failed:', refreshErr);
           const errMsg = refreshErr.response?.data?.message || refreshErr.message || '';
-          // Try to fall back to cached boards
           const cached = await loadBoardsFromCache();
           if (cached) {
             setBoards(cached);
-            setError(`Failed to refresh from Jira (${errMsg}). Showing cached boards.`);
+            setError(`${t('failedToRefresh')} (${errMsg}). ${t('showingCachedBoards')}`);
           } else {
-            setError(`Failed to load boards from Jira: ${errMsg}`);
+            setError(`${t('failedToLoadBoards')}: ${errMsg}`);
           }
           return;
         }
@@ -92,11 +89,11 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         return;
       }
 
-      // No cache available — show empty state (user clicks "Refresh from Jira")
+      // No cache available
       setBoards([]);
     } catch (err) {
       console.error('Failed to load boards:', err);
-      setError(`Failed to load boards: ${err.message || 'Unknown error'}`);
+      setError(`${t('failedToLoadBoards')}: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -142,12 +139,11 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
 
   const handleSubmit = () => {
     if (selectedBoards.length === 0) {
-      setError('Please select at least one team');
+      setError(t('selectAtLeastOne'));
       return;
     }
     setError('');
 
-    // Pass full board objects with id and name
     const selectedBoardObjects = boards
       .filter(board => selectedBoards.includes(board.id))
       .map(board => ({
@@ -180,7 +176,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
       <div className="max-w-4xl mx-auto card">
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading teams... This may take a minute for large instances.</p>
+          <p className="mt-4 text-gray-600">{t('loadingTeams')}</p>
         </div>
       </div>
     );
@@ -194,26 +190,25 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
             <button
               onClick={onBack}
               className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Back to Dashboard"
+              title={locale === 'pt-BR' ? 'Voltar ao Dashboard' : 'Back to Dashboard'}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
               </svg>
             </button>
           )}
-          <h2 className="text-2xl font-bold text-gray-800">Select Boards to Analyze</h2>
+          <h2 className="text-2xl font-bold text-gray-800">{t('selectBoards')}</h2>
         </div>
         <button
           onClick={() => loadBoards(true)}
           className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
         >
-          Refresh from Jira
+          {t('refreshFromJira')}
         </button>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-4 text-sm">
-        Search by the <strong>board name</strong> in Jira (e.g. "GTMDOP Scrum Board"), not the team name.
-        You can find your board name in Jira under <em>Boards &gt; View all boards</em>.
+        {t('boardSearchHint')}
       </div>
 
       {error && (
@@ -228,7 +223,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
           <div className="flex-1">
             <input
               type="text"
-              placeholder="Search by board name, project key, or ID..."
+              placeholder={t('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -239,18 +234,18 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
               onClick={clearSavedSelection}
               className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              Clear Selection
+              {t('clearSelection')}
             </button>
           )}
         </div>
 
         <div className="flex items-center justify-between text-sm text-gray-600">
           <span>
-            Showing {filteredBoards.length} of {boards.length} boards
+            {t('showing')} {filteredBoards.length} {t('of')} {boards.length} {t('boards')}
           </span>
           {selectedBoards.length > 0 && (
             <span className="text-primary-600 font-medium">
-              ✓ {selectedBoards.length} board{selectedBoards.length !== 1 ? 's' : ''} saved
+              {selectedBoards.length} {t('boardsSaved')}
             </span>
           )}
         </div>
@@ -260,17 +255,17 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
       <div className="space-y-3 mb-6 max-h-96 overflow-y-auto">
         {boards.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            <p className="mb-3">No cached boards available.</p>
+            <p className="mb-3">{t('noCachedBoards')}</p>
             <button
               onClick={() => loadBoards(true)}
               className="btn-primary"
             >
-              Refresh from Jira
+              {t('refreshFromJira')}
             </button>
           </div>
         ) : filteredBoards.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            No boards found matching "{searchTerm}"
+            {t('noMatchingBoards')} "{searchTerm}"
           </div>
         ) : (
           filteredBoards.map(board => (
@@ -303,14 +298,14 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
       {/* Actions */}
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-600">
-          {selectedBoards.length} team{selectedBoards.length !== 1 ? 's' : ''} selected
+          {selectedBoards.length} {t('teamsSelected')}
         </p>
         <button
           onClick={handleSubmit}
           disabled={selectedBoards.length === 0}
           className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Analyze Selected Teams
+          {t('analyzeSelected')}
         </button>
       </div>
     </div>

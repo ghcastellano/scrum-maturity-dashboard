@@ -2,23 +2,58 @@ import JiraService from '../services/jiraService.js';
 import MetricsService from '../services/metricsService.js';
 import cacheService from '../services/cacheService.js';
 import database from '../services/database.js';
+import TenantService from '../services/tenantService.js';
+
+// Cache for auto-detected story points fields per tenant (avoids repeated API calls)
+const storyPointsFieldCache = new Map();
 
 class DashboardController {
   constructor() {
     this.metricsService = new MetricsService();
   }
 
+  // Extract tenant ID from request
+  _getTenantId(req) {
+    return TenantService.extractFromRequest(req);
+  }
+
+  // Get or auto-detect story points field for a tenant
+  async _getStoryPointsField(jiraService, tenantId) {
+    if (!tenantId) return 'customfield_10061';
+
+    // Check cache first
+    if (storyPointsFieldCache.has(tenantId)) {
+      return storyPointsFieldCache.get(tenantId);
+    }
+
+    // Known tenants
+    if (tenantId === 'indeed.atlassian.net') {
+      storyPointsFieldCache.set(tenantId, 'customfield_10061');
+      return 'customfield_10061';
+    }
+
+    // Auto-detect for unknown tenants
+    const fieldId = await jiraService.detectStoryPointsField();
+    storyPointsFieldCache.set(tenantId, fieldId);
+    return fieldId;
+  }
+
   // Initialize Jira connection (lightweight — validates credentials only)
   async testConnection(req, res) {
     try {
       const { jiraUrl, email, apiToken } = req.body;
+      const tenantId = TenantService.extractTenantId(jiraUrl);
+      const locale = TenantService.detectLocale(tenantId);
 
       const jiraService = new JiraService(jiraUrl, email, apiToken);
-      await jiraService.getCurrentUser();
+      const user = await jiraService.getCurrentUser();
 
       res.json({
         success: true,
-        message: 'Connection successful'
+        message: 'Connection successful',
+        tenantId,
+        locale,
+        displayName: user?.displayName || null
       });
     } catch (error) {
       res.status(400).json({
@@ -28,26 +63,27 @@ class DashboardController {
     }
   }
 
-  // Get available boards/teams
+  // Get available boards/teams (tenant-scoped)
   async getBoards(req, res) {
     try {
       const { jiraUrl, email, apiToken, forceRefresh = false } = req.body;
+      const tenantId = this._getTenantId(req);
 
-      // Check database cache first (persists for all users, survives restarts)
-      // 24-hour TTL since boards rarely change
+      // Check database cache first (tenant-scoped)
       if (!forceRefresh) {
-        const cachedBoards = await database.getCachedBoards(24 * 3600 * 1000); // 24 hours
+        const cachedBoards = await database.getCachedBoards(24 * 3600 * 1000, tenantId);
         if (cachedBoards) {
           return res.json({
             success: true,
             boards: cachedBoards,
             cached: true,
+            tenantId,
             message: 'Boards loaded from database cache'
           });
         }
       }
 
-      console.log('📡 Fetching boards from Jira API...');
+      console.log(`📡 Fetching boards from Jira API (tenant: ${tenantId})...`);
       const jiraService = new JiraService(jiraUrl, email, apiToken);
       const boards = await jiraService.getBoards();
 
@@ -57,13 +93,14 @@ class DashboardController {
         type: board.type
       }));
 
-      // Save to database (persistent cache for all users)
-      await database.saveBoards(formattedBoards);
+      // Save to database (tenant-scoped)
+      await database.saveBoards(formattedBoards, tenantId);
 
       res.json({
         success: true,
         boards: formattedBoards,
-        cached: false
+        cached: false,
+        tenantId
       });
     } catch (error) {
       res.status(500).json({
@@ -73,7 +110,7 @@ class DashboardController {
     }
   }
 
-  // Get available sprints for a board (filtered and deduplicated)
+  // Get available sprints for a board
   async getSprints(req, res) {
     try {
       const { jiraUrl, email, apiToken, boardId } = req.body;
@@ -113,20 +150,22 @@ class DashboardController {
     }
   }
 
-  // Get team metrics
+  // Get team metrics (tenant-scoped)
   async getTeamMetrics(req, res) {
     try {
       const { jiraUrl, email, apiToken, boardId, sprintCount = 6, sprintIds, forceRefresh = false } = req.body;
+      const tenantId = this._getTenantId(req);
 
       console.log(`\n🎯 getTeamMetrics called with:`);
       console.log(`  Board ID: ${boardId} (type: ${typeof boardId})`);
       console.log(`  Sprint Count: ${sprintCount}`);
       console.log(`  Sprint IDs: ${sprintIds ? sprintIds.join(', ') : 'auto (most recent)'}`);
       console.log(`  Force Refresh: ${forceRefresh}`);
+      console.log(`  Tenant: ${tenantId}`);
 
-      // Check cache first (unless force refresh)
+      // Check cache first (tenant-scoped, unless force refresh)
       if (!forceRefresh) {
-        const cacheKey = cacheService.generateKey(boardId, 'team-metrics');
+        const cacheKey = cacheService.generateKey(boardId, 'team-metrics', tenantId);
         console.log(`  Cache Key: ${cacheKey}`);
         const cachedData = cacheService.get(cacheKey);
 
@@ -144,6 +183,10 @@ class DashboardController {
       console.log(`  📡 Fetching fresh data from Jira for board ${boardId}`);
       const jiraService = new JiraService(jiraUrl, email, apiToken);
 
+      // Auto-detect story points field for this tenant
+      const storyPointsField = await this._getStoryPointsField(jiraService, tenantId);
+      this.metricsService.setStoryPointsField(storyPointsField);
+
       // Get board name early (needed for sprint filtering)
       const board = await jiraService.getBoard(boardId);
       const boardName = board?.name || `Board ${boardId}`;
@@ -152,8 +195,6 @@ class DashboardController {
       const allSprints = await jiraService.getSprints(boardId, 'closed');
 
       // Filter sprints to match the board's naming convention
-      // Extracts the board key (e.g., "STCPQ" from "STCPQ Scrum Board")
-      // and keeps only sprints whose prefix is related to the board key
       const boardKey = boardName.replace(/\s*Scrum\s*Board\s*/i, '').trim().toUpperCase();
       const filteredSprints = allSprints.filter(sprint => {
         const sprintNameUpper = sprint.name.toUpperCase();
@@ -162,11 +203,9 @@ class DashboardController {
           const sprintPrefix = prefixMatch[1].toUpperCase();
           return boardKey.includes(sprintPrefix) || sprintPrefix.includes(boardKey);
         }
-        // No letter prefix (e.g., "3Q25.S16RISE") - only keep if name contains board key
         return sprintNameUpper.includes(boardKey);
       });
 
-      // Use filtered sprints if they exist, otherwise fall back to all sprints
       const matchedSprints = filteredSprints.length > 0 ? filteredSprints : allSprints;
 
       if (matchedSprints.length < allSprints.length) {
@@ -180,12 +219,10 @@ class DashboardController {
       }
 
       // If specific sprint IDs were provided, use those; otherwise take most recent N
-      // matchedSprints is already in chronological order (oldest first)
       let recentSprints;
       if (sprintIds && sprintIds.length > 0) {
         const idSet = new Set(sprintIds);
         recentSprints = matchedSprints.filter(s => idSet.has(s.id));
-        // Keep chronological order (oldest first)
         recentSprints.sort((a, b) => {
           const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
           const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
@@ -200,7 +237,7 @@ class DashboardController {
         console.log(`  ${idx + 1}. ${s.name} (${s.startDate?.split('T')[0]} to ${s.endDate?.split('T')[0]})`);
       });
 
-      // Pre-fetch ALL sprint issues + backlog in parallel (major speedup)
+      // Pre-fetch ALL sprint issues + backlog in parallel
       console.log(`  ⚡ Fetching all sprint issues + backlog in parallel...`);
       const sprintIssuesMap = new Map();
       let backlogIssuesResult = [];
@@ -217,14 +254,14 @@ class DashboardController {
       await Promise.all(fetchPromises);
       console.log(`  ✓ All data fetched in parallel`);
 
-      // Process each sprint (all data already in memory)
+      // Process each sprint
       const sprintMetrics = [];
 
       for (let i = 0; i < recentSprints.length; i++) {
         const sprint = recentSprints[i];
         const issues = sprintIssuesMap.get(sprint.id);
 
-        // Log sample issues on first sprint to help identify story points field
+        // Log sample issues on first sprint
         if (i === 0 && issues.length > 0) {
           console.log(`\n📝 Sample Issues from first sprint (${sprint.name}):`);
           issues.slice(0, 3).forEach((issue, idx) => {
@@ -247,12 +284,9 @@ class DashboardController {
           });
         }
 
-        // Get next sprint for rollover calculation (already pre-fetched)
-        // In chronological order, next sprint is i + 1
         const nextSprint = recentSprints[i + 1];
         const nextSprintIssues = nextSprint ? sprintIssuesMap.get(nextSprint.id) : [];
 
-        // Calculate metrics
         const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
         const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name);
         const sprintHitRate = this.metricsService.calculateSprintHitRate(issues, sprint.completeDate || sprint.endDate);
@@ -275,7 +309,7 @@ class DashboardController {
         });
       }
 
-      // Backlog health (already pre-fetched in parallel above)
+      // Backlog health
       console.log(`\n🔍 Processing Backlog Health for board ${boardId}:`);
 
       let backlogHealth = { score: 0, details: {} };
@@ -286,11 +320,10 @@ class DashboardController {
       } catch (err) {
         console.warn('  ❌ Could not calculate backlog health:', err.message);
       }
-      
+
       // Aggregate metrics
       const aggregated = this.metricsService.aggregateSprintMetrics(sprintMetrics);
 
-      // Handle case where there are no sprints or aggregation fails
       if (!aggregated) {
         return res.status(400).json({
           success: false,
@@ -320,21 +353,23 @@ class DashboardController {
         flowQuality,
         boardId,
         boardName,
-        sprintsAnalyzed: sprintMetrics.length
+        sprintsAnalyzed: sprintMetrics.length,
+        tenantId
       };
 
-      // Cache the data
-      const cacheKey = cacheService.generateKey(boardId, 'team-metrics');
+      // Cache the data (tenant-scoped)
+      const cacheKey = cacheService.generateKey(boardId, 'team-metrics', tenantId);
       cacheService.set(cacheKey, responseData);
 
-      // Save to database for history
+      // Save to database (tenant-scoped)
       try {
         await database.saveMetrics(
           boardId,
           boardName,
           sprintCount,
           responseData,
-          maturityLevel.level
+          maturityLevel.level,
+          tenantId
         );
       } catch (dbError) {
         console.warn('Failed to save metrics to database:', dbError.message);
@@ -346,7 +381,7 @@ class DashboardController {
         cached: false,
         message: 'Data fetched from Jira API'
       });
-      
+
     } catch (error) {
       console.error('Error fetching team metrics:', error);
       res.status(500).json({
@@ -366,6 +401,9 @@ class DashboardController {
       // Find story points field candidates
       const storyPointsCandidates = await jiraService.findStoryPointsField();
 
+      // Auto-detect the best match
+      const autoDetected = await jiraService.detectStoryPointsField();
+
       // Get a sample sprint and issue
       const sprints = await jiraService.getSprints(boardId, 'closed');
       let sampleIssue = null;
@@ -377,6 +415,7 @@ class DashboardController {
       res.json({
         success: true,
         diagnostics: {
+          autoDetectedField: autoDetected,
           storyPointsCandidates: storyPointsCandidates.map(f => ({
             id: f.id,
             name: f.name,

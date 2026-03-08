@@ -17,7 +17,40 @@ class DatabaseService {
     this.client = createClient(supabaseUrl, supabaseKey);
     // In-memory locks to prevent concurrent read-modify-write on the same board
     this._updateLocks = new Map();
+    // Whether tenant_id column exists (auto-detected on first query)
+    this._tenantColumnReady = null;
     console.log('✓ Supabase database initialized');
+  }
+
+  // Check if tenant_id column exists in metrics_history
+  async _checkTenantColumn() {
+    if (this._tenantColumnReady !== null) return this._tenantColumnReady;
+    if (!this.client) return false;
+
+    try {
+      const { error } = await this.client
+        .from('metrics_history')
+        .select('tenant_id')
+        .limit(1);
+
+      this._tenantColumnReady = !error;
+      if (!this._tenantColumnReady) {
+        console.warn('⚠ tenant_id column not found. Run migration: server/sql/add_tenant_id.sql');
+      }
+      return this._tenantColumnReady;
+    } catch {
+      this._tenantColumnReady = false;
+      return false;
+    }
+  }
+
+  // Apply tenant filter to a query (only if column exists)
+  async _applyTenantFilter(query, tenantId) {
+    const hasTenant = await this._checkTenantColumn();
+    if (hasTenant && tenantId) {
+      return query.eq('tenant_id', tenantId);
+    }
+    return query;
   }
 
   // Acquire a per-board lock to serialize JSONB merges
@@ -34,29 +67,32 @@ class DatabaseService {
     }
   }
 
-  // Save calculated metrics
-  async saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel) {
+  // Save calculated metrics (tenant-scoped)
+  async saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel, tenantId = null) {
     if (!this.client) return null;
 
     try {
+      const record = {
+        board_id: boardId,
+        board_name: boardName,
+        sprint_count: sprintCount,
+        metrics_data: metricsData,
+        maturity_level: maturityLevel
+      };
+      const hasTenant = await this._checkTenantColumn();
+      if (hasTenant && tenantId) record.tenant_id = tenantId;
+
       const { data, error } = await this.client
         .from('metrics_history')
-        .insert({
-          board_id: boardId,
-          board_name: boardName,
-          sprint_count: sprintCount,
-          metrics_data: metricsData,
-          maturity_level: maturityLevel
-        })
+        .insert(record)
         .select('id')
         .single();
 
       if (error) throw error;
 
-      console.log(`✓ Metrics saved for board ${boardName} (ID: ${boardId})`);
+      console.log(`✓ Metrics saved for board ${boardName} (ID: ${boardId}, tenant: ${tenantId || 'default'})`);
 
-      // Keep only last 100 entries per board
-      await this._pruneOldEntries(boardId, 100);
+      await this._pruneOldEntries(boardId, 100, tenantId);
 
       return data.id;
     } catch (err) {
@@ -65,14 +101,18 @@ class DatabaseService {
     }
   }
 
-  // Keep only the latest N entries per board
-  async _pruneOldEntries(boardId, keepCount) {
+  // Keep only the latest N entries per board (tenant-scoped)
+  async _pruneOldEntries(boardId, keepCount, tenantId = null) {
     try {
-      const { data: entries } = await this.client
+      let query = this.client
         .from('metrics_history')
         .select('id')
         .eq('board_id', boardId)
         .order('calculated_at', { ascending: false });
+
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data: entries } = await query;
 
       if (entries && entries.length > keepCount) {
         const idsToDelete = entries.slice(keepCount).map(e => e.id);
@@ -86,18 +126,21 @@ class DatabaseService {
     }
   }
 
-  // Get latest metrics for a board
-  async getLatestMetrics(boardId) {
+  // Get latest metrics for a board (tenant-scoped)
+  async getLatestMetrics(boardId, tenantId = null) {
     if (!this.client) return null;
 
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('metrics_history')
         .select('*')
         .eq('board_id', boardId)
         .order('calculated_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
+
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query.single();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data || null;
@@ -107,17 +150,21 @@ class DatabaseService {
     }
   }
 
-  // Get metrics history for a board (without metrics_data to reduce payload)
-  async getMetricsHistory(boardId, limit = 30) {
+  // Get metrics history for a board (tenant-scoped)
+  async getMetricsHistory(boardId, limit = 30, tenantId = null) {
     if (!this.client) return [];
 
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('metrics_history')
         .select('id, board_id, board_name, calculated_at, sprint_count, maturity_level')
         .eq('board_id', boardId)
         .order('calculated_at', { ascending: false })
         .limit(limit);
+
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return data || [];
@@ -127,16 +174,19 @@ class DatabaseService {
     }
   }
 
-  // Get specific metrics by ID
-  async getMetricsById(id) {
+  // Get specific metrics by ID (tenant-scoped for safety)
+  async getMetricsById(id, tenantId = null) {
     if (!this.client) return null;
 
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('metrics_history')
         .select('*')
-        .eq('id', id)
-        .single();
+        .eq('id', id);
+
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query.single();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data || null;
@@ -146,20 +196,22 @@ class DatabaseService {
     }
   }
 
-  // Get all boards that have metrics (without metrics_data)
-  async getAllBoardsWithMetrics() {
+  // Get all boards that have metrics (tenant-scoped)
+  async getAllBoardsWithMetrics(tenantId = null) {
     if (!this.client) return [];
 
     try {
-      // Get distinct boards with their latest calculated_at
-      const { data, error } = await this.client
+      let query = this.client
         .from('metrics_history')
         .select('board_id, board_name, calculated_at')
         .order('calculated_at', { ascending: false });
 
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query;
+
       if (error) throw error;
 
-      // Deduplicate: keep only the latest entry per board
       const boardMap = new Map();
       for (const row of (data || [])) {
         if (!boardMap.has(row.board_id)) {
@@ -178,20 +230,22 @@ class DatabaseService {
     }
   }
 
-  // Get all boards with their latest metrics data included
-  async getAllBoardsWithLatestMetrics() {
+  // Get all boards with their latest metrics data included (tenant-scoped)
+  async getAllBoardsWithLatestMetrics(tenantId = null) {
     if (!this.client) return [];
 
     try {
-      // Get all metrics ordered by date desc
-      const { data, error } = await this.client
+      let query = this.client
         .from('metrics_history')
         .select('*')
         .order('calculated_at', { ascending: false });
 
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query;
+
       if (error) throw error;
 
-      // Deduplicate: keep only the latest entry per board
       const boardMap = new Map();
       for (const row of (data || [])) {
         if (!boardMap.has(row.board_id)) {
@@ -206,48 +260,63 @@ class DatabaseService {
     }
   }
 
-  // Save boards list (cache)
-  async saveBoards(boards) {
+  // Save boards list (cache) - tenant-scoped
+  async saveBoards(boards, tenantId = null) {
     if (!this.client) return;
 
     try {
+      const hasTenant = await this._checkTenantColumn();
+
       // Delete old cache entries
-      await this.client.from('boards_cache').delete().neq('id', 0);
+      if (hasTenant && tenantId) {
+        await this.client.from('boards_cache').delete().eq('tenant_id', tenantId);
+      } else {
+        await this.client.from('boards_cache').delete().neq('id', 0);
+      }
 
       // Insert new cache
+      const record = { boards_data: boards };
+      if (hasTenant && tenantId) record.tenant_id = tenantId;
+
       const { error } = await this.client
         .from('boards_cache')
-        .insert({ boards_data: boards });
+        .insert(record);
 
       if (error) throw error;
-      console.log(`✓ Boards list saved to database (${boards.length} boards)`);
+      console.log(`✓ Boards list saved to database (${boards.length} boards, tenant: ${tenantId || 'default'})`);
     } catch (err) {
       console.error('Failed to save boards:', err.message);
     }
   }
 
-  // Get cached boards list (returns null if older than maxAge)
-  async getCachedBoards(maxAgeMs = 3600 * 1000) {
+  // Get cached boards list (tenant-scoped)
+  async getCachedBoards(maxAgeMs = 3600 * 1000, tenantId = null) {
     if (!this.client) return null;
 
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('boards_cache')
         .select('*')
         .order('updated_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
+
+      const hasTenant = await this._checkTenantColumn();
+      if (hasTenant && tenantId) {
+        query = query.eq('tenant_id', tenantId);
+      }
+
+      const { data, error } = await query.single();
 
       if (error && error.code !== 'PGRST116') throw error;
       if (!data) return null;
 
       const updatedAt = new Date(data.updated_at).getTime();
       if (Date.now() - updatedAt > maxAgeMs) {
-        console.log('✗ Boards cache expired');
+        console.log(`✗ Boards cache expired (tenant: ${tenantId || 'default'})`);
         return null;
       }
 
-      console.log('✅ Boards loaded from Supabase cache');
+      console.log(`✅ Boards loaded from Supabase cache (tenant: ${tenantId || 'default'})`);
       return data.boards_data;
     } catch (err) {
       console.warn('Failed to get cached boards:', err.message);
@@ -255,18 +324,16 @@ class DatabaseService {
     }
   }
 
-  // Generic locked merge: read latest record, add/overwrite a key, write back
-  // The lock ensures concurrent calls for the same board don't overwrite each other
-  async _mergeIntoLatest(boardId, dataKey, data, retries = 3) {
+  // Generic locked merge
+  async _mergeIntoLatest(boardId, dataKey, data, retries = 3, tenantId = null) {
     if (!this.client) return false;
 
     return this._withLock(boardId, async () => {
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-          const latest = await this.getLatestMetrics(boardId);
+          const latest = await this.getLatestMetrics(boardId, tenantId);
           if (!latest) {
             if (attempt < retries) {
-              // Record might not exist yet (team metrics still saving) — wait and retry
               console.log(`⏳ No record for board ${boardId} yet, retrying in 2s... (${attempt}/${retries})`);
               await new Promise(r => setTimeout(r, 2000));
               continue;
@@ -298,31 +365,31 @@ class DatabaseService {
     });
   }
 
-  // Update latest metrics record with flow data
-  async updateLatestWithFlow(boardId, flowData) {
-    return this._mergeIntoLatest(boardId, 'flowMetrics', flowData);
+  async updateLatestWithFlow(boardId, flowData, tenantId = null) {
+    return this._mergeIntoLatest(boardId, 'flowMetrics', flowData, 3, tenantId);
   }
 
-  // Update latest metrics record with releases data
-  async updateLatestWithReleases(boardId, releasesData) {
-    return this._mergeIntoLatest(boardId, 'releasesData', releasesData);
+  async updateLatestWithReleases(boardId, releasesData, tenantId = null) {
+    return this._mergeIntoLatest(boardId, 'releasesData', releasesData, 3, tenantId);
   }
 
-  // Update latest metrics record with capacity data
-  async updateLatestWithCapacity(boardId, capacityData) {
-    return this._mergeIntoLatest(boardId, 'capacityData', capacityData);
+  async updateLatestWithCapacity(boardId, capacityData, tenantId = null) {
+    return this._mergeIntoLatest(boardId, 'capacityData', capacityData, 3, tenantId);
   }
 
-  // Delete all metrics for a board
-  async deleteBoardMetrics(boardId) {
+  // Delete all metrics for a board (tenant-scoped)
+  async deleteBoardMetrics(boardId, tenantId = null) {
     if (!this.client) return 0;
 
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('metrics_history')
         .delete()
-        .eq('board_id', boardId)
-        .select('id');
+        .eq('board_id', boardId);
+
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query.select('id');
 
       if (error) throw error;
 
@@ -339,28 +406,27 @@ class DatabaseService {
   // PRODUCT MANAGEMENT DATA
   // ==============================
 
-  // Save product management data (epic intelligence, prioritization, portfolio)
-  // Uses a dedicated table key based on boardIds hash
-  async saveProductData(boardIds, dataType, data) {
+  async saveProductData(boardIds, dataType, data, tenantId = null) {
     if (!this.client) return false;
 
     const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
-    const storageKey = `product_${dataType}_${boardKey}`;
+    const tenantPrefix = tenantId ? `${tenantId}_` : '';
+    const storageKey = `${tenantPrefix}product_${dataType}_${boardKey}`;
 
     try {
-      // Upsert: update if exists, insert if not
+      const record = {
+        cache_key: storageKey,
+        board_ids: boardKey,
+        data_type: dataType,
+        data: data,
+        updated_at: new Date().toISOString()
+      };
+      const hasTenant = await this._checkTenantColumn();
+      if (hasTenant && tenantId) record.tenant_id = tenantId;
+
       const { error } = await this.client
         .from('product_data_cache')
-        .upsert(
-          {
-            cache_key: storageKey,
-            board_ids: boardKey,
-            data_type: dataType,
-            data: data,
-            updated_at: new Date().toISOString()
-          },
-          { onConflict: 'cache_key' }
-        );
+        .upsert(record, { onConflict: 'cache_key' });
 
       if (error) throw error;
       console.log(`✓ Product ${dataType} saved for boards [${boardKey}]`);
@@ -371,12 +437,12 @@ class DatabaseService {
     }
   }
 
-  // Get cached product management data
-  async getProductData(boardIds, dataType, maxAgeMs = 30 * 60 * 1000) {
+  async getProductData(boardIds, dataType, maxAgeMs = 30 * 60 * 1000, tenantId = null) {
     if (!this.client) return null;
 
     const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
-    const storageKey = `product_${dataType}_${boardKey}`;
+    const tenantPrefix = tenantId ? `${tenantId}_` : '';
+    const storageKey = `${tenantPrefix}product_${dataType}_${boardKey}`;
 
     try {
       const { data, error } = await this.client
@@ -388,7 +454,6 @@ class DatabaseService {
       if (error && error.code !== 'PGRST116') throw error;
       if (!data) return null;
 
-      // Check freshness
       const updatedAt = new Date(data.updated_at).getTime();
       const age = Date.now() - updatedAt;
       if (maxAgeMs > 0 && age > maxAgeMs) {
@@ -402,17 +467,20 @@ class DatabaseService {
     }
   }
 
-  // Get all product data for given boards (any type), returns even if stale
-  async getAllProductData(boardIds) {
+  async getAllProductData(boardIds, tenantId = null) {
     if (!this.client) return null;
 
     const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
 
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('product_data_cache')
         .select('*')
         .eq('board_ids', boardKey);
+
+      query = await this._applyTenantFilter(query, tenantId);
+
+      const { data, error } = await query;
 
       if (error) throw error;
       if (!data || data.length === 0) return null;
@@ -432,7 +500,6 @@ class DatabaseService {
     }
   }
 
-  // Clean old metrics (keep last 90 days)
   async cleanOldMetrics() {
     if (!this.client) return 0;
 

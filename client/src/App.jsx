@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import JiraConnection from './components/JiraConnection';
 import TeamSelector from './components/TeamSelector';
 import Dashboard from './components/Dashboard';
-import ProductManagement from './components/ProductManagement';
 import api from './services/api';
 import { getTranslations, detectLocale } from './services/i18n';
 
@@ -24,7 +23,6 @@ function App() {
   const [newlyAddedBoard, setNewlyAddedBoard] = useState(null);
   const [tenantId, setTenantId] = useState(null);
   const [locale, setLocale] = useState('en');
-  const [activeSection, setActiveSection] = useState('scrum');
 
   // Translation function
   const t = getTranslations(locale);
@@ -288,54 +286,15 @@ function App() {
         )}
 
         {step === 'dashboard' && (
-          <>
-            {/* Section Navigation */}
-            <div className="max-w-7xl mx-auto px-6 mb-4">
-              <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-                <button
-                  onClick={() => setActiveSection('scrum')}
-                  className={`px-5 py-2 rounded-md text-sm font-semibold transition-colors ${
-                    activeSection === 'scrum'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-                  }`}
-                >
-                  {t('scrumMaturity')}
-                </button>
-                <button
-                  onClick={() => setActiveSection('product')}
-                  className={`px-5 py-2 rounded-md text-sm font-semibold transition-colors ${
-                    activeSection === 'product'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-                  }`}
-                >
-                  {t('productManagement')}
-                </button>
-              </div>
-            </div>
-
-            {activeSection === 'scrum' && (
-              <Dashboard
-                credentials={credentials}
-                selectedBoards={selectedBoards}
-                newlyAddedBoard={newlyAddedBoard}
-                onNewBoardHandled={() => setNewlyAddedBoard(null)}
-                onBoardDeleted={handleBoardDeleted}
-                locale={locale}
-                t={t}
-              />
-            )}
-
-            {activeSection === 'product' && (
-              <ProductManagement
-                credentials={credentials}
-                selectedBoards={selectedBoards}
-                locale={locale}
-                t={t}
-              />
-            )}
-          </>
+          <Dashboard
+            credentials={credentials}
+            selectedBoards={selectedBoards}
+            newlyAddedBoard={newlyAddedBoard}
+            onNewBoardHandled={() => setNewlyAddedBoard(null)}
+            onBoardDeleted={handleBoardDeleted}
+            locale={locale}
+            t={t}
+          />
         )}
       </main>
 

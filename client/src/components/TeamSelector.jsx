@@ -89,8 +89,23 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         return;
       }
 
-      // No cache available
-      setBoards([]);
+      // No cache available — auto-fetch from Jira API (new tenant or first visit)
+      try {
+        const result = await api.getBoards(
+          credentials.jiraUrl,
+          credentials.email,
+          credentials.apiToken
+        );
+        setBoards(result.boards);
+        localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
+          boards: result.boards,
+          timestamp: Date.now()
+        }));
+      } catch (fetchErr) {
+        console.error('Auto-fetch from Jira failed:', fetchErr);
+        setError(`${t('failedToLoadBoards')}: ${fetchErr.response?.data?.message || fetchErr.message || ''}`);
+        setBoards([]);
+      }
     } catch (err) {
       console.error('Failed to load boards:', err);
       setError(`${t('failedToLoadBoards')}: ${err.message || 'Unknown error'}`);

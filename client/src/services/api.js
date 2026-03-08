@@ -100,28 +100,6 @@ class ApiService {
     return response.data;
   }
 
-  // Product Management endpoints
-  async getProductEpics(jiraUrl, email, apiToken, boardIds, forceRefresh = false) {
-    const response = await this.client.post('/product/epics', {
-      jiraUrl, email, apiToken, boardIds, forceRefresh
-    });
-    return response.data;
-  }
-
-  async getProductDependencies(jiraUrl, email, apiToken, boardIds, forceRefresh = false) {
-    const response = await this.client.post('/product/dependencies', {
-      jiraUrl, email, apiToken, boardIds, forceRefresh
-    });
-    return response.data;
-  }
-
-  async discoverProductFields(jiraUrl, email, apiToken) {
-    const response = await this.client.post('/product/discover-fields', {
-      jiraUrl, email, apiToken
-    });
-    return response.data;
-  }
-
 }
 
 export default new ApiService();

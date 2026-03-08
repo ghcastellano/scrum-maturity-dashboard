@@ -45,11 +45,18 @@ class DatabaseService {
   }
 
   // Apply tenant filter to a query (only if column exists)
-  // Includes records with NULL tenant_id for backward compatibility
+  // Only includes NULL tenant_id records for the original tenant (indeed.atlassian.net)
+  // to prevent data leaking across tenants
   async _applyTenantFilter(query, tenantId) {
     const hasTenant = await this._checkTenantColumn();
     if (hasTenant && tenantId) {
-      return query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
+      // Old data has NULL tenant_id and belongs to Indeed (the original tenant).
+      // Only include NULL records for Indeed; other tenants see only their own data.
+      const originalTenant = 'indeed.atlassian.net';
+      if (tenantId === originalTenant) {
+        return query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
+      }
+      return query.eq('tenant_id', tenantId);
     }
     return query;
   }

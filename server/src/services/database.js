@@ -45,10 +45,11 @@ class DatabaseService {
   }
 
   // Apply tenant filter to a query (only if column exists)
+  // Includes records with NULL tenant_id for backward compatibility
   async _applyTenantFilter(query, tenantId) {
     const hasTenant = await this._checkTenantColumn();
     if (hasTenant && tenantId) {
-      return query.eq('tenant_id', tenantId);
+      return query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
     }
     return query;
   }

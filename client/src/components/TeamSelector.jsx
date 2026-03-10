@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 
-const STORAGE_KEY = 'scrum-dashboard-selected-boards';
-const BOARDS_CACHE_KEY = 'scrum-dashboard-boards-cache';
+const STORAGE_KEY_PREFIX = 'scrum-dashboard-selected-boards';
+const BOARDS_CACHE_PREFIX = 'scrum-dashboard-boards-cache';
+
+// Tenant-scoped localStorage keys to prevent data leaking across tenants
+function getTenantKey(prefix, tenantId) {
+  return tenantId ? `${prefix}-${tenantId}` : prefix;
+}
 
 export default function TeamSelector({ credentials, onTeamsSelected, existingBoards = [], onBack, locale = 'en', t }) {
   const [boards, setBoards] = useState([]);
@@ -10,6 +15,11 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Derive tenantId from credentials for tenant-scoped storage
+  const tenantId = credentials?.jiraUrl ? (() => { try { return new URL(credentials.jiraUrl).hostname; } catch { return null; } })() : null;
+  const STORAGE_KEY = getTenantKey(STORAGE_KEY_PREFIX, tenantId);
+  const BOARDS_CACHE_KEY = getTenantKey(BOARDS_CACHE_PREFIX, tenantId);
 
   useEffect(() => {
     loadBoards();

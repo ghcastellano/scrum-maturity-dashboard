@@ -199,13 +199,15 @@ function App() {
 
   const handleLogout = () => {
     try {
-      localStorage.removeItem(STORAGE_KEY_JIRA_URL);
-      localStorage.removeItem(STORAGE_KEY_EMAIL);
-      localStorage.removeItem(STORAGE_KEY_TOKEN);
-      localStorage.removeItem(STORAGE_KEY_BOARDS);
-      localStorage.removeItem(STORAGE_KEY_TENANT);
-      localStorage.removeItem(STORAGE_KEY_LOCALE);
-      localStorage.removeItem('scrum-dashboard-boards-cache');
+      // Clear ALL scrum-dashboard-* keys to prevent cross-tenant data leaks
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('scrum-dashboard-')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
     } catch (err) {
       console.error('Failed to clear saved data:', err);
     }

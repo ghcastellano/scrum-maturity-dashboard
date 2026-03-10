@@ -17,29 +17,29 @@ class DatabaseService {
     this.client = createClient(supabaseUrl, supabaseKey);
     // In-memory locks to prevent concurrent read-modify-write on the same board
     this._updateLocks = new Map();
-    // Whether tenant_id column exists (auto-detected on first query)
-    this._tenantColumnReady = null;
+    // Per-table cache for whether tenant_id column exists
+    this._tenantColumnCache = {};
     console.log('✓ Supabase database initialized');
   }
 
-  // Check if tenant_id column exists in metrics_history
-  async _checkTenantColumn() {
-    if (this._tenantColumnReady !== null) return this._tenantColumnReady;
+  // Check if tenant_id column exists in a specific table
+  async _checkTenantColumn(table = 'metrics_history') {
+    if (this._tenantColumnCache[table] !== undefined) return this._tenantColumnCache[table];
     if (!this.client) return false;
 
     try {
       const { error } = await this.client
-        .from('metrics_history')
+        .from(table)
         .select('tenant_id')
         .limit(1);
 
-      this._tenantColumnReady = !error;
-      if (!this._tenantColumnReady) {
-        console.warn('⚠ tenant_id column not found. Run migration: server/sql/add_tenant_id.sql');
+      this._tenantColumnCache[table] = !error;
+      if (!this._tenantColumnCache[table]) {
+        console.warn(`⚠ tenant_id column not found in ${table}. Run migration: server/sql/add_tenant_id.sql`);
       }
-      return this._tenantColumnReady;
+      return this._tenantColumnCache[table];
     } catch {
-      this._tenantColumnReady = false;
+      this._tenantColumnCache[table] = false;
       return false;
     }
   }
@@ -47,8 +47,8 @@ class DatabaseService {
   // Apply tenant filter to a query (only if column exists)
   // Only includes NULL tenant_id records for the original tenant (indeed.atlassian.net)
   // to prevent data leaking across tenants
-  async _applyTenantFilter(query, tenantId) {
-    const hasTenant = await this._checkTenantColumn();
+  async _applyTenantFilter(query, tenantId, table = 'metrics_history') {
+    const hasTenant = await this._checkTenantColumn(table);
     if (hasTenant && tenantId) {
       // Old data has NULL tenant_id and belongs to Indeed (the original tenant).
       // Only include NULL records for Indeed; other tenants see only their own data.
@@ -273,12 +273,16 @@ class DatabaseService {
     if (!this.client) return;
 
     try {
-      const hasTenant = await this._checkTenantColumn();
+      const hasTenant = await this._checkTenantColumn('boards_cache');
 
-      // Delete old cache entries
+      // Delete old cache entries for this tenant only
       if (hasTenant && tenantId) {
         await this.client.from('boards_cache').delete().eq('tenant_id', tenantId);
+      } else if (hasTenant) {
+        // Tenant column exists but no tenantId — only delete rows with NULL tenant_id
+        await this.client.from('boards_cache').delete().is('tenant_id', null);
       } else {
+        // No tenant column at all — clear all (legacy)
         await this.client.from('boards_cache').delete().neq('id', 0);
       }
 
@@ -308,24 +312,22 @@ class DatabaseService {
         .order('updated_at', { ascending: false })
         .limit(1);
 
-      const hasTenant = await this._checkTenantColumn();
-      if (hasTenant && tenantId) {
-        query = query.eq('tenant_id', tenantId);
-      }
+      query = await this._applyTenantFilter(query, tenantId, 'boards_cache');
 
-      const { data, error } = await query.single();
+      const { data, error } = await query;
 
-      if (error && error.code !== 'PGRST116') throw error;
-      if (!data) return null;
+      if (error) throw error;
+      if (!data || data.length === 0) return null;
 
-      const updatedAt = new Date(data.updated_at).getTime();
+      const record = data[0];
+      const updatedAt = new Date(record.updated_at).getTime();
       if (Date.now() - updatedAt > maxAgeMs) {
         console.log(`✗ Boards cache expired (tenant: ${tenantId || 'default'})`);
         return null;
       }
 
       console.log(`✅ Boards loaded from Supabase cache (tenant: ${tenantId || 'default'})`);
-      return data.boards_data;
+      return record.boards_data;
     } catch (err) {
       console.warn('Failed to get cached boards:', err.message);
       return null;

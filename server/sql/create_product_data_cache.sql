@@ -1,5 +1,5 @@
 -- Create the product_data_cache table for Product Management data persistence
--- Run this in Supabase SQL Editor
+-- Run this in Neon SQL Editor or via psql
 
 CREATE TABLE IF NOT EXISTS product_data_cache (
   id BIGSERIAL PRIMARY KEY,

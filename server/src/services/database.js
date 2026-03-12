@@ -74,7 +74,7 @@ class DatabaseService {
   async _pruneOldEntries(boardId, keepCount, tenantId = null) {
     try {
       const tenant = this._tenantWhere(tenantId, 2);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT id FROM metrics_history WHERE board_id = $1${tenant.clause} ORDER BY calculated_at DESC`,
         [boardId, ...tenant.params]
       );
@@ -94,7 +94,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 2);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT * FROM metrics_history WHERE board_id = $1${tenant.clause} ORDER BY calculated_at DESC LIMIT 1`,
         [boardId, ...tenant.params]
       );
@@ -111,7 +111,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 3);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT id, board_id, board_name, calculated_at, sprint_count, maturity_level
          FROM metrics_history WHERE board_id = $1${tenant.clause}
          ORDER BY calculated_at DESC LIMIT $2`,
@@ -130,7 +130,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 2);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT * FROM metrics_history WHERE id = $1${tenant.clause} LIMIT 1`,
         [id, ...tenant.params]
       );
@@ -147,7 +147,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 1);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT board_id, board_name, calculated_at FROM metrics_history
          WHERE 1=1${tenant.clause} ORDER BY calculated_at DESC`,
         [...tenant.params]
@@ -176,7 +176,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 1);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT * FROM metrics_history WHERE 1=1${tenant.clause} ORDER BY calculated_at DESC`,
         [...tenant.params]
       );
@@ -223,7 +223,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 1);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT * FROM boards_cache WHERE 1=1${tenant.clause} ORDER BY updated_at DESC LIMIT 1`,
         [...tenant.params]
       );
@@ -301,7 +301,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 2);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `DELETE FROM metrics_history WHERE board_id = $1${tenant.clause} RETURNING id`,
         [boardId, ...tenant.params]
       );
@@ -376,7 +376,7 @@ class DatabaseService {
 
     try {
       const tenant = this._tenantWhere(tenantId, 2);
-      const rows = await this.sql(
+      const rows = await this.sql.query(
         `SELECT * FROM product_data_cache WHERE board_ids = $1${tenant.clause}`,
         [boardKey, ...tenant.params]
       );

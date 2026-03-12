@@ -12,7 +12,13 @@
     "build:all": "cd server && npm install && cd ../client && npm install && npm run build && cd .. && mkdir -p server/public && cp -r client/dist/* server/public/",
     "start": "cd server && npm start"
   },
-  "keywords": ["scrum", "jira", "metrics", "maturity-model", "agile"],
+  "keywords": [
+    "scrum",
+    "jira",
+    "metrics",
+    "maturity-model",
+    "agile"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {

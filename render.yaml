@@ -16,8 +16,6 @@ services:
         sync: false
       - key: JIRA_API_TOKEN
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_KEY
+      - key: DATABASE_URL
         sync: false
     healthCheckPath: /health

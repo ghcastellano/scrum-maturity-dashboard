@@ -1,64 +1,39 @@
-import { createClient } from '@supabase/supabase-js';
+import { neon } from '@neondatabase/serverless';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 class DatabaseService {
   constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_KEY;
+    const databaseUrl = process.env.DATABASE_URL;
 
-    if (!supabaseUrl || !supabaseKey) {
-      console.warn('⚠ Supabase credentials not configured. Database will not work.');
-      this.client = null;
+    if (!databaseUrl) {
+      console.warn('⚠ DATABASE_URL not configured. Database will not work.');
+      this.sql = null;
       return;
     }
 
-    this.client = createClient(supabaseUrl, supabaseKey);
+    this.sql = neon(databaseUrl);
     // In-memory locks to prevent concurrent read-modify-write on the same board
     this._updateLocks = new Map();
-    // Per-table cache for whether tenant_id column exists
-    this._tenantColumnCache = {};
-    console.log('✓ Supabase database initialized');
+    console.log('✓ Neon database initialized');
   }
 
-  // Check if tenant_id column exists in a specific table
-  async _checkTenantColumn(table = 'metrics_history') {
-    if (this._tenantColumnCache[table] !== undefined) return this._tenantColumnCache[table];
-    if (!this.client) return false;
-
-    try {
-      const { error } = await this.client
-        .from(table)
-        .select('tenant_id')
-        .limit(1);
-
-      this._tenantColumnCache[table] = !error;
-      if (!this._tenantColumnCache[table]) {
-        console.warn(`⚠ tenant_id column not found in ${table}. Run migration: server/sql/add_tenant_id.sql`);
-      }
-      return this._tenantColumnCache[table];
-    } catch {
-      this._tenantColumnCache[table] = false;
-      return false;
+  // Build tenant WHERE clause + params
+  // Returns { clause: string, params: any[] } with param indices starting at startIdx
+  _tenantWhere(tenantId, startIdx = 1) {
+    if (!tenantId) return { clause: '', params: [] };
+    const originalTenant = 'indeed.atlassian.net';
+    if (tenantId === originalTenant) {
+      return {
+        clause: ` AND (tenant_id = $${startIdx} OR tenant_id IS NULL)`,
+        params: [tenantId]
+      };
     }
-  }
-
-  // Apply tenant filter to a query (only if column exists)
-  // Only includes NULL tenant_id records for the original tenant (indeed.atlassian.net)
-  // to prevent data leaking across tenants
-  async _applyTenantFilter(query, tenantId, table = 'metrics_history') {
-    const hasTenant = await this._checkTenantColumn(table);
-    if (hasTenant && tenantId) {
-      // Old data has NULL tenant_id and belongs to Indeed (the original tenant).
-      // Only include NULL records for Indeed; other tenants see only their own data.
-      const originalTenant = 'indeed.atlassian.net';
-      if (tenantId === originalTenant) {
-        return query.or(`tenant_id.eq.${tenantId},tenant_id.is.null`);
-      }
-      return query.eq('tenant_id', tenantId);
-    }
-    return query;
+    return {
+      clause: ` AND tenant_id = $${startIdx}`,
+      params: [tenantId]
+    };
   }
 
   // Acquire a per-board lock to serialize JSONB merges
@@ -77,32 +52,18 @@ class DatabaseService {
 
   // Save calculated metrics (tenant-scoped)
   async saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel, tenantId = null) {
-    if (!this.client) return null;
+    if (!this.sql) return null;
 
     try {
-      const record = {
-        board_id: boardId,
-        board_name: boardName,
-        sprint_count: sprintCount,
-        metrics_data: metricsData,
-        maturity_level: maturityLevel
-      };
-      const hasTenant = await this._checkTenantColumn();
-      if (hasTenant && tenantId) record.tenant_id = tenantId;
-
-      const { data, error } = await this.client
-        .from('metrics_history')
-        .insert(record)
-        .select('id')
-        .single();
-
-      if (error) throw error;
+      const rows = await this.sql`
+        INSERT INTO metrics_history (board_id, board_name, sprint_count, metrics_data, maturity_level, tenant_id)
+        VALUES (${boardId}, ${boardName}, ${sprintCount}, ${JSON.stringify(metricsData)}, ${maturityLevel}, ${tenantId})
+        RETURNING id
+      `;
 
       console.log(`✓ Metrics saved for board ${boardName} (ID: ${boardId}, tenant: ${tenantId || 'default'})`);
-
       await this._pruneOldEntries(boardId, 100, tenantId);
-
-      return data.id;
+      return rows[0]?.id || null;
     } catch (err) {
       console.error('Failed to save metrics:', err.message);
       return null;
@@ -112,22 +73,15 @@ class DatabaseService {
   // Keep only the latest N entries per board (tenant-scoped)
   async _pruneOldEntries(boardId, keepCount, tenantId = null) {
     try {
-      let query = this.client
-        .from('metrics_history')
-        .select('id')
-        .eq('board_id', boardId)
-        .order('calculated_at', { ascending: false });
+      const tenant = this._tenantWhere(tenantId, 2);
+      const rows = await this.sql(
+        `SELECT id FROM metrics_history WHERE board_id = $1${tenant.clause} ORDER BY calculated_at DESC`,
+        [boardId, ...tenant.params]
+      );
 
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data: entries } = await query;
-
-      if (entries && entries.length > keepCount) {
-        const idsToDelete = entries.slice(keepCount).map(e => e.id);
-        await this.client
-          .from('metrics_history')
-          .delete()
-          .in('id', idsToDelete);
+      if (rows.length > keepCount) {
+        const idsToDelete = rows.slice(keepCount).map(e => e.id);
+        await this.sql`DELETE FROM metrics_history WHERE id = ANY(${idsToDelete})`;
       }
     } catch (err) {
       console.warn('Failed to prune old entries:', err.message);
@@ -136,22 +90,15 @@ class DatabaseService {
 
   // Get latest metrics for a board (tenant-scoped)
   async getLatestMetrics(boardId, tenantId = null) {
-    if (!this.client) return null;
+    if (!this.sql) return null;
 
     try {
-      let query = this.client
-        .from('metrics_history')
-        .select('*')
-        .eq('board_id', boardId)
-        .order('calculated_at', { ascending: false })
-        .limit(1);
-
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query.single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-      return data || null;
+      const tenant = this._tenantWhere(tenantId, 2);
+      const rows = await this.sql(
+        `SELECT * FROM metrics_history WHERE board_id = $1${tenant.clause} ORDER BY calculated_at DESC LIMIT 1`,
+        [boardId, ...tenant.params]
+      );
+      return rows[0] || null;
     } catch (err) {
       console.warn('Failed to get latest metrics:', err.message);
       return null;
@@ -160,22 +107,17 @@ class DatabaseService {
 
   // Get metrics history for a board (tenant-scoped)
   async getMetricsHistory(boardId, limit = 30, tenantId = null) {
-    if (!this.client) return [];
+    if (!this.sql) return [];
 
     try {
-      let query = this.client
-        .from('metrics_history')
-        .select('id, board_id, board_name, calculated_at, sprint_count, maturity_level')
-        .eq('board_id', boardId)
-        .order('calculated_at', { ascending: false })
-        .limit(limit);
-
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      return data || [];
+      const tenant = this._tenantWhere(tenantId, 3);
+      const rows = await this.sql(
+        `SELECT id, board_id, board_name, calculated_at, sprint_count, maturity_level
+         FROM metrics_history WHERE board_id = $1${tenant.clause}
+         ORDER BY calculated_at DESC LIMIT $2`,
+        [boardId, limit, ...tenant.params]
+      );
+      return rows;
     } catch (err) {
       console.warn('Failed to get metrics history:', err.message);
       return [];
@@ -184,20 +126,15 @@ class DatabaseService {
 
   // Get specific metrics by ID (tenant-scoped for safety)
   async getMetricsById(id, tenantId = null) {
-    if (!this.client) return null;
+    if (!this.sql) return null;
 
     try {
-      let query = this.client
-        .from('metrics_history')
-        .select('*')
-        .eq('id', id);
-
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query.single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-      return data || null;
+      const tenant = this._tenantWhere(tenantId, 2);
+      const rows = await this.sql(
+        `SELECT * FROM metrics_history WHERE id = $1${tenant.clause} LIMIT 1`,
+        [id, ...tenant.params]
+      );
+      return rows[0] || null;
     } catch (err) {
       console.warn('Failed to get metrics by id:', err.message);
       return null;
@@ -206,22 +143,18 @@ class DatabaseService {
 
   // Get all boards that have metrics (tenant-scoped)
   async getAllBoardsWithMetrics(tenantId = null) {
-    if (!this.client) return [];
+    if (!this.sql) return [];
 
     try {
-      let query = this.client
-        .from('metrics_history')
-        .select('board_id, board_name, calculated_at')
-        .order('calculated_at', { ascending: false });
-
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query;
-
-      if (error) throw error;
+      const tenant = this._tenantWhere(tenantId, 1);
+      const rows = await this.sql(
+        `SELECT board_id, board_name, calculated_at FROM metrics_history
+         WHERE 1=1${tenant.clause} ORDER BY calculated_at DESC`,
+        [...tenant.params]
+      );
 
       const boardMap = new Map();
-      for (const row of (data || [])) {
+      for (const row of rows) {
         if (!boardMap.has(row.board_id)) {
           boardMap.set(row.board_id, {
             board_id: row.board_id,
@@ -230,7 +163,6 @@ class DatabaseService {
           });
         }
       }
-
       return Array.from(boardMap.values());
     } catch (err) {
       console.warn('Failed to get all boards:', err.message);
@@ -240,27 +172,21 @@ class DatabaseService {
 
   // Get all boards with their latest metrics data included (tenant-scoped)
   async getAllBoardsWithLatestMetrics(tenantId = null) {
-    if (!this.client) return [];
+    if (!this.sql) return [];
 
     try {
-      let query = this.client
-        .from('metrics_history')
-        .select('*')
-        .order('calculated_at', { ascending: false });
-
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query;
-
-      if (error) throw error;
+      const tenant = this._tenantWhere(tenantId, 1);
+      const rows = await this.sql(
+        `SELECT * FROM metrics_history WHERE 1=1${tenant.clause} ORDER BY calculated_at DESC`,
+        [...tenant.params]
+      );
 
       const boardMap = new Map();
-      for (const row of (data || [])) {
+      for (const row of rows) {
         if (!boardMap.has(row.board_id)) {
           boardMap.set(row.board_id, row);
         }
       }
-
       return Array.from(boardMap.values());
     } catch (err) {
       console.warn('Failed to get all boards with metrics:', err.message);
@@ -270,31 +196,21 @@ class DatabaseService {
 
   // Save boards list (cache) - tenant-scoped
   async saveBoards(boards, tenantId = null) {
-    if (!this.client) return;
+    if (!this.sql) return;
 
     try {
-      const hasTenant = await this._checkTenantColumn('boards_cache');
-
       // Delete old cache entries for this tenant only
-      if (hasTenant && tenantId) {
-        await this.client.from('boards_cache').delete().eq('tenant_id', tenantId);
-      } else if (hasTenant) {
-        // Tenant column exists but no tenantId — only delete rows with NULL tenant_id
-        await this.client.from('boards_cache').delete().is('tenant_id', null);
+      if (tenantId) {
+        await this.sql`DELETE FROM boards_cache WHERE tenant_id = ${tenantId}`;
       } else {
-        // No tenant column at all — clear all (legacy)
-        await this.client.from('boards_cache').delete().neq('id', 0);
+        await this.sql`DELETE FROM boards_cache WHERE tenant_id IS NULL`;
       }
 
       // Insert new cache
-      const record = { boards_data: boards };
-      if (hasTenant && tenantId) record.tenant_id = tenantId;
-
-      const { error } = await this.client
-        .from('boards_cache')
-        .insert(record);
-
-      if (error) throw error;
+      await this.sql`
+        INSERT INTO boards_cache (boards_data, tenant_id)
+        VALUES (${JSON.stringify(boards)}, ${tenantId})
+      `;
       console.log(`✓ Boards list saved to database (${boards.length} boards, tenant: ${tenantId || 'default'})`);
     } catch (err) {
       console.error('Failed to save boards:', err.message);
@@ -303,30 +219,25 @@ class DatabaseService {
 
   // Get cached boards list (tenant-scoped)
   async getCachedBoards(maxAgeMs = 3600 * 1000, tenantId = null) {
-    if (!this.client) return null;
+    if (!this.sql) return null;
 
     try {
-      let query = this.client
-        .from('boards_cache')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(1);
+      const tenant = this._tenantWhere(tenantId, 1);
+      const rows = await this.sql(
+        `SELECT * FROM boards_cache WHERE 1=1${tenant.clause} ORDER BY updated_at DESC LIMIT 1`,
+        [...tenant.params]
+      );
 
-      query = await this._applyTenantFilter(query, tenantId, 'boards_cache');
+      if (rows.length === 0) return null;
 
-      const { data, error } = await query;
-
-      if (error) throw error;
-      if (!data || data.length === 0) return null;
-
-      const record = data[0];
+      const record = rows[0];
       const updatedAt = new Date(record.updated_at).getTime();
       if (Date.now() - updatedAt > maxAgeMs) {
         console.log(`✗ Boards cache expired (tenant: ${tenantId || 'default'})`);
         return null;
       }
 
-      console.log(`✅ Boards loaded from Supabase cache (tenant: ${tenantId || 'default'})`);
+      console.log(`✅ Boards loaded from database cache (tenant: ${tenantId || 'default'})`);
       return record.boards_data;
     } catch (err) {
       console.warn('Failed to get cached boards:', err.message);
@@ -334,9 +245,9 @@ class DatabaseService {
     }
   }
 
-  // Generic locked merge
+  // Generic locked merge: read latest record, add/overwrite a JSONB key, write back
   async _mergeIntoLatest(boardId, dataKey, data, retries = 3, tenantId = null) {
-    if (!this.client) return false;
+    if (!this.sql) return false;
 
     return this._withLock(boardId, async () => {
       for (let attempt = 1; attempt <= retries; attempt++) {
@@ -353,12 +264,9 @@ class DatabaseService {
           }
 
           const updatedData = { ...latest.metrics_data, [dataKey]: data };
-          const { error } = await this.client
-            .from('metrics_history')
-            .update({ metrics_data: updatedData })
-            .eq('id', latest.id);
-
-          if (error) throw error;
+          await this.sql`
+            UPDATE metrics_history SET metrics_data = ${JSON.stringify(updatedData)} WHERE id = ${latest.id}
+          `;
           console.log(`✓ ${dataKey} saved for board ${boardId}`);
           return true;
         } catch (err) {
@@ -389,21 +297,16 @@ class DatabaseService {
 
   // Delete all metrics for a board (tenant-scoped)
   async deleteBoardMetrics(boardId, tenantId = null) {
-    if (!this.client) return 0;
+    if (!this.sql) return 0;
 
     try {
-      let query = this.client
-        .from('metrics_history')
-        .delete()
-        .eq('board_id', boardId);
+      const tenant = this._tenantWhere(tenantId, 2);
+      const rows = await this.sql(
+        `DELETE FROM metrics_history WHERE board_id = $1${tenant.clause} RETURNING id`,
+        [boardId, ...tenant.params]
+      );
 
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query.select('id');
-
-      if (error) throw error;
-
-      const removed = data?.length || 0;
+      const removed = rows.length;
       console.log(`✓ Deleted ${removed} metrics entries for board ${boardId}`);
       return removed;
     } catch (err) {
@@ -417,28 +320,21 @@ class DatabaseService {
   // ==============================
 
   async saveProductData(boardIds, dataType, data, tenantId = null) {
-    if (!this.client) return false;
+    if (!this.sql) return false;
 
     const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
     const tenantPrefix = tenantId ? `${tenantId}_` : '';
     const storageKey = `${tenantPrefix}product_${dataType}_${boardKey}`;
 
     try {
-      const record = {
-        cache_key: storageKey,
-        board_ids: boardKey,
-        data_type: dataType,
-        data: data,
-        updated_at: new Date().toISOString()
-      };
-      const hasTenant = await this._checkTenantColumn();
-      if (hasTenant && tenantId) record.tenant_id = tenantId;
-
-      const { error } = await this.client
-        .from('product_data_cache')
-        .upsert(record, { onConflict: 'cache_key' });
-
-      if (error) throw error;
+      await this.sql`
+        INSERT INTO product_data_cache (cache_key, board_ids, data_type, data, tenant_id, updated_at)
+        VALUES (${storageKey}, ${boardKey}, ${dataType}, ${JSON.stringify(data)}, ${tenantId}, now())
+        ON CONFLICT (cache_key) DO UPDATE SET
+          data = EXCLUDED.data,
+          tenant_id = EXCLUDED.tenant_id,
+          updated_at = now()
+      `;
       console.log(`✓ Product ${dataType} saved for boards [${boardKey}]`);
       return true;
     } catch (err) {
@@ -448,29 +344,25 @@ class DatabaseService {
   }
 
   async getProductData(boardIds, dataType, maxAgeMs = 30 * 60 * 1000, tenantId = null) {
-    if (!this.client) return null;
+    if (!this.sql) return null;
 
     const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
     const tenantPrefix = tenantId ? `${tenantId}_` : '';
     const storageKey = `${tenantPrefix}product_${dataType}_${boardKey}`;
 
     try {
-      const { data, error } = await this.client
-        .from('product_data_cache')
-        .select('*')
-        .eq('cache_key', storageKey)
-        .single();
+      const rows = await this.sql`
+        SELECT * FROM product_data_cache WHERE cache_key = ${storageKey} LIMIT 1
+      `;
+      if (rows.length === 0) return null;
 
-      if (error && error.code !== 'PGRST116') throw error;
-      if (!data) return null;
-
-      const updatedAt = new Date(data.updated_at).getTime();
+      const record = rows[0];
+      const updatedAt = new Date(record.updated_at).getTime();
       const age = Date.now() - updatedAt;
       if (maxAgeMs > 0 && age > maxAgeMs) {
-        return { data: data.data, stale: true, age: Math.round(age / 60000) };
+        return { data: record.data, stale: true, age: Math.round(age / 60000) };
       }
-
-      return { data: data.data, stale: false, age: Math.round(age / 60000) };
+      return { data: record.data, stale: false, age: Math.round(age / 60000) };
     } catch (err) {
       console.warn(`Failed to get product ${dataType}:`, err.message);
       return null;
@@ -478,25 +370,21 @@ class DatabaseService {
   }
 
   async getAllProductData(boardIds, tenantId = null) {
-    if (!this.client) return null;
+    if (!this.sql) return null;
 
     const boardKey = Array.isArray(boardIds) ? boardIds.sort().join('-') : String(boardIds);
 
     try {
-      let query = this.client
-        .from('product_data_cache')
-        .select('*')
-        .eq('board_ids', boardKey);
+      const tenant = this._tenantWhere(tenantId, 2);
+      const rows = await this.sql(
+        `SELECT * FROM product_data_cache WHERE board_ids = $1${tenant.clause}`,
+        [boardKey, ...tenant.params]
+      );
 
-      query = await this._applyTenantFilter(query, tenantId);
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      if (!data || data.length === 0) return null;
+      if (rows.length === 0) return null;
 
       const result = {};
-      for (const row of data) {
+      for (const row of rows) {
         result[row.data_type] = {
           data: row.data,
           updatedAt: row.updated_at,
@@ -511,20 +399,15 @@ class DatabaseService {
   }
 
   async cleanOldMetrics() {
-    if (!this.client) return 0;
+    if (!this.sql) return 0;
 
     try {
       const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      const rows = await this.sql`
+        DELETE FROM metrics_history WHERE calculated_at < ${cutoff} RETURNING id
+      `;
 
-      const { data, error } = await this.client
-        .from('metrics_history')
-        .delete()
-        .lt('calculated_at', cutoff)
-        .select('id');
-
-      if (error) throw error;
-
-      const removed = data?.length || 0;
+      const removed = rows.length;
       if (removed > 0) {
         console.log(`✓ Cleaned ${removed} old metrics entries`);
       }

@@ -88,14 +88,8 @@ class JiraService {
         return boards;
       };
 
-      // Try scrum first
+      // Fetch only scrum boards (excludes kanban and other types)
       let allBoards = await fetchBoardsByType('scrum');
-
-      // If no scrum boards found, fetch all board types
-      if (allBoards.length === 0) {
-        console.log('No scrum boards found, fetching all board types...');
-        allBoards = await fetchBoardsByType(null);
-      }
 
       console.log(`✓ Fetched ${allBoards.length} boards total in ${Date.now() - startTime}ms`);
 

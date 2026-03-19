@@ -253,10 +253,11 @@ class DashboardController {
         console.log(`  ${idx + 1}. ${s.name} (${s.startDate?.split('T')[0]} to ${s.endDate?.split('T')[0]})`);
       });
 
-      // Pre-fetch ALL sprint issues + backlog in parallel
-      console.log(`  ⚡ Fetching all sprint issues + backlog in parallel...`);
+      // Pre-fetch ALL sprint issues + backlog + future sprints in parallel
+      console.log(`  ⚡ Fetching all sprint issues + backlog + future sprints in parallel...`);
       const sprintIssuesMap = new Map();
       let backlogIssuesResult = [];
+      let futureSprintItems = { count: 0, sprints: [] };
 
       const fetchPromises = recentSprints.map(async (sprint) => {
         const issues = await jiraService.getSprintIssues(sprint.id, boardId);
@@ -266,6 +267,32 @@ class DashboardController {
         jiraService.getBacklogIssues(boardId)
           .then(issues => { backlogIssuesResult = issues; })
           .catch(err => { console.warn('  ⚠ Could not fetch backlog:', err.message); })
+      );
+      // Fetch future + active sprints to count pre-assigned items
+      fetchPromises.push(
+        (async () => {
+          try {
+            const [futureSprints, activeSprints] = await Promise.all([
+              jiraService.getSprints(boardId, 'future').catch(() => []),
+              jiraService.getSprints(boardId, 'active').catch(() => [])
+            ]);
+            const upcomingSprints = [...activeSprints, ...futureSprints];
+            let totalItems = 0;
+            const sprintDetails = [];
+            for (const sprint of upcomingSprints.slice(0, 5)) { // Limit to 5
+              try {
+                const issues = await jiraService.getSprintIssues(sprint.id, boardId);
+                const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
+                totalItems += parentIssues.length;
+                sprintDetails.push({ name: sprint.name, itemCount: parentIssues.length, state: sprint.state });
+              } catch (e) { /* skip */ }
+            }
+            futureSprintItems = { count: totalItems, sprints: sprintDetails };
+            console.log(`  Future/active sprints: ${upcomingSprints.length} sprints, ${totalItems} items`);
+          } catch (err) {
+            console.warn('  ⚠ Could not fetch future sprints:', err.message);
+          }
+        })()
       );
       await Promise.all(fetchPromises);
       console.log(`  ✓ All data fetched in parallel`);
@@ -303,7 +330,7 @@ class DashboardController {
         const nextSprint = recentSprints[i + 1];
         const nextSprintIssues = nextSprint ? sprintIssuesMap.get(nextSprint.id) : [];
 
-        const sprintGoalAttainment = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
+        const sprintGoalResult = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
         const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name);
         const sprintHitRate = this.metricsService.calculateSprintHitRate(issues, sprint.completeDate || sprint.endDate);
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
@@ -314,7 +341,9 @@ class DashboardController {
           sprintName: sprint.name,
           startDate: sprint.startDate,
           endDate: sprint.endDate,
-          sprintGoalAttainment,
+          sprintGoalAttainment: sprintGoalResult.percentage,
+          committedPoints: sprintGoalResult.committedPoints,
+          completedPoints: sprintGoalResult.completedPoints,
           rolloverRate: rolloverResult.rate,
           rolloverIssues: rolloverResult.issues,
           rolloverReasonBreakdown: rolloverResult.reasonBreakdown,
@@ -333,6 +362,8 @@ class DashboardController {
       try {
         console.log(`  Found ${backlogIssuesResult.length} backlog issues`);
         backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssuesResult);
+        // Attach future sprint item data to backlog health
+        backlogHealth.futureSprintItems = futureSprintItems;
       } catch (err) {
         console.warn('  ❌ Could not calculate backlog health:', err.message);
       }

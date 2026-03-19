@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Line, Bar, Radar, Doughnut } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -7,8 +7,6 @@ import {
   PointElement,
   LineElement,
   BarElement,
-  RadialLinearScale,
-  ArcElement,
   Title,
   Tooltip,
   Legend,
@@ -24,8 +22,6 @@ ChartJS.register(
   PointElement,
   LineElement,
   BarElement,
-  RadialLinearScale,
-  ArcElement,
   Title,
   Tooltip,
   Legend,
@@ -36,6 +32,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshAllProgress, setRefreshAllProgress] = useState('');
   const [error, setError] = useState('');
   const [selectedBoard, setSelectedBoard] = useState(selectedBoards[0]);
   const [allBoardsData, setAllBoardsData] = useState({});
@@ -392,6 +390,47 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     }
   };
 
+  // Refresh ALL loaded boards from Jira (sequential to avoid rate limits)
+  const refreshAllBoards = async () => {
+    if (!credentials || displayBoards.length === 0) return;
+    const confirmed = window.confirm(
+      locale === 'pt-BR'
+        ? `Isso atualizara ${displayBoards.length} board(s) do Jira. A operacao pode levar ate ${displayBoards.length * 2} minutos. Deseja continuar?`
+        : `This will refresh ${displayBoards.length} board(s) from Jira. The operation may take up to ${displayBoards.length * 2} minutes. Continue?`
+    );
+    if (!confirmed) return;
+
+    setRefreshingAll(true);
+    setError('');
+
+    for (let i = 0; i < displayBoards.length; i++) {
+      const board = displayBoards[i];
+      const boardId = typeof board === 'object' ? board.id : board;
+      const boardName = typeof board === 'object' ? board.name : `Board ${boardId}`;
+      setRefreshAllProgress(`${i + 1}/${displayBoards.length}: ${boardName}`);
+
+      try {
+        const teamData = await api.getTeamMetrics(
+          credentials.jiraUrl, credentials.email, credentials.apiToken,
+          boardId, 6, true
+        );
+        if (teamData.success) {
+          setAllBoardsData(prev => ({ ...prev, [String(boardId)]: teamData.data }));
+          // If this is the currently selected board, update the view
+          const currentBoardId = typeof selectedBoard === 'object' ? selectedBoard.id : selectedBoard;
+          if (String(boardId) === String(currentBoardId)) {
+            setMetrics(teamData.data);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to refresh board ${boardName}:`, err.message);
+      }
+    }
+
+    setRefreshingAll(false);
+    setRefreshAllProgress('');
+  };
+
   // Auto-refresh when no metrics and credentials available
   const autoRefreshingRef = useRef(false);
   useEffect(() => {
@@ -549,41 +588,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
     ]
   };
 
-  const backlogHealthData = {
-    labels: locale === 'pt-BR'
-      ? ['Com Criterios de Aceite', 'Com Estimativas', 'Vinculado a Versoes']
-      : ['With AC', 'With Estimates', 'Linked to Fix Versions'],
-    datasets: [{
-      label: locale === 'pt-BR' ? 'Saude do Backlog (%)' : 'Backlog Health (%)',
-      data: metrics ? [
-        metrics.backlogHealth.withAcceptanceCriteria,
-        metrics.backlogHealth.withEstimates,
-        metrics.backlogHealth.linkedToGoals
-      ] : [0, 0, 0],
-      backgroundColor: [
-        'rgba(59, 130, 246, 0.7)',
-        'rgba(34, 197, 94, 0.7)',
-        'rgba(249, 115, 22, 0.7)'
-      ]
-    }]
-  };
-
-  const defectData = metrics?.sprintMetrics?.[0]?.defectDistribution || { preMerge: 0, inQA: 0, postRelease: 0 };
-  const defectDistributionData = {
-    labels: locale === 'pt-BR'
-      ? ['Pre-Merge', 'Em QA', 'Pos-Release']
-      : ['Pre-Merge', 'In QA', 'Post-Release'],
-    datasets: [{
-      label: locale === 'pt-BR' ? 'Defeitos' : 'Defects',
-      data: [defectData.preMerge, defectData.inQA, defectData.postRelease],
-      backgroundColor: [
-        'rgba(34, 197, 94, 0.7)',
-        'rgba(251, 191, 36, 0.7)',
-        'rgba(239, 68, 68, 0.7)'
-      ]
-    }]
-  };
-
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -609,14 +613,29 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-4xl font-bold text-gray-900">{t('appTitle')}</h1>
             {credentials && (
-              <button
-                onClick={() => refreshFromJira()}
-                disabled={refreshing}
-                className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <span>🔄</span>
-                {refreshing ? t('refreshing') : t('refreshFromJira')}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => refreshFromJira()}
+                  disabled={refreshing || refreshingAll}
+                  className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <span>🔄</span>
+                  {refreshing ? t('refreshing') : t('refreshFromJira')}
+                </button>
+                {displayBoards.length > 1 && (
+                  <button
+                    onClick={refreshAllBoards}
+                    disabled={refreshing || refreshingAll}
+                    className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    title={locale === 'pt-BR'
+                      ? `Atualizar todos os ${displayBoards.length} boards do Jira (pode levar ate ${displayBoards.length * 2} min)`
+                      : `Refresh all ${displayBoards.length} boards from Jira (may take up to ${displayBoards.length * 2} min)`}
+                  >
+                    <span>🔄</span>
+                    {refreshingAll ? refreshAllProgress : t('refreshAllBoards')}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -789,26 +808,22 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               )}
             </div>
 
-            {/* Right: Characteristics grid - compute blockers from actual values */}
+            {/* Right: Key metrics aligned to pillars */}
             {(() => {
               const level = metrics.maturityLevel.level;
               const rollover = metrics.aggregated?.avgRolloverRate ?? 0;
-              const sprintGoal = metrics.aggregated?.avgSprintGoalAttainment ?? 0;
-              const backlog = metrics.backlogHealth?.overallScore ?? 0;
-              const midSprint = metrics.aggregated?.avgMidSprintAdditions ?? 0;
+              const backlogReady = metrics.backlogHealth?.overallScore ?? 0;
 
               // Thresholds for next level
               const thresholds = level === 1
-                ? { rollover: { max: 25, label: '≤25%' }, sprintGoal: { min: 50, label: '≥50%' }, backlog: { min: 50, label: '≥50%' }, midSprint: { max: 25, label: '≤25%' }, nextLevel: 2 }
+                ? { rollover: { max: 25, label: '≤25%' }, backlogReady: { min: 25, label: '≥25%' }, nextLevel: 2 }
                 : level === 2
-                ? { rollover: { max: 15, label: '<15%' }, sprintGoal: { min: 70, label: '>70%' }, backlog: { min: 80, label: '>80%' }, midSprint: { max: 10, label: '<10%' }, nextLevel: 3 }
+                ? { rollover: { max: 15, label: '<15%' }, backlogReady: { min: 75, label: '>75%' }, nextLevel: 3 }
                 : null;
 
               const metricItems = [
-                { icon: '📉', label: t('rolloverRate'), value: rollover, blocking: thresholds ? rollover > thresholds.rollover.max : false, target: thresholds?.rollover.label, current: `${formatNumber(rollover)}%` },
-                { icon: '🎯', label: t('sprintCommitmentCompletion'), value: sprintGoal, blocking: thresholds ? sprintGoal < thresholds.sprintGoal.min : false, target: thresholds?.sprintGoal.label, current: `${formatNumber(sprintGoal)}%` },
-                { icon: '📋', label: t('backlogHealth'), value: backlog, blocking: thresholds ? backlog < thresholds.backlog.min : false, target: thresholds?.backlog.label, current: `${formatNumber(backlog)}%` },
-                { icon: '🔄', label: t('midSprintAdditions'), value: midSprint, blocking: thresholds ? midSprint > thresholds.midSprint.max : false, target: thresholds?.midSprint.label, current: `${formatNumber(midSprint)}%` }
+                { icon: '📉', label: t('rolloverRate'), blocking: thresholds ? rollover > thresholds.rollover.max : false, target: thresholds?.rollover.label, current: `${formatNumber(rollover)}%` },
+                { icon: '📋', label: t('backlogReadiness'), blocking: thresholds ? backlogReady < thresholds.backlogReady.min : false, target: thresholds?.backlogReady.label, current: `${formatNumber(backlogReady)}%` },
               ];
 
               const blockingCount = metricItems.filter(m => m.blocking).length;
@@ -879,7 +894,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         </div>
 
         {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="card">
+            <div className="text-sm text-gray-600 mb-1">{t('avgSprintHitRate')}</div>
+            <div className="text-3xl font-bold text-primary-600">
+              {formatNumber(metrics.aggregated?.avgSprintHitRate)}%
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {t('sprintHitRateDesc')}
+            </div>
+          </div>
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">{t('avgRolloverRate')}</div>
             <div className="text-3xl font-bold text-red-600">
@@ -890,30 +914,12 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             </div>
           </div>
           <div className="card">
-            <div className="text-sm text-gray-600 mb-1">{t('avgCommitmentCompletion')}</div>
-            <div className="text-3xl font-bold text-primary-600">
-              {formatNumber(metrics.aggregated?.avgSprintGoalAttainment)}%
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {t('targetLevel3')}: &gt;70%
-            </div>
-          </div>
-          <div className="card">
-            <div className="text-sm text-gray-600 mb-1">{t('backlogHealthScore')}</div>
+            <div className="text-sm text-gray-600 mb-1">{t('backlogReadiness')}</div>
             <div className="text-3xl font-bold text-blue-600">
               {formatNumber(metrics.backlogHealth?.overallScore)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {t('targetLevel3')}: &gt;80%
-            </div>
-          </div>
-          <div className="card">
-            <div className="text-sm text-gray-600 mb-1">{t('avgMidSprintInjection')}</div>
-            <div className="text-3xl font-bold text-amber-600">
-              {formatNumber(metrics.aggregated?.avgMidSprintAdditions)}%
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {t('targetLevel3')}: &lt;10%
+              {t('targetLevel3')}: &gt;75%
             </div>
           </div>
         </div>
@@ -923,28 +929,22 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
         {/* Pillar 1: Delivery Predictability */}
         <div className="card mb-8">
-          <h2 className="text-2xl font-bold mb-6 text-gray-800">
+          <h2 className="text-2xl font-bold mb-2 text-gray-800">
             📊 {t('pillar1')}
           </h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Sprint Commitment Completion */}
+          <p className="text-sm text-gray-500 mb-6">{t('pillar1Subtitle')}</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Sprint Hit Rate */}
             <div>
-              <h3 className="font-semibold mb-2">{t('sprintCommitmentCompletion')}</h3>
+              <h3 className="font-semibold mb-2">{t('sprintHitRate')}</h3>
               <p className="text-xs text-gray-500 mb-4">
-                {t('commitmentCompletionDesc')}
+                {t('sprintHitRateChartDesc')}
               </p>
               <div className="h-80">
                 <Line data={sprintGoalData} options={chartOptions} />
               </div>
-            </div>
-
-            {/* Rollover Rate + Issues */}
-            <div>
-              <h3 className="font-semibold mb-4">{t('rolloverRate')}</h3>
-              <div className="h-80">
-                <Line data={rolloverData} options={chartOptions} />
-              </div>
+              {/* Rollover detail per sprint */}
               <div className="mt-4 space-y-2">
                 {sortedSprintMetrics.map(sprint => {
                   const issues = sprint.rolloverIssues || [];
@@ -1001,39 +1001,48 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               </div>
             </div>
 
-            {/* Mid-Sprint Additions + Issues */}
+            {/* Planned vs Completed Story Points */}
             <div>
-              <h3 className="font-semibold mb-4">{t('midSprintAdditions')}</h3>
-              <div className="space-y-2">
-                {sortedSprintMetrics.map(sprint => {
-                  const msIssues = sprint.midSprintAdditions?.issues || [];
-                  const msCount = sprint.midSprintAdditions?.count || 0;
-                  if (msCount === 0) {
-                    return (
-                      <div key={sprint.sprintId} className="flex justify-between items-center px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                        <span className="text-sm font-medium text-gray-600">{sprint.sprintName}</span>
-                        <span className="text-sm text-gray-400">0 {t('issues')} (0.0%)</span>
-                      </div>
-                    );
-                  }
-                  return (
-                    <details key={sprint.sprintId} className="bg-amber-50 rounded-lg border border-amber-100">
-                      <summary className="px-3 py-2 cursor-pointer text-sm font-medium text-amber-800 hover:bg-amber-100 rounded-lg flex justify-between items-center">
-                        <span className="truncate mr-2">{sprint.sprintName}</span>
-                        <span className="shrink-0">{msCount} {t('issues')} ({formatNumber(sprint.midSprintAdditions?.percentage)}%)</span>
-                      </summary>
-                      <div className="px-3 pb-3 space-y-0">
-                        {msIssues.map(issue => (
-                          <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-amber-100">
-                            <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-amber-700 shrink-0 hover:underline">{issue.key}</a>
-                            <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
-                            <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  );
-                })}
+              <h3 className="font-semibold mb-2">{t('plannedVsCompleted')}</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {t('plannedVsCompletedDesc')}
+              </p>
+              <div className="h-80">
+                <Bar
+                  data={{
+                    labels: sprintLabels,
+                    datasets: [
+                      {
+                        label: locale === 'pt-BR' ? 'Planejado (pts)' : 'Planned (pts)',
+                        data: sortedSprintMetrics.map(s => s.committedPoints || 0),
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                      },
+                      {
+                        label: locale === 'pt-BR' ? 'Concluido (pts)' : 'Completed (pts)',
+                        data: sortedSprintMetrics.map(s => s.completedPoints || 0),
+                        backgroundColor: 'rgba(34, 197, 94, 0.5)',
+                        borderColor: 'rgb(34, 197, 94)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { display: true, position: 'top' },
+                      tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} pts` } }
+                    },
+                    scales: {
+                      y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                      x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
+                    }
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -1042,16 +1051,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
         {/* Pillar 2: Flow & Quality */}
         {metrics.flowQuality && (
         <div className="card mb-8">
-          <h2 className="text-2xl font-bold mb-6 text-gray-800">
+          <h2 className="text-2xl font-bold mb-2 text-gray-800">
             🔄 {t('pillar2')}
           </h2>
-          <p className="text-sm text-gray-500 -mt-4 mb-6">{t('pillar2Subtitle')}</p>
+          <p className="text-sm text-gray-500 mb-6">{t('pillar2Subtitle')}</p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Col 1: Lead Time by Type */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Col 1: Development Cycle Time by Work Type */}
             <div>
-              <h3 className="font-semibold mb-2">{t('leadTimeByType')}</h3>
-              <p className="text-xs text-gray-500 mb-4">{t('leadTimeDesc')}</p>
+              <h3 className="font-semibold mb-2">{t('devCycleTimeByType')}</h3>
+              <p className="text-xs text-gray-500 mb-4">{t('devCycleTimeDesc')}</p>
               {Object.keys(metrics.flowQuality.leadTimeByType).length > 0 ? (
                 <>
                   <div className="h-56">
@@ -1072,7 +1081,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.raw} days` } } },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.raw} ${t('days')}` } } },
                         scales: { y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { ticks: { font: { size: 11 } }, grid: { display: false } } }
                       }}
                     />
@@ -1085,7 +1094,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     return (
                       <div className="mt-4">
                         <p className="text-xs text-gray-500 mb-2 font-medium">{t('trendBySprint')}</p>
-                        <div className="h-40">
+                        <div className="h-44">
                           <Line
                             data={{
                               labels: sprints.map(s => s.sprint),
@@ -1103,8 +1112,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             options={{
                               responsive: true,
                               maintainAspectRatio: false,
-                              plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} days` } } },
-                              scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' }, title: { display: true, text: 'days', font: { size: 10 } } }, x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } } }
+                              plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} ${t('days')}` } } },
+                              scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' }, title: { display: true, text: t('days'), font: { size: 10 } } }, x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } } }
                             }}
                           />
                         </div>
@@ -1117,144 +1126,62 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               )}
             </div>
 
-            {/* Col 2: WIP Aging */}
+            {/* Col 2: QA Rework Trends */}
             <div>
-              <h3 className="font-semibold mb-2">{t('wipAging')}</h3>
-              <p className="text-xs text-gray-500 mb-4">{t('wipAgingDesc')}</p>
-              {metrics.flowQuality.wipAging.length > 0 ? (
-                <div className="space-y-1.5 max-h-96 overflow-y-auto">
-                  {metrics.flowQuality.wipAging.map(item => (
-                    <div key={item.key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-                      item.daysInProgress > 30 ? 'bg-red-50 border-red-200' :
-                      item.daysInProgress > 14 ? 'bg-amber-50 border-amber-200' :
-                      'bg-gray-50 border-gray-200'
-                    }`}>
-                      <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${item.key}`} target="_blank" rel="noopener noreferrer"
-                        className="font-mono text-xs font-semibold text-purple-700 shrink-0 hover:underline">{item.key}</a>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
-                        item.type === 'Bug' ? 'bg-red-100 text-red-700' :
-                        item.type === 'Story' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>{item.type}</span>
-                      <span className="text-xs text-gray-700 flex-1 truncate" title={item.summary}>{item.summary}</span>
-                      <span className={`text-xs font-bold shrink-0 ${
-                        item.daysInProgress > 30 ? 'text-red-600' :
-                        item.daysInProgress > 14 ? 'text-amber-600' :
-                        'text-gray-500'
-                      }`}>{item.daysInProgress}d</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">{t('noItemsInProgress')}</p>
-              )}
-            </div>
-
-            {/* Col 3: Defect Distribution */}
-            <div>
-              <h3 className="font-semibold mb-2">{t('defectsFound')}</h3>
-              <p className="text-xs text-gray-500 mb-4">{t('defectsFoundDesc')}</p>
-              {metrics.flowQuality.defects.total.total > 0 ? (
+              <h3 className="font-semibold mb-2">{t('qaReworkTrends')}</h3>
+              <p className="text-xs text-gray-500 mb-4">{t('qaReworkTrendsDesc')}</p>
+              {metrics.flowQuality.reworkBySprint && metrics.flowQuality.reworkBySprint.length > 0 ? (
                 <>
-                  <div className="h-48 flex items-center justify-center">
-                    <Doughnut
+                  <div className="h-56">
+                    <Bar
                       data={{
-                        labels: [t('preMerge'), 'QA', t('postRelease')],
+                        labels: metrics.flowQuality.reworkBySprint.map(s => s.sprint),
                         datasets: [{
-                          data: [
-                            metrics.flowQuality.defects.total.preMerge,
-                            metrics.flowQuality.defects.total.inQA,
-                            metrics.flowQuality.defects.total.postRelease
-                          ],
-                          backgroundColor: ['rgba(34, 197, 94, 0.7)', 'rgba(59, 130, 246, 0.7)', 'rgba(239, 68, 68, 0.7)'],
-                          borderWidth: 1
+                          label: locale === 'pt-BR' ? 'Taxa de Retrabalho QA (%)' : 'QA Rework Rate (%)',
+                          data: metrics.flowQuality.reworkBySprint.map(s => s.reworkRate),
+                          backgroundColor: 'rgba(239, 68, 68, 0.5)',
+                          borderColor: 'rgb(239, 68, 68)',
+                          borderWidth: 1,
+                          borderRadius: 4
                         }]
                       }}
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } }
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.raw}%` } } },
+                        scales: { y: { beginAtZero: true, ticks: { font: { size: 11 }, callback: (v) => `${v}%` }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } } }
                       }}
                     />
                   </div>
-                  {/* Defect trend by sprint */}
-                  {metrics.flowQuality.defects.bySprint.filter(s => s.total > 0).length > 1 && (
-                    <div className="mt-4">
-                      <p className="text-xs text-gray-500 mb-2 font-medium">{t('trendBySprint')}</p>
-                      <div className="h-36">
-                        <Bar
-                          data={{
-                            labels: metrics.flowQuality.defects.bySprint.map(s => s.sprint),
-                            datasets: [
-                              { label: t('preMerge'), data: metrics.flowQuality.defects.bySprint.map(s => s.preMerge), backgroundColor: 'rgba(34, 197, 94, 0.7)' },
-                              { label: 'QA', data: metrics.flowQuality.defects.bySprint.map(s => s.inQA), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                              { label: t('postRelease'), data: metrics.flowQuality.defects.bySprint.map(s => s.postRelease), backgroundColor: 'rgba(239, 68, 68, 0.7)' }
-                            ]
-                          }}
-                          options={{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
-                            scales: { x: { stacked: true, ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } } }
-                          }}
-                        />
-                      </div>
+                  {/* Summary */}
+                  <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
+                    <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{t('overallReworkRate')}: {metrics.flowQuality.reworkRate}%</p>
+                      <p className="text-xs text-gray-500">{t('reworkThreshold')}</p>
                     </div>
-                  )}
+                  </div>
                 </>
               ) : (
-                <p className="text-sm text-gray-400">{t('noBugIssues')}</p>
+                <p className="text-sm text-gray-400">{t('noReworkData')}</p>
               )}
-            </div>
-          </div>
-
-          {/* Healthy Signals */}
-          <div className="mt-8 border-t border-gray-200 pt-6">
-            <h3 className="font-semibold mb-4 text-gray-700">{t('healthySignals')}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
-                metrics.flowQuality.healthySignals.stableLeadTime ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-              }`}>
-                <span className="text-xl">{metrics.flowQuality.healthySignals.stableLeadTime ? '✅' : '⚠️'}</span>
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{t('stableLeadTime')}</p>
-                  <p className="text-xs text-gray-500">{t('stableLeadTimeDesc')}</p>
-                </div>
-              </div>
-              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
-                metrics.flowQuality.healthySignals.earlyDefectDetection ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-              }`}>
-                <span className="text-xl">{metrics.flowQuality.healthySignals.earlyDefectDetection ? '✅' : '⚠️'}</span>
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{t('earlyDefectDetection')}</p>
-                  <p className="text-xs text-gray-500">{t('earlyDefectDetectionDesc')}</p>
-                </div>
-              </div>
-              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
-                metrics.flowQuality.healthySignals.minimalRework ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-              }`}>
-                <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{t('minimalRework')}</p>
-                  <p className="text-xs text-gray-500">{t('qaReworkRate')}: {metrics.flowQuality.reworkRate}%</p>
-                </div>
-              </div>
             </div>
           </div>
         </div>
         )}
 
-        {/* Pillar 3: Team Ownership */}
+        {/* Pillar 3: Team Ownership & Execution */}
         <div className="card mb-8">
-          <h2 className="text-2xl font-bold mb-6 text-gray-800">
+          <h2 className="text-2xl font-bold mb-2 text-gray-800">
             👥 {t('pillar3')}
           </h2>
+          <p className="text-sm text-gray-500 mb-6">{t('pillar3Subtitle')}</p>
 
           {/* Overall Backlog Health Score */}
           {(() => {
             const overallScore = metrics.backlogHealth?.overallScore ?? 0;
-            const scoreColor = overallScore >= 80 ? 'text-green-600' : overallScore >= 50 ? 'text-yellow-600' : 'text-red-600';
-            const scoreBg = overallScore >= 80 ? 'bg-green-50 border-green-200' : overallScore >= 50 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200';
+            const scoreColor = overallScore >= 75 ? 'text-green-600' : overallScore >= 25 ? 'text-yellow-600' : 'text-red-600';
+            const scoreBg = overallScore >= 75 ? 'bg-green-50 border-green-200' : overallScore >= 25 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200';
             return (
               <div className={`flex items-center gap-4 p-4 rounded-xl border ${scoreBg} mb-6`}>
                 <div className={`text-4xl font-black ${scoreColor}`}>{formatNumber(overallScore)}%</div>
@@ -1275,7 +1202,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 value: metrics.backlogHealth?.withAcceptanceCriteria ?? 0,
                 missing: metrics.backlogHealth?.missingAC || [],
                 missingLabel: t('missingAC'),
-                color: { bar: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', hoverBg: 'hover:bg-blue-100', lightBar: 'bg-blue-100', badge: 'bg-blue-100 text-blue-800', link: 'text-blue-700', divider: 'border-blue-100' }
+                color: { bar: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', hoverBg: 'hover:bg-blue-100', lightBar: 'bg-blue-100', badge: 'bg-blue-100 text-blue-800', link: 'text-blue-700' }
               },
               {
                 label: t('storyPointsEstimates'),
@@ -1283,7 +1210,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 value: metrics.backlogHealth?.withEstimates ?? 0,
                 missing: metrics.backlogHealth?.missingEstimates || [],
                 missingLabel: t('missingEstimates'),
-                color: { bar: 'bg-green-500', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', hoverBg: 'hover:bg-green-100', lightBar: 'bg-green-100', badge: 'bg-green-100 text-green-800', link: 'text-green-700', divider: 'border-green-100' }
+                color: { bar: 'bg-green-500', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', hoverBg: 'hover:bg-green-100', lightBar: 'bg-green-100', badge: 'bg-green-100 text-green-800', link: 'text-green-700' }
               },
               {
                 label: t('fixVersionsGoals'),
@@ -1291,13 +1218,13 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 value: metrics.backlogHealth?.linkedToGoals ?? 0,
                 missing: metrics.backlogHealth?.missingFixVersions || [],
                 missingLabel: t('missingFixVersions'),
-                color: { bar: 'bg-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', hoverBg: 'hover:bg-orange-100', lightBar: 'bg-orange-100', badge: 'bg-orange-100 text-orange-800', link: 'text-orange-700', divider: 'border-orange-100' }
+                color: { bar: 'bg-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', hoverBg: 'hover:bg-orange-100', lightBar: 'bg-orange-100', badge: 'bg-orange-100 text-orange-800', link: 'text-orange-700' }
               }
             ].map(metric => {
               const total = metrics.backlogHealth?.totalItems || 0;
               const hasDetails = metric.missing.length > 0;
               const isComplete = metric.value >= 100;
-              const statusColor = metric.value >= 80 ? 'text-green-600' : metric.value >= 50 ? 'text-yellow-600' : 'text-red-600';
+              const statusColor = metric.value >= 75 ? 'text-green-600' : metric.value >= 25 ? 'text-yellow-600' : 'text-red-600';
 
               return (
                 <details key={metric.label} className={`rounded-xl border ${metric.color.border} overflow-hidden group`}>
@@ -1355,6 +1282,43 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 </details>
               );
             })}
+
+            {/* Future Sprint Items */}
+            {(() => {
+              const futureData = metrics.backlogHealth?.futureSprintItems;
+              if (!futureData) return null;
+              return (
+                <div className="rounded-xl border border-purple-200 overflow-hidden">
+                  <div className="p-5 bg-purple-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="font-semibold text-gray-800">{t('futureSprintItems')}</div>
+                          <div className="text-xs text-gray-500">{t('futureSprintItemsDesc')}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold text-purple-600">{futureData.count}</div>
+                        <div className="text-xs text-gray-400">{t('itemsAssigned')}</div>
+                      </div>
+                    </div>
+                    {futureData.sprints && futureData.sprints.length > 0 && (
+                      <div className="space-y-1.5 mt-3">
+                        {futureData.sprints.map((s, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-sm px-3 py-2 bg-white rounded-lg border border-purple-100">
+                            <span className="text-gray-700">{s.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.state === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{s.state}</span>
+                              <span className="font-semibold text-purple-700">{s.itemCount} {t('issues')}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
         </>

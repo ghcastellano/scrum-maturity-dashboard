@@ -66,7 +66,11 @@ class MetricsService {
       console.log(`  Sample issue keys (first 5): ${issues.slice(0, 5).map(i => i.key).join(', ')}`);
     }
 
-    return committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0;
+    return {
+      percentage: committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0,
+      committedPoints,
+      completedPoints
+    };
   }
 
   // Rollover reason labels used by the teams
@@ -491,6 +495,10 @@ class MetricsService {
   }
 
   // Determine Maturity Level
+  // Based on three pillars:
+  // P1: Delivery Predictability (rollover rate as proxy for sprint hit rate)
+  // P2: Flow & Quality (cycle time stability, rework)
+  // P3: Team Ownership (backlog readiness = % "To Do" with AC + estimates)
   determineMaturityLevel(metrics) {
     const {
       rolloverRate = 0,
@@ -499,28 +507,21 @@ class MetricsService {
       midSprintAdditions = 0
     } = metrics || {};
 
-    // Ensure backlogHealth has the expected structure
-    const backlogScore = backlogHealth?.overallScore ?? 0;
+    // Backlog readiness = % of items that are "Ready" (have AC + estimates)
+    const backlogReadiness = backlogHealth?.overallScore ?? 0;
 
     // Level 1: Assisted Scrum (Scrum Manager Required)
-    // Typical Characteristics:
     // - Rollover > 20-25%
-    // - Sprint goals rarely met (<50-60%)
+    // - Low "Ready" rate on backlog (<25%)
     // - High mid-sprint injection
-    // - Low "Ready" rate on backlog
     // - Poor backlog hygiene
     if (
       rolloverRate > 25 ||
-      sprintGoalAttainment < 50 ||
-      backlogScore < 50 ||
-      midSprintAdditions > 25
+      backlogReadiness < 25
     ) {
-      // Identify which metrics are blocking promotion to Level 2
       const blockers = [];
       if (rolloverRate > 25) blockers.push('rollover');
-      if (sprintGoalAttainment < 50) blockers.push('sprintGoals');
-      if (backlogScore < 50) blockers.push('backlog');
-      if (midSprintAdditions > 25) blockers.push('midSprint');
+      if (backlogReadiness < 25) blockers.push('backlogReady');
 
       return {
         level: 1,
@@ -528,9 +529,7 @@ class MetricsService {
         description: 'Scrum Manager Required',
         characteristics: [
           `Rollover: ${rolloverRate.toFixed(1)}% (must be ≤25% for Level 2)`,
-          `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (must be ≥50% for Level 2)`,
-          `Backlog Health: ${backlogScore.toFixed(1)}% (must be ≥50% for Level 2)`,
-          `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (must be ≤25% for Level 2)`
+          `Backlog Ready: ${backlogReadiness.toFixed(1)}% (must be ≥25% for Level 2)`
         ],
         blockers,
         recommendations: [
@@ -544,17 +543,15 @@ class MetricsService {
     }
 
     // Level 3: Self-Managed Scrum (Scrum Manager Optional)
-    // Entry Criteria (Sustained for 3-4 sprints):
+    // Sustained for 3-4 sprints:
     // - <10-15% average rollover
-    // - Sprint goals met >70%
     // - Minimal mid-sprint scope churn
-    // - 90%+ backlog "Ready"
+    // - Almost all backlog "Ready" (>75%)
     // - Stable throughput
+    // - Quality issues trending down
     if (
       rolloverRate < 15 &&
-      sprintGoalAttainment > 70 &&
-      backlogScore > 80 &&
-      midSprintAdditions < 10
+      backlogReadiness > 75
     ) {
       return {
         level: 3,
@@ -562,29 +559,23 @@ class MetricsService {
         description: 'Scrum Manager Optional',
         characteristics: [
           `Rollover: ${rolloverRate.toFixed(1)}% (excellent: <15%)`,
-          `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (excellent: >70%)`,
-          `Backlog Health: ${backlogScore.toFixed(1)}% (excellent: >80%)`,
-          `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (excellent: <10%)`
+          `Backlog Ready: ${backlogReadiness.toFixed(1)}% (excellent: >75%)`
         ],
         blockers: [],
         recommendations: [
-          'Continue excellence in delivery',
-          'Focus on continuous improvement',
-          'Share best practices with other teams',
-          'Quarterly health checks recommended',
-          'Ceremonies run without dependency',
-          'Blockers resolved within the team'
+          'On-demand coaching',
+          'Quarterly health check',
+          'Stakeholder/product check in',
+          'Pattern escalation if regression occurs',
+          'Share best practices with other teams'
         ]
       };
     }
 
     // Level 2: Supported Scrum (Conditional Support)
-    // Identify which metrics are blocking promotion to Level 3
     const blockers = [];
     if (rolloverRate >= 15) blockers.push('rollover');
-    if (sprintGoalAttainment <= 70) blockers.push('sprintGoals');
-    if (backlogScore <= 80) blockers.push('backlog');
-    if (midSprintAdditions >= 10) blockers.push('midSprint');
+    if (backlogReadiness <= 75) blockers.push('backlogReady');
 
     return {
       level: 2,
@@ -592,9 +583,7 @@ class MetricsService {
       description: 'Conditional Support',
       characteristics: [
         `Rollover: ${rolloverRate.toFixed(1)}% (must be <15% for Level 3)`,
-        `Sprint Goals Met: ${sprintGoalAttainment.toFixed(1)}% (must be >70% for Level 3)`,
-        `Backlog Health: ${backlogScore.toFixed(1)}% (must be >80% for Level 3)`,
-        `Mid-Sprint Additions: ${midSprintAdditions.toFixed(1)}% (must be <10% for Level 3)`
+        `Backlog Ready: ${backlogReadiness.toFixed(1)}% (must be >75% for Level 3)`
       ],
       blockers,
       supportModel: 'Shared Scrum Manager, Time-bound engagement (1-2 sprints/month)',
@@ -602,9 +591,7 @@ class MetricsService {
         'Pattern recognition (last-minute rush, WIP aging)',
         'Coaching Product on backlog ownership',
         'Enabling team-led ceremonies',
-        'Driving retro action execution',
-        'Some scope churn but manageable',
-        'Flow is improving but inconsistent'
+        'Driving retro action execution'
       ]
     };
   }
@@ -693,14 +680,23 @@ class MetricsService {
       return { sprint: sm.sprintName, ...d };
     });
 
-    // 6. QA rework — count dev-qa-spill labeled issues across all sprints
+    // 6. QA rework — count dev-qa-spill labeled issues across all sprints + per-sprint trend
     let totalReworkIssues = 0;
     let totalIssueCount = 0;
-    for (const issues of sprintIssuesBySprintId.values()) {
-      totalIssueCount += issues.length;
-      totalReworkIssues += issues.filter(i =>
+    const reworkBySprint = [];
+    for (const sprint of recentSprints) {
+      const issues = sprintIssuesBySprintId.get(sprint.id) || [];
+      const reworkCount = issues.filter(i =>
         (i.fields.labels || []).includes('dev-qa-spill')
       ).length;
+      totalIssueCount += issues.length;
+      totalReworkIssues += reworkCount;
+      reworkBySprint.push({
+        sprint: sprint.name,
+        reworkCount,
+        totalIssues: issues.length,
+        reworkRate: issues.length > 0 ? Math.round((reworkCount / issues.length) * 1000) / 10 : 0
+      });
     }
 
     // 7. Healthy Signals
@@ -728,6 +724,7 @@ class MetricsService {
       wipAging,
       defects: { total: totalDefects, bySprint: defectsBySprint },
       reworkRate: Math.round(reworkRate * 10) / 10,
+      reworkBySprint,
       healthySignals: { stableLeadTime, earlyDefectDetection, minimalRework }
     };
   }

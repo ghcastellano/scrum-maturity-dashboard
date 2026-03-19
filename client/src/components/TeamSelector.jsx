@@ -104,7 +104,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
           );
           // Background fetch triggered — poll for results
           if (result.loading) {
-            return pollForBoards();
+            return await pollForBoards();
           }
           setBoards(result.boards);
           localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
@@ -142,7 +142,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         );
         // Background fetch triggered — poll for results
         if (result.loading) {
-          return pollForBoards();
+          return await pollForBoards();
         }
         setBoards(result.boards);
         localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({

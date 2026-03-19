@@ -14,6 +14,7 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
   const [selectedBoards, setSelectedBoards] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [polling, setPolling] = useState(false);
   const [error, setError] = useState('');
 
   // Derive tenantId from credentials for tenant-scoped storage
@@ -60,6 +61,34 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
     return null;
   };
 
+  // Poll /api/jira/boards/cached until boards appear (background fetch in progress)
+  const pollForBoards = async (maxAttempts = 30, intervalMs = 3000) => {
+    setPolling(true);
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      try {
+        const cacheResult = await api.getCachedBoards();
+        if (cacheResult.success && cacheResult.boards?.length > 0) {
+          setBoards(cacheResult.boards);
+          localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
+            boards: cacheResult.boards,
+            timestamp: Date.now()
+          }));
+          setLoading(false);
+          setPolling(false);
+          return true;
+        }
+      } catch (e) {
+        console.warn('Poll attempt failed:', e.message);
+      }
+    }
+    // Polling exhausted
+    setLoading(false);
+    setPolling(false);
+    setError(t('failedToLoadBoards') + ': timeout waiting for Jira response');
+    return false;
+  };
+
   const loadBoards = async (forceRefresh = false) => {
     try {
       setLoading(true);
@@ -70,8 +99,13 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
           const result = await api.getBoards(
             credentials.jiraUrl,
             credentials.email,
-            credentials.apiToken
+            credentials.apiToken,
+            true
           );
+          // Background fetch triggered — poll for results
+          if (result.loading) {
+            return pollForBoards();
+          }
           setBoards(result.boards);
           localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
             boards: result.boards,
@@ -99,13 +133,17 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         return;
       }
 
-      // No cache available — auto-fetch from Jira API (new tenant or first visit)
+      // No cache available — trigger background fetch from Jira API
       try {
         const result = await api.getBoards(
           credentials.jiraUrl,
           credentials.email,
           credentials.apiToken
         );
+        // Background fetch triggered — poll for results
+        if (result.loading) {
+          return pollForBoards();
+        }
         setBoards(result.boards);
         localStorage.setItem(BOARDS_CACHE_KEY, JSON.stringify({
           boards: result.boards,
@@ -202,6 +240,9 @@ export default function TeamSelector({ credentials, onTeamsSelected, existingBoa
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">{t('loadingTeams')}</p>
+          {polling && (
+            <p className="mt-2 text-sm text-gray-400">{t('fetchingInBackground')}</p>
+          )}
         </div>
       </div>
     );

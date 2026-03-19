@@ -3,6 +3,7 @@ import MetricsService from '../services/metricsService.js';
 import cacheService from '../services/cacheService.js';
 import database from '../services/database.js';
 import TenantService from '../services/tenantService.js';
+import { waitUntil } from '@vercel/functions';
 
 // Cache for auto-detected story points fields per tenant (avoids repeated API calls)
 const storyPointsFieldCache = new Map();
@@ -64,6 +65,8 @@ class DashboardController {
   }
 
   // Get available boards/teams (tenant-scoped)
+  // Returns cached boards immediately when available, or triggers a background
+  // fetch from Jira and returns { loading: true } so the frontend can poll.
   async getBoards(req, res) {
     try {
       const { jiraUrl, email, apiToken, forceRefresh = false } = req.body;
@@ -83,24 +86,37 @@ class DashboardController {
         }
       }
 
-      console.log(`📡 Fetching boards from Jira API (tenant: ${tenantId})...`);
+      // No cache — fetch from Jira in background to avoid serverless timeout
+      console.log(`📡 Triggering background fetch of boards from Jira (tenant: ${tenantId})...`);
       const jiraService = new JiraService(jiraUrl, email, apiToken);
-      const boards = await jiraService.getBoards();
 
-      const formattedBoards = boards.map(board => ({
-        id: board.id,
-        name: board.name,
-        type: board.type
-      }));
+      // Background fetch: uses waitUntil on Vercel so the work continues after response
+      const fetchPromise = jiraService.getBoards()
+        .then(async (boards) => {
+          const formattedBoards = boards.map(board => ({
+            id: board.id,
+            name: board.name,
+            type: board.type
+          }));
+          await database.saveBoards(formattedBoards, tenantId);
+          console.log(`✅ Background fetch complete: ${formattedBoards.length} boards saved (tenant: ${tenantId})`);
+        })
+        .catch((err) => {
+          console.error(`❌ Background board fetch failed (tenant: ${tenantId}):`, err.message);
+        });
 
-      // Save to database (tenant-scoped)
-      await database.saveBoards(formattedBoards, tenantId);
+      // On Vercel, waitUntil keeps the function alive after the response is sent
+      if (process.env.VERCEL) {
+        waitUntil(fetchPromise);
+      }
 
+      // Return immediately — frontend will poll /api/jira/boards/cached
       res.json({
         success: true,
-        boards: formattedBoards,
-        cached: false,
-        tenantId
+        boards: [],
+        loading: true,
+        tenantId,
+        message: 'Fetching boards from Jira in background. Poll /api/jira/boards/cached for results.'
       });
     } catch (error) {
       res.status(500).json({

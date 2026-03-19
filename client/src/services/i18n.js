@@ -45,6 +45,7 @@ const translations = {
     selectAtLeastOne: 'Please select at least one team',
     boardSearchHint: 'Search by the board name in Jira (e.g. "GTMDOP Scrum Board"), not the team name. You can find your board name in Jira under Boards > View all boards.',
     loadingTeams: 'Loading teams... This may take a minute for large instances.',
+    fetchingInBackground: 'Fetching boards from Jira in background...',
 
     // Dashboard - Sections
     scrumMaturity: 'Scrum Maturity',
@@ -230,6 +231,7 @@ const translations = {
     selectAtLeastOne: 'Selecione pelo menos um time',
     boardSearchHint: 'Busque pelo nome do board no Jira (ex: "GTMDOP Scrum Board"), nao pelo nome do time. Voce pode encontrar o nome do board no Jira em Boards > Ver todos os boards.',
     loadingTeams: 'Carregando times... Isso pode levar um minuto para instancias grandes.',
+    fetchingInBackground: 'Buscando boards do Jira em segundo plano...',
 
     // Dashboard - Sections
     scrumMaturity: 'Maturidade Scrum',

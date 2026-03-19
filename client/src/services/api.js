@@ -35,11 +35,12 @@ class ApiService {
     return response.data;
   }
 
-  async getBoards(jiraUrl, email, apiToken) {
+  async getBoards(jiraUrl, email, apiToken, forceRefresh = false) {
     const response = await this.client.post('/jira/boards', {
       jiraUrl,
       email,
-      apiToken
+      apiToken,
+      forceRefresh
     });
     return response.data;
   }

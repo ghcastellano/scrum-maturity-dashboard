@@ -15,6 +15,7 @@ class JiraService {
     // Agile API for boards and sprints
     this.agileApi = axios.create({
       baseURL: `${this.baseUrl}/rest/agile/1.0`,
+      timeout: 30000,
       headers: {
         'Authorization': `Basic ${this.auth}`,
         'Accept': 'application/json',
@@ -25,6 +26,7 @@ class JiraService {
     // Standard API for issues and fields
     this.api = axios.create({
       baseURL: `${this.baseUrl}/rest/api/3`,
+      timeout: 30000,
       headers: {
         'Authorization': `Basic ${this.auth}`,
         'Accept': 'application/json',
@@ -52,6 +54,9 @@ class JiraService {
   // tries other types if no scrum boards are found.
   async getBoards() {
     try {
+      const startTime = Date.now();
+      const MAX_TIME_MS = 55000; // Stop paginating after 55s to stay within serverless limits
+
       const fetchBoardsByType = async (type) => {
         let boards = [];
         let startAt = 0;
@@ -60,6 +65,11 @@ class JiraService {
         let fetchedThisRound = 0;
 
         do {
+          if (Date.now() - startTime > MAX_TIME_MS) {
+            console.log(`⏱ Time limit reached after ${boards.length} boards, returning partial results`);
+            break;
+          }
+
           const params = { startAt, maxResults };
           if (type) params.type = type;
 
@@ -87,7 +97,7 @@ class JiraService {
         allBoards = await fetchBoardsByType(null);
       }
 
-      console.log(`✓ Fetched ${allBoards.length} boards total`);
+      console.log(`✓ Fetched ${allBoards.length} boards total in ${Date.now() - startTime}ms`);
 
       // Sort boards alphabetically by name
       allBoards.sort((a, b) => (a.name || '').localeCompare(b.name || ''));

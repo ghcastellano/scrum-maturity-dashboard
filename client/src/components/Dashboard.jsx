@@ -1261,14 +1261,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             borderColor: 'rgb(239, 68, 68)',
                             borderWidth: 1,
                             borderRadius: 4
-                          },
-                          {
-                            label: 'Total',
-                            data: metrics.flowQuality.reworkBySprint.map(s => s.totalIssues),
-                            backgroundColor: 'rgba(156, 163, 175, 0.3)',
-                            borderColor: 'rgb(156, 163, 175)',
-                            borderWidth: 1,
-                            borderRadius: 4
                           }
                         ]
                       }}
@@ -1276,20 +1268,17 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
-                          legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 10 } } },
+                          legend: { display: false },
                           tooltip: {
                             callbacks: {
-                              afterBody: (items) => {
-                                const idx = items[0]?.dataIndex;
-                                if (idx !== undefined) {
-                                  const s = metrics.flowQuality.reworkBySprint[idx];
-                                  return `Rework Rate: ${s.reworkRate}%`;
-                                }
+                              label: (item) => {
+                                const s = metrics.flowQuality.reworkBySprint[item.dataIndex];
+                                return `${item.raw} rework / ${s.totalIssues} total (${s.reworkRate}%)`;
                               }
                             }
                           },
                           datalabels: {
-                            display: (ctx) => ctx.datasetIndex === 0 && ctx.dataset.data[ctx.dataIndex] > 0,
+                            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
                             color: '#991b1b',
                             font: { size: 10, weight: 'bold' },
                             anchor: 'end',
@@ -1308,7 +1297,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       }}
                     />
                   </div>
-                  <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
+                  <div className="mt-3 flex items-center gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
                     <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
                     <div>
                       <p className="text-sm font-medium text-gray-800">
@@ -1319,6 +1308,30 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       </p>
                     </div>
                   </div>
+                  {/* Rework issue details per sprint */}
+                  {metrics.flowQuality.reworkBySprint.some(s => s.reworkDetails?.length > 0) && (
+                    <div className="mt-3 space-y-1">
+                      {metrics.flowQuality.reworkBySprint.map(s => {
+                        if (!s.reworkDetails?.length) return null;
+                        return (
+                          <details key={s.sprint} className="bg-red-50 rounded border border-red-100">
+                            <summary className="px-2 py-1.5 cursor-pointer text-xs font-medium text-red-800 hover:bg-red-100 rounded">
+                              {s.sprint}: {s.reworkCount} {locale === 'pt-BR' ? 'retornaram ao dev' : 'sent back to dev'}
+                            </summary>
+                            <div className="px-2 pb-2">
+                              {s.reworkDetails.map(d => (
+                                <div key={d.key} className="flex items-center gap-2 text-xs text-gray-700 py-1 border-t border-red-100">
+                                  <a href={`${credentials?.jiraUrl?.replace(/\/$/, '')}/browse/${d.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-red-700 shrink-0 hover:underline">{d.key}</a>
+                                  <span className="px-1 bg-gray-200 rounded text-gray-600 shrink-0">{d.type}</span>
+                                  <span className="flex-1 truncate" title={d.summary}>{d.summary}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-gray-400">{locale === 'pt-BR' ? 'Sem dados de retrabalho' : 'No rework data'}</p>

@@ -331,7 +331,7 @@ class DashboardController {
         const nextSprintIssues = nextSprint ? sprintIssuesMap.get(nextSprint.id) : [];
 
         const sprintGoalResult = this.metricsService.calculateSprintGoalAttainment(sprint, issues);
-        const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name);
+        const rolloverResult = this.metricsService.calculateRolloverRate(issues, nextSprintIssues, sprint.name, sprint);
         const sprintHitRate = this.metricsService.calculateSprintHitRate(issues, sprint.completeDate || sprint.endDate);
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
         const defectDistribution = this.metricsService.calculateDefectDistribution(issues);

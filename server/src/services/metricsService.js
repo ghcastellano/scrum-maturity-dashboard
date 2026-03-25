@@ -172,8 +172,11 @@ class MetricsService {
   }
 
   // Calculate Rollover Rate - returns { rate, issues[], reasonBreakdown }
-  // Excludes sub-tasks to avoid inflating denominator
-  calculateRolloverRate(sprintIssues, nextSprintIssues, sprintName = '') {
+  // A rollover is any issue that:
+  //   1. Appears in both the current sprint AND the next sprint
+  //   2. Was NOT completed in the current sprint
+  // Labels are tracked as optional reasons but are NOT required for counting.
+  calculateRolloverRate(sprintIssues, nextSprintIssues, sprintName = '', sprint = null) {
     if (!nextSprintIssues || nextSprintIssues.length === 0) {
       console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: no next sprint data, rollover = 0%`);
       return { rate: 0, issues: [], reasonBreakdown: {} };
@@ -184,21 +187,30 @@ class MetricsService {
     const parentNextIssues = nextSprintIssues.filter(i => !i.fields?.issuetype?.subtask);
 
     const currentSprintKeys = new Set(parentIssues.map(i => i.key));
-    // An issue is a rollover only if it appears in both sprints AND has a rollover label
+    // Issues that appear in both sprints are rollover candidates
     const candidateIssues = parentNextIssues.filter(issue => currentSprintKeys.has(issue.key));
 
-    // Extract rollover reason labels and keep only labeled issues
+    // Build status category map for completion check
+    const statusCategoryMap = MetricsService.buildStatusCategoryMap(sprintIssues);
+    const sprintEnd = sprint ? new Date(sprint.completeDate || sprint.endDate) : null;
+
     const reasonBreakdown = {};
     const issueDetails = [];
 
     for (const issue of candidateIssues) {
+      // Find the original issue from the current sprint (has the correct completion flag)
+      const originalIssue = parentIssues.find(i => i.key === issue.key) || issue;
+
+      // Skip if the issue was completed in the current sprint — not a rollover
+      if (MetricsService.wasCompletedAtTime(originalIssue, sprintEnd, statusCategoryMap)) {
+        continue;
+      }
+
+      // This is a genuine rollover — track optional reason labels
       const allLabels = issue.fields?.labels || [];
       const rolloverReasons = allLabels.filter(l =>
         MetricsService.ROLLOVER_LABELS.includes(l)
       );
-
-      // Only count as rollover if it has at least one rollover label
-      if (rolloverReasons.length === 0) continue;
 
       for (const reason of rolloverReasons) {
         reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
@@ -215,12 +227,15 @@ class MetricsService {
 
     const rate = parentIssues.length > 0 ? (issueDetails.length / parentIssues.length) * 100 : 0;
 
-    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${issueDetails.length}/${parentIssues.length} issues = ${rate.toFixed(1)}% (${candidateIssues.length} in both sprints, ${issueDetails.length} with rollover labels)`);
+    const labeled = issueDetails.filter(i => i.reasons.length > 0).length;
+    console.log(`\n🔄 Rollover for ${sprintName || 'sprint'}: ${issueDetails.length}/${parentIssues.length} issues = ${rate.toFixed(1)}% (${candidateIssues.length} in both sprints, ${issueDetails.length} not completed, ${labeled} with labels)`);
     if (issueDetails.length > 0) {
       issueDetails.forEach(issue => {
-        console.log(`  → ${issue.key} - ${issue.summary} [${issue.status}] (${issue.reasons.join(', ')})`);
+        console.log(`  → ${issue.key} - ${issue.summary} [${issue.status}]${issue.reasons.length > 0 ? ` (${issue.reasons.join(', ')})` : ''}`);
       });
-      console.log(`  Breakdown: ${Object.entries(reasonBreakdown).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
+      if (Object.keys(reasonBreakdown).length > 0) {
+        console.log(`  Breakdown: ${Object.entries(reasonBreakdown).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
+      }
     }
 
     return { rate, issues: issueDetails, reasonBreakdown };

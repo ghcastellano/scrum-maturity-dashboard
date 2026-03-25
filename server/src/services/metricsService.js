@@ -374,18 +374,11 @@ class MetricsService {
     // Filter out sub-tasks
     const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
 
-    // Only evaluate items that are truly in the backlog (not yet pulled into a sprint or in progress)
-    // statusCategory: 'new' = To Do / Backlog / Pending / Open
-    // Excludes 'indeterminate' (In Progress) and 'done' (Closed/Resolved)
-    const backlogStatuses = ['pending requirements', 'backlog', 'open', 'to do', 'new', 'pending',
-      'pendente', 'aberto', 'a fazer', 'ready for development', 'ready for refinement',
-      'ready', 'triage', 'funnel', 'ideas', 'selected for development'];
-
+    // Only evaluate items in "Ready for Development" or "Backlog" status —
+    // these are the items that should already have AC, estimates, and fix versions.
     const backlogIssues = parentIssues.filter(i => {
-      const category = i.fields?.status?.statusCategory?.key;
-      if (category === 'new') return true; // Jira "To Do" category
       const statusName = (i.fields?.status?.name || '').toLowerCase();
-      return backlogStatuses.some(s => statusName.includes(s));
+      return statusName === 'ready for development' || statusName === 'backlog';
     });
 
     let withAcceptanceCriteria = 0;

@@ -1147,8 +1147,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </h2>
           <p className="text-sm text-gray-500 mb-6">{t('pillar2Subtitle')}</p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Col 1: Development Cycle Time by Work Type */}
+          <div>
+            {/* Development Cycle Time by Work Type */}
             <div>
               <h3 className="font-semibold mb-2">{t('devCycleTimeByType')}</h3>
               <p className="text-xs text-gray-500 mb-4">{t('devCycleTimeDesc')}</p>
@@ -1239,118 +1239,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               )}
             </div>
 
-            {/* Col 2: QA Rework Trends */}
-            <div>
-              <h3 className="font-semibold mb-2">{locale === 'pt-BR' ? 'Retrabalho QA (Retorno ao Dev)' : 'QA Rework (Back to Dev)'}</h3>
-              <p className="text-xs text-gray-500 mb-4">
-                {locale === 'pt-BR'
-                  ? 'Issues que voltaram de QA/Review para desenvolvimento. Detectado via transições de status.'
-                  : 'Issues sent back from QA/Review to development. Detected via status transitions.'}
-              </p>
-              {metrics.flowQuality.reworkBySprint && metrics.flowQuality.reworkBySprint.length > 0 ? (
-                <>
-                  <div className="h-56">
-                    <Bar
-                      data={{
-                        labels: metrics.flowQuality.reworkBySprint.map(s => s.sprint),
-                        datasets: [
-                          {
-                            label: locale === 'pt-BR' ? 'Issues com Retrabalho' : 'Rework Issues',
-                            data: metrics.flowQuality.reworkBySprint.map(s => s.reworkCount),
-                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
-                            borderColor: 'rgb(239, 68, 68)',
-                            borderWidth: 1,
-                            borderRadius: 4,
-                            yAxisID: 'y'
-                          },
-                          {
-                            label: locale === 'pt-BR' ? 'Total Issues' : 'Total Issues',
-                            data: metrics.flowQuality.reworkBySprint.map(s => s.totalIssues),
-                            backgroundColor: 'rgba(156, 163, 175, 0.3)',
-                            borderColor: 'rgb(156, 163, 175)',
-                            borderWidth: 1,
-                            borderRadius: 4,
-                            yAxisID: 'y'
-                          }
-                        ]
-                      }}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 10 } } },
-                          tooltip: {
-                            callbacks: {
-                              afterBody: (items) => {
-                                const idx = items[0]?.dataIndex;
-                                if (idx !== undefined) {
-                                  const s = metrics.flowQuality.reworkBySprint[idx];
-                                  return `Rework Rate: ${s.reworkRate}%`;
-                                }
-                              }
-                            }
-                          },
-                          datalabels: {
-                            display: (ctx) => ctx.datasetIndex === 0 && ctx.dataset.data[ctx.dataIndex] > 0,
-                            color: '#991b1b',
-                            font: { size: 10, weight: 'bold' },
-                            anchor: 'end',
-                            align: 'top',
-                            offset: -2,
-                            formatter: (value, ctx) => {
-                              const s = metrics.flowQuality.reworkBySprint[ctx.dataIndex];
-                              return `${value} (${s.reworkRate}%)`;
-                            }
-                          }
-                        },
-                        scales: {
-                          y: { beginAtZero: true, ticks: { font: { size: 11 }, stepSize: 1 }, grid: { color: 'rgba(0,0,0,0.05)' } },
-                          x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
-                        }
-                      }}
-                    />
-                  </div>
-                  {/* Summary */}
-                  <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
-                    <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">
-                        {locale === 'pt-BR' ? 'Taxa Geral de Retrabalho' : 'Overall Rework Rate'}: {metrics.flowQuality.reworkRate}%
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {locale === 'pt-BR' ? 'Saudável: <15% das issues retornam ao dev' : 'Healthy: <15% of issues sent back to dev'}
-                      </p>
-                    </div>
-                  </div>
-                  {/* Rework details per sprint */}
-                  {metrics.flowQuality.reworkBySprint.some(s => s.reworkDetails?.length > 0) && (
-                    <div className="mt-3 space-y-1">
-                      {metrics.flowQuality.reworkBySprint.map(s => {
-                        if (!s.reworkDetails?.length) return null;
-                        return (
-                          <details key={s.sprint} className="bg-red-50 rounded border border-red-100">
-                            <summary className="px-2 py-1.5 cursor-pointer text-xs font-medium text-red-800 hover:bg-red-100 rounded">
-                              {s.sprint}: {s.reworkCount} {locale === 'pt-BR' ? 'issues retornaram' : 'issues sent back'}
-                            </summary>
-                            <div className="px-2 pb-2">
-                              {s.reworkDetails.map(d => (
-                                <div key={d.key} className="text-xs text-gray-700 py-1 border-t border-red-100">
-                                  <span className="font-mono font-semibold text-red-700">{d.key}</span>
-                                  <span className="ml-1.5 px-1 bg-gray-200 rounded text-gray-600">{d.type}</span>
-                                  <span className="ml-1.5 truncate">{d.summary}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </details>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-gray-400">{t('noReworkData')}</p>
-              )}
-            </div>
           </div>
         </div>
         )}

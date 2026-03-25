@@ -374,11 +374,13 @@ class MetricsService {
     // Filter out sub-tasks
     const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
 
-    // Only evaluate items in "Ready for Development" or "Backlog" status —
-    // these are the items that should already have AC, estimates, and fix versions.
+    // Only evaluate items that should already be refined (have AC, estimates, fix versions).
+    // Matches variations: "Ready for Development", "Ready for Dev", "Ready For Dev",
+    // "Backlog", "Product Backlog", "Sprint Backlog", "Selected for Development", etc.
     const backlogIssues = parentIssues.filter(i => {
-      const statusName = (i.fields?.status?.name || '').toLowerCase();
-      return statusName === 'ready for development' || statusName === 'backlog';
+      const s = (i.fields?.status?.name || '').toLowerCase();
+      return s.includes('ready for dev') || s.includes('backlog') || s.includes('selected for dev')
+        || s === 'ready' || s === 'to do' || s === 'open';
     });
 
     let withAcceptanceCriteria = 0;

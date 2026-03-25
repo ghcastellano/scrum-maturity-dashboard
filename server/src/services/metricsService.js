@@ -369,9 +369,24 @@ class MetricsService {
   }
 
   // Calculate Backlog Health Score (excludes sub-tasks)
+  // Only evaluates items in backlog/pending statuses — items already in progress or done are excluded.
   calculateBacklogHealth(issues) {
-    // Filter out sub-tasks - backlog health should only evaluate parent-level items
+    // Filter out sub-tasks
     const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
+
+    // Only evaluate items that are truly in the backlog (not yet pulled into a sprint or in progress)
+    // statusCategory: 'new' = To Do / Backlog / Pending / Open
+    // Excludes 'indeterminate' (In Progress) and 'done' (Closed/Resolved)
+    const backlogStatuses = ['pending requirements', 'backlog', 'open', 'to do', 'new', 'pending',
+      'pendente', 'aberto', 'a fazer', 'ready for development', 'ready for refinement',
+      'ready', 'triage', 'funnel', 'ideas', 'selected for development'];
+
+    const backlogIssues = parentIssues.filter(i => {
+      const category = i.fields?.status?.statusCategory?.key;
+      if (category === 'new') return true; // Jira "To Do" category
+      const statusName = (i.fields?.status?.name || '').toLowerCase();
+      return backlogStatuses.some(s => statusName.includes(s));
+    });
 
     let withAcceptanceCriteria = 0;
     let withEstimates = 0;
@@ -383,13 +398,13 @@ class MetricsService {
     const missingFixVersions = [];
 
     console.log(`\n📋 Backlog Health Analysis:`);
-    console.log(`  Total backlog issues: ${parentIssues.length} (${issues.length - parentIssues.length} sub-tasks excluded)`);
+    console.log(`  Total backlog issues: ${backlogIssues.length} (from ${parentIssues.length} parent issues, ${parentIssues.length - backlogIssues.length} in-progress/done excluded)`);
 
     // Log first 3 issues for debugging
-    if (parentIssues.length > 0) {
+    if (backlogIssues.length > 0) {
       console.log(`\n  Sample backlog issues (first 3):`);
-      parentIssues.slice(0, 3).forEach((issue, idx) => {
-        console.log(`  ${idx + 1}. ${issue.key}`);
+      backlogIssues.slice(0, 3).forEach((issue, idx) => {
+        console.log(`  ${idx + 1}. ${issue.key} [${issue.fields?.status?.name}]`);
         console.log(`     Description length: ${issue.fields.description?.length || 0} chars`);
         console.log(`     Story Points (${storyPointsField}): ${issue.fields[storyPointsField] || 'null'}`);
         console.log(`     Fix Versions: ${issue.fields.fixVersions?.length || 0}`);
@@ -427,7 +442,7 @@ class MetricsService {
       return acPatterns.some(pattern => pattern.test(textContent));
     };
 
-    parentIssues.forEach(issue => {
+    backlogIssues.forEach(issue => {
       // Check for AC keywords in description
       const desc = issue.fields.description;
       const descText = typeof desc === 'object' ? JSON.stringify(desc) : desc;
@@ -452,7 +467,7 @@ class MetricsService {
       }
     });
 
-    const total = parentIssues.length;
+    const total = backlogIssues.length;
 
     console.log(`\n  Results:`);
     console.log(`    With Acceptance Criteria (keyword match): ${withAcceptanceCriteria}/${total}`);
@@ -460,7 +475,7 @@ class MetricsService {
     console.log(`    Linked to Goals: ${linkedToGoals}/${total}`);
 
     if (total === 0) {
-      console.log(`  ⚠️  No backlog issues found!`);
+      console.log(`  ⚠️  No backlog issues in pending/backlog status found!`);
       return {
         withAcceptanceCriteria: 0,
         withEstimates: 0,

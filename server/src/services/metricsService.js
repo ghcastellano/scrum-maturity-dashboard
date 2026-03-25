@@ -661,13 +661,13 @@ class MetricsService {
 
     // 2. Cycle time by work type (sprint commitment → done, excludes backlog wait time)
     // Excludes "Task" type — not relevant for flow analysis
-    const excludeTypes = new Set(['Task']);
+    const isExcludedType = (t) => t.toLowerCase() === 'task';
     const cycleTimeByType = {};
     const cycleTimeItems = {};
 
     for (const issue of allIssuesMap.values()) {
       const type = issue.fields.issuetype?.name || 'Other';
-      if (excludeTypes.has(type)) continue;
+      if (isExcludedType(type)) continue;
 
       const histories = issue.changelog?.histories || [];
       const ct = histories.length > 0 ? this.calculateCycleTime(issue, histories) : null;
@@ -691,7 +691,7 @@ class MetricsService {
       const byType = {};
       for (const issue of issues) {
         const type = issue.fields.issuetype?.name || 'Other';
-        if (excludeTypes.has(type)) continue;
+        if (isExcludedType(type)) continue;
 
         const histories = issue.changelog?.histories || [];
         const ct = histories.length > 0 ? this.calculateCycleTime(issue, histories) : null;

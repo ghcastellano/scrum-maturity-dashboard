@@ -264,7 +264,9 @@ class MetricsService {
     };
   }
 
-  // Calculate Cycle Time
+  // Calculate Cycle Time — measures time from when issue was committed to sprint until done.
+  // This excludes discovery time (before sprint commitment).
+  // Falls back to "In Progress" transition if sprint field change not found.
   calculateCycleTime(issue, changelog) {
     let startTime = null;
     let endTime = null;
@@ -282,25 +284,56 @@ class MetricsService {
       this._loggedStatuses = true;
     }
 
-    // Find when issue moved to an in-progress status, then to a done status
-    // Supports multiple Jira workflow naming conventions
-    const inProgressNames = ['in progress', 'em progresso', 'em andamento', 'development', 'desenvolvimento', 'doing'];
-    const doneNames = ['closed', 'done', 'resolved', 'concluido', 'concluído', 'finalizado', 'complete', 'completed'];
-
+    // 1. Try to find when the issue was added to a sprint (Sprint field change)
     for (const change of changelog) {
       for (const item of change.items) {
-        if (item.field === 'status') {
-          const statusLower = (item.toString || '').toLowerCase();
-          if (!startTime && inProgressNames.some(s => statusLower.includes(s))) {
-            startTime = parseISO(change.created);
-          }
-          if (startTime && doneNames.some(s => statusLower.includes(s))) {
-            endTime = parseISO(change.created);
-            break;
-          }
+        if (item.field === 'Sprint' && item.toString && !item.fromString) {
+          // First time added to any sprint
+          startTime = parseISO(change.created);
+          break;
+        }
+        if (item.field === 'Sprint' && item.toString) {
+          // Sprint changed — use the first sprint assignment
+          if (!startTime) startTime = parseISO(change.created);
         }
       }
-      if (endTime) break;
+      if (startTime) break;
+    }
+
+    // 2. Fallback: find "In Progress" transition if no sprint field change found
+    if (!startTime) {
+      const inProgressNames = ['in progress', 'em progresso', 'em andamento', 'development', 'desenvolvimento', 'doing'];
+      for (const change of changelog) {
+        for (const item of change.items) {
+          if (item.field === 'status') {
+            const statusLower = (item.toString || '').toLowerCase();
+            if (inProgressNames.some(s => statusLower.includes(s))) {
+              startTime = parseISO(change.created);
+              break;
+            }
+          }
+        }
+        if (startTime) break;
+      }
+    }
+
+    // 3. Find when issue moved to done
+    const doneNames = ['closed', 'done', 'resolved', 'concluido', 'concluído', 'finalizado', 'complete', 'completed'];
+    if (startTime) {
+      for (const change of changelog) {
+        const changeDate = parseISO(change.created);
+        if (changeDate < startTime) continue;
+        for (const item of change.items) {
+          if (item.field === 'status') {
+            const statusLower = (item.toString || '').toLowerCase();
+            if (doneNames.some(s => statusLower.includes(s))) {
+              endTime = changeDate;
+              break;
+            }
+          }
+        }
+        if (endTime) break;
+      }
     }
 
     if (startTime && endTime) {
@@ -680,22 +713,60 @@ class MetricsService {
       return { sprint: sm.sprintName, ...d };
     });
 
-    // 6. QA rework — count dev-qa-spill labeled issues across all sprints + per-sprint trend
+    // 6. QA rework — detect issues that went backwards in workflow (QA/Review → Dev/In Progress)
+    // This catches actual rework more accurately than label-based detection.
+    const qaStatuses = ['qa', 'testing', 'in qa', 'code review', 'review', 'in review', 'ready for qa', 'verificação', 'verificacao', 'teste'];
+    const devStatuses = ['in progress', 'em progresso', 'em andamento', 'development', 'desenvolvimento', 'doing', 'to do', 'open', 'reopened'];
+
     let totalReworkIssues = 0;
     let totalIssueCount = 0;
     const reworkBySprint = [];
     for (const sprint of recentSprints) {
       const issues = sprintIssuesBySprintId.get(sprint.id) || [];
-      const reworkCount = issues.filter(i =>
-        (i.fields.labels || []).includes('dev-qa-spill')
-      ).length;
+      let reworkCount = 0;
+      const reworkDetails = [];
+
+      for (const issue of issues) {
+        const histories = issue.changelog?.histories || [];
+        let wasInQA = false;
+        let sentBack = false;
+
+        for (const history of histories) {
+          for (const item of history.items) {
+            if (item.field === 'status') {
+              const fromLower = (item.fromString || '').toLowerCase();
+              const toLower = (item.toString || '').toLowerCase();
+              if (qaStatuses.some(s => fromLower.includes(s)) || qaStatuses.some(s => toLower.includes(s))) {
+                wasInQA = true;
+              }
+              // Detect back-transition: from QA/Review status to Dev/In Progress
+              if (wasInQA && qaStatuses.some(s => fromLower.includes(s)) && devStatuses.some(s => toLower.includes(s))) {
+                sentBack = true;
+                break;
+              }
+            }
+          }
+          if (sentBack) break;
+        }
+
+        if (sentBack) {
+          reworkCount++;
+          reworkDetails.push({
+            key: issue.key,
+            summary: issue.fields?.summary || '',
+            type: issue.fields?.issuetype?.name || 'Unknown'
+          });
+        }
+      }
+
       totalIssueCount += issues.length;
       totalReworkIssues += reworkCount;
       reworkBySprint.push({
         sprint: sprint.name,
         reworkCount,
         totalIssues: issues.length,
-        reworkRate: issues.length > 0 ? Math.round((reworkCount / issues.length) * 1000) / 10 : 0
+        reworkRate: issues.length > 0 ? Math.round((reworkCount / issues.length) * 1000) / 10 : 0,
+        reworkDetails
       });
     }
 
@@ -714,7 +785,7 @@ class MetricsService {
     const earlyDefectDetection = totalDefects.total === 0 ||
       (totalDefects.preMerge + totalDefects.inQA) >= totalDefects.postRelease;
 
-    // c) Minimal rework: dev-qa-spill < 15% of all issues
+    // c) Minimal rework: QA back-transitions < 15% of all issues
     const reworkRate = totalIssueCount > 0 ? (totalReworkIssues / totalIssueCount) * 100 : 0;
     const minimalRework = reworkRate < 15;
 
@@ -750,6 +821,7 @@ class MetricsService {
       avgRolloverRate: avg(sprintMetrics.map(s => s.rolloverRate || 0)),
       avgSprintGoalAttainment: avg(sprintMetrics.map(s => s.sprintGoalAttainment || 0)),
       avgSprintHitRate: avg(sprintMetrics.map(s => s.sprintHitRate || 0)),
+      avgSprintHitRatePoints: avg(sprintMetrics.map(s => s.sprintHitRatePoints || s.sprintHitRate || 0)),
       avgMidSprintAdditions: avg(sprintMetrics.map(s => s.midSprintAdditions?.percentage || 0)),
       totalSprints: sprintMetrics.length
     };

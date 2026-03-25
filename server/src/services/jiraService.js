@@ -220,9 +220,12 @@ class JiraService {
     }
   }
 
-  // Get the set of issue keys that Jira Sprint Report considers "completed" for a sprint.
-  // Uses the GreenHopper Sprint Report API — the same data source as the Jira UI.
-  async getSprintReportCompletedKeys(boardId, sprintId) {
+  // Get full sprint report data from GreenHopper API — the same data source as the Jira UI.
+  // Returns: { completedKeys, plannedPoints, committedPoints, completedPoints } or null on failure.
+  // - plannedPoints: points of items in sprint at start (not added mid-sprint)
+  // - committedPoints: total points of all items (including mid-sprint additions)
+  // - completedPoints: points of completed items
+  async getSprintReportData(boardId, sprintId) {
     try {
       const response = await axios.get(
         `${this.baseUrl}/rest/greenhopper/1.0/rapid/charts/sprintreport`,
@@ -235,13 +238,49 @@ class JiraService {
         }
       );
 
-      const completedIssues = response.data?.contents?.completedIssues || [];
+      const contents = response.data?.contents || {};
+      const completedIssues = contents.completedIssues || [];
+      const notCompleted = contents.issuesNotCompletedInCurrentSprint || [];
+      const puntedIssues = contents.puntedIssues || [];
+
       const completedKeys = new Set(completedIssues.map(i => i.key));
-      console.log(`  ✓ Sprint Report: ${completedKeys.size} completed issues`);
-      return completedKeys;
+
+      // Extract story points from sprint report (uses estimateStatistic)
+      const getPoints = (issue) => {
+        return issue.estimateStatistic?.statFieldValue?.value ||
+               issue.currentEstimateStatistic?.statFieldValue?.value || 0;
+      };
+
+      // Planned = items NOT marked as added (were in sprint at start)
+      // Committed = ALL items (including mid-sprint additions)
+      // Completed = completed items points
+      let plannedPoints = 0;
+      let committedPoints = 0;
+      let completedPoints = 0;
+
+      for (const issue of completedIssues) {
+        const pts = getPoints(issue);
+        completedPoints += pts;
+        committedPoints += pts;
+        if (!issue.added) plannedPoints += pts;
+      }
+      for (const issue of notCompleted) {
+        const pts = getPoints(issue);
+        committedPoints += pts;
+        if (!issue.added) plannedPoints += pts;
+      }
+      // Punted issues were removed mid-sprint — they were planned but removed
+      // They count towards planned (were at start) but NOT towards committed (removed)
+      for (const issue of puntedIssues) {
+        const pts = getPoints(issue);
+        if (!issue.added) plannedPoints += pts;
+      }
+
+      console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);
+      return { completedKeys, plannedPoints, committedPoints, completedPoints };
     } catch (err) {
       console.warn(`  ⚠ Sprint Report API unavailable: ${err.message}`);
-      return null; // null signals fallback needed
+      return null;
     }
   }
 
@@ -265,17 +304,23 @@ class JiraService {
       const issues = response.data.issues || [];
 
       // Try Sprint Report API first (exact match with Jira UI)
-      let sprintReportKeys = null;
+      let sprintReportData = null;
       if (boardId && issues.length > 0) {
-        sprintReportKeys = await this.getSprintReportCompletedKeys(boardId, sprintId);
+        sprintReportData = await this.getSprintReportData(boardId, sprintId);
       }
 
-      if (sprintReportKeys) {
+      if (sprintReportData) {
         // Annotate each issue with the Sprint Report's completion flag
         for (const issue of issues) {
-          issue._completedInSprintReport = sprintReportKeys.has(issue.key);
+          issue._completedInSprintReport = sprintReportData.completedKeys.has(issue.key);
         }
-        console.log(`  ✓ Issues annotated from Sprint Report (${issues.length} issues, ${sprintReportKeys.size} completed)`);
+        // Store sprint report points data on the issues array (accessible by caller)
+        issues._sprintReportData = {
+          plannedPoints: sprintReportData.plannedPoints,
+          committedPoints: sprintReportData.committedPoints,
+          completedPoints: sprintReportData.completedPoints
+        };
+        console.log(`  ✓ Issues annotated from Sprint Report (${issues.length} issues, ${sprintReportData.completedKeys.size} completed)`);
       } else {
         // Fallback: enrich with changelog data from standard REST API
         await this._enrichWithChangelogs(issues);

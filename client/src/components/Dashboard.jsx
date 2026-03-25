@@ -12,6 +12,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import api from '../services/api';
 import MaturityBadge from './MaturityBadge';
 import MaturityLevelsReference from './MaturityLevelsReference';
@@ -25,7 +26,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  ChartDataLabels
 );
 
 export default function Dashboard({ credentials: credentialsProp, selectedBoards, newlyAddedBoard, onNewBoardHandled, onBoardDeleted, locale = 'en', t }) {
@@ -250,8 +252,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       );
       if (result.success) {
         setAvailableSprints(result.sprints);
-        // Default: select the 6 most recent
-        setSelectedSprintIds(result.sprints.slice(0, 6).map(s => s.id));
+        // Default: select the 6 most recent (sprints are sorted oldest-first)
+        setSelectedSprintIds(result.sprints.slice(-6).map(s => s.id));
       }
     } catch (err) {
       console.warn('Failed to load sprints:', err.message);
@@ -595,6 +597,9 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
       legend: {
         display: true,
         position: 'top'
+      },
+      datalabels: {
+        display: false
       }
     },
     scales: {
@@ -708,7 +713,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 <h3 className="font-semibold text-gray-800">{t('selectSprintsToAnalyze')}</h3>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setSelectedSprintIds(availableSprints.slice(0, 6).map(s => s.id))}
+                    onClick={() => setSelectedSprintIds(availableSprints.slice(-6).map(s => s.id))}
                     className="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
                   >
                     {t('lastN', { n: '6' })}
@@ -935,14 +940,89 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           <p className="text-sm text-gray-500 mb-6">{t('pillar1Subtitle')}</p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Sprint Hit Rate */}
+            {/* Sprint Hit Rate — Committed vs Completed (story points) */}
             <div>
               <h3 className="font-semibold mb-2">{t('sprintHitRate')}</h3>
               <p className="text-xs text-gray-500 mb-4">
-                {t('sprintHitRateChartDesc')}
+                {locale === 'pt-BR'
+                  ? 'Committed = total de pontos alocados na sprint (incluindo adições/remoções). Completed = pontos concluidos.'
+                  : 'Committed = total points allocated to sprint (including mid-sprint changes). Completed = points done.'}
               </p>
               <div className="h-80">
-                <Line data={sprintGoalData} options={chartOptions} />
+                <Bar
+                  data={{
+                    labels: sprintLabels,
+                    datasets: [
+                      {
+                        label: locale === 'pt-BR' ? 'Committed (pts)' : 'Committed (pts)',
+                        data: sortedSprintMetrics.map(s => s.committedPoints || 0),
+                        backgroundColor: 'rgba(99, 102, 241, 0.6)',
+                        borderColor: 'rgb(99, 102, 241)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                      },
+                      {
+                        label: locale === 'pt-BR' ? 'Completed (pts)' : 'Completed (pts)',
+                        data: sortedSprintMetrics.map(s => s.completedPoints || 0),
+                        backgroundColor: sortedSprintMetrics.map(s =>
+                          (s.sprintHitRatePoints || 0) >= 70 ? 'rgba(34, 197, 94, 0.6)' :
+                          (s.sprintHitRatePoints || 0) >= 50 ? 'rgba(251, 191, 36, 0.6)' :
+                          'rgba(239, 68, 68, 0.6)'
+                        ),
+                        borderColor: sortedSprintMetrics.map(s =>
+                          (s.sprintHitRatePoints || 0) >= 70 ? 'rgb(34, 197, 94)' :
+                          (s.sprintHitRatePoints || 0) >= 50 ? 'rgb(251, 191, 36)' :
+                          'rgb(239, 68, 68)'
+                        ),
+                        borderWidth: 1,
+                        borderRadius: 4
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { display: true, position: 'top' },
+                      tooltip: {
+                        callbacks: {
+                          afterBody: (items) => {
+                            const idx = items[0]?.dataIndex;
+                            if (idx !== undefined) {
+                              const s = sortedSprintMetrics[idx];
+                              return `Hit Rate: ${formatNumber(s.sprintHitRatePoints)}%`;
+                            }
+                          }
+                        }
+                      },
+                      datalabels: {
+                        display: true,
+                        color: '#374151',
+                        font: { size: 10, weight: 'bold' },
+                        anchor: 'end',
+                        align: 'top',
+                        offset: -2,
+                        formatter: (value) => value > 0 ? value : ''
+                      }
+                    },
+                    scales: {
+                      y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                      x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
+                    }
+                  }}
+                />
+              </div>
+              {/* Hit Rate % per sprint */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sortedSprintMetrics.map(s => {
+                  const rate = s.sprintHitRatePoints || 0;
+                  const color = rate >= 70 ? 'bg-green-100 text-green-800' : rate >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                  return (
+                    <div key={s.sprintId} className={`px-2 py-1 rounded-lg text-xs font-medium ${color}`}>
+                      {s.sprintName.replace(/.*?([A-Z]+-\s*S\d+)/i, '$1') || s.sprintName}: {formatNumber(rate)}%
+                    </div>
+                  );
+                })}
               </div>
               {/* Rollover detail per sprint */}
               <div className="mt-4 space-y-2">
@@ -1005,7 +1085,9 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
             <div>
               <h3 className="font-semibold mb-2">{t('plannedVsCompleted')}</h3>
               <p className="text-xs text-gray-500 mb-4">
-                {t('plannedVsCompletedDesc')}
+                {locale === 'pt-BR'
+                  ? 'Planned = pontos no inicio da sprint (sem adições/remoções). Completed = pontos concluidos.'
+                  : 'Planned = points at sprint start (before mid-sprint changes). Completed = points done.'}
               </p>
               <div className="h-80">
                 <Bar
@@ -1014,7 +1096,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     datasets: [
                       {
                         label: locale === 'pt-BR' ? 'Planejado (pts)' : 'Planned (pts)',
-                        data: sortedSprintMetrics.map(s => s.committedPoints || 0),
+                        data: sortedSprintMetrics.map(s => s.plannedPoints || s.committedPoints || 0),
                         backgroundColor: 'rgba(59, 130, 246, 0.5)',
                         borderColor: 'rgb(59, 130, 246)',
                         borderWidth: 1,
@@ -1035,7 +1117,16 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     maintainAspectRatio: false,
                     plugins: {
                       legend: { display: true, position: 'top' },
-                      tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} pts` } }
+                      tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} pts` } },
+                      datalabels: {
+                        display: true,
+                        color: '#374151',
+                        font: { size: 10, weight: 'bold' },
+                        anchor: 'end',
+                        align: 'top',
+                        offset: -2,
+                        formatter: (value) => value > 0 ? value : ''
+                      }
                     },
                     scales: {
                       y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
@@ -1081,7 +1172,19 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.raw} ${t('days')}` } } },
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: { callbacks: { label: (item) => `${item.raw} ${t('days')}` } },
+                          datalabels: {
+                            display: true,
+                            color: '#374151',
+                            font: { size: 11, weight: 'bold' },
+                            anchor: 'end',
+                            align: 'top',
+                            offset: -2,
+                            formatter: (value) => value > 0 ? `${value}d` : ''
+                          }
+                        },
                         scales: { y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { ticks: { font: { size: 11 } }, grid: { display: false } } }
                       }}
                     />
@@ -1112,7 +1215,11 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             options={{
                               responsive: true,
                               maintainAspectRatio: false,
-                              plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} ${t('days')}` } } },
+                              plugins: {
+                                legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+                                tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} ${t('days')}` } },
+                                datalabels: { display: false }
+                              },
                               scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' }, title: { display: true, text: t('days'), font: { size: 10 } } }, x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } } }
                             }}
                           />
@@ -1128,28 +1235,72 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
 
             {/* Col 2: QA Rework Trends */}
             <div>
-              <h3 className="font-semibold mb-2">{t('qaReworkTrends')}</h3>
-              <p className="text-xs text-gray-500 mb-4">{t('qaReworkTrendsDesc')}</p>
+              <h3 className="font-semibold mb-2">{locale === 'pt-BR' ? 'Retrabalho QA (Retorno ao Dev)' : 'QA Rework (Back to Dev)'}</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {locale === 'pt-BR'
+                  ? 'Issues que voltaram de QA/Review para desenvolvimento. Detectado via transições de status.'
+                  : 'Issues sent back from QA/Review to development. Detected via status transitions.'}
+              </p>
               {metrics.flowQuality.reworkBySprint && metrics.flowQuality.reworkBySprint.length > 0 ? (
                 <>
                   <div className="h-56">
                     <Bar
                       data={{
                         labels: metrics.flowQuality.reworkBySprint.map(s => s.sprint),
-                        datasets: [{
-                          label: locale === 'pt-BR' ? 'Taxa de Retrabalho QA (%)' : 'QA Rework Rate (%)',
-                          data: metrics.flowQuality.reworkBySprint.map(s => s.reworkRate),
-                          backgroundColor: 'rgba(239, 68, 68, 0.5)',
-                          borderColor: 'rgb(239, 68, 68)',
-                          borderWidth: 1,
-                          borderRadius: 4
-                        }]
+                        datasets: [
+                          {
+                            label: locale === 'pt-BR' ? 'Issues com Retrabalho' : 'Rework Issues',
+                            data: metrics.flowQuality.reworkBySprint.map(s => s.reworkCount),
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                            borderColor: 'rgb(239, 68, 68)',
+                            borderWidth: 1,
+                            borderRadius: 4,
+                            yAxisID: 'y'
+                          },
+                          {
+                            label: locale === 'pt-BR' ? 'Total Issues' : 'Total Issues',
+                            data: metrics.flowQuality.reworkBySprint.map(s => s.totalIssues),
+                            backgroundColor: 'rgba(156, 163, 175, 0.3)',
+                            borderColor: 'rgb(156, 163, 175)',
+                            borderWidth: 1,
+                            borderRadius: 4,
+                            yAxisID: 'y'
+                          }
+                        ]
                       }}
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.raw}%` } } },
-                        scales: { y: { beginAtZero: true, ticks: { font: { size: 11 }, callback: (v) => `${v}%` }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } } }
+                        plugins: {
+                          legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 10 } } },
+                          tooltip: {
+                            callbacks: {
+                              afterBody: (items) => {
+                                const idx = items[0]?.dataIndex;
+                                if (idx !== undefined) {
+                                  const s = metrics.flowQuality.reworkBySprint[idx];
+                                  return `Rework Rate: ${s.reworkRate}%`;
+                                }
+                              }
+                            }
+                          },
+                          datalabels: {
+                            display: (ctx) => ctx.datasetIndex === 0 && ctx.dataset.data[ctx.dataIndex] > 0,
+                            color: '#991b1b',
+                            font: { size: 10, weight: 'bold' },
+                            anchor: 'end',
+                            align: 'top',
+                            offset: -2,
+                            formatter: (value, ctx) => {
+                              const s = metrics.flowQuality.reworkBySprint[ctx.dataIndex];
+                              return `${value} (${s.reworkRate}%)`;
+                            }
+                          }
+                        },
+                        scales: {
+                          y: { beginAtZero: true, ticks: { font: { size: 11 }, stepSize: 1 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                          x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
+                        }
                       }}
                     />
                   </div>
@@ -1157,10 +1308,38 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
                     <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
                     <div>
-                      <p className="text-sm font-medium text-gray-800">{t('overallReworkRate')}: {metrics.flowQuality.reworkRate}%</p>
-                      <p className="text-xs text-gray-500">{t('reworkThreshold')}</p>
+                      <p className="text-sm font-medium text-gray-800">
+                        {locale === 'pt-BR' ? 'Taxa Geral de Retrabalho' : 'Overall Rework Rate'}: {metrics.flowQuality.reworkRate}%
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {locale === 'pt-BR' ? 'Saudável: <15% das issues retornam ao dev' : 'Healthy: <15% of issues sent back to dev'}
+                      </p>
                     </div>
                   </div>
+                  {/* Rework details per sprint */}
+                  {metrics.flowQuality.reworkBySprint.some(s => s.reworkDetails?.length > 0) && (
+                    <div className="mt-3 space-y-1">
+                      {metrics.flowQuality.reworkBySprint.map(s => {
+                        if (!s.reworkDetails?.length) return null;
+                        return (
+                          <details key={s.sprint} className="bg-red-50 rounded border border-red-100">
+                            <summary className="px-2 py-1.5 cursor-pointer text-xs font-medium text-red-800 hover:bg-red-100 rounded">
+                              {s.sprint}: {s.reworkCount} {locale === 'pt-BR' ? 'issues retornaram' : 'issues sent back'}
+                            </summary>
+                            <div className="px-2 pb-2">
+                              {s.reworkDetails.map(d => (
+                                <div key={d.key} className="text-xs text-gray-700 py-1 border-t border-red-100">
+                                  <span className="font-mono font-semibold text-red-700">{d.key}</span>
+                                  <span className="ml-1.5 px-1 bg-gray-200 rounded text-gray-600">{d.type}</span>
+                                  <span className="ml-1.5 truncate">{d.summary}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-gray-400">{t('noReworkData')}</p>

@@ -336,14 +336,25 @@ class DashboardController {
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
         const defectDistribution = this.metricsService.calculateDefectDistribution(issues);
 
+        // Use Sprint Report data for accurate planned/committed/completed points
+        const reportData = issues._sprintReportData;
+        const plannedPoints = reportData?.plannedPoints ?? sprintGoalResult.committedPoints;
+        const committedPoints = reportData?.committedPoints ?? sprintGoalResult.committedPoints;
+        const completedPoints = reportData?.completedPoints ?? sprintGoalResult.completedPoints;
+
+        // Sprint Hit Rate = committed vs completed (story-points based)
+        const sprintHitRatePoints = committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0;
+
         sprintMetrics.push({
           sprintId: sprint.id,
           sprintName: sprint.name,
           startDate: sprint.startDate,
           endDate: sprint.endDate,
           sprintGoalAttainment: sprintGoalResult.percentage,
-          committedPoints: sprintGoalResult.committedPoints,
-          completedPoints: sprintGoalResult.completedPoints,
+          plannedPoints,
+          committedPoints,
+          completedPoints,
+          sprintHitRatePoints,
           rolloverRate: rolloverResult.rate,
           rolloverIssues: rolloverResult.issues,
           rolloverReasonBreakdown: rolloverResult.reasonBreakdown,

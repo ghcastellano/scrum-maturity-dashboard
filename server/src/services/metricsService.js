@@ -414,27 +414,33 @@ class MetricsService {
     });
 
     // Regex patterns for Acceptance Criteria keywords in description
-    const acPatterns = [
-      /acceptance\s*criteria/i,
-      /\bAC\b\s*[:;\-\n]/,
-      /\bacc\s*criteria/i,
-      /\bcriteria\s*de\s*aceita/i,
-      /\bcritérios?\s*de\s*aceite/i,
-      /\bgiven\b.*\bwhen\b.*\bthen\b/is,
-      /\bdefinition\s*of\s*done\b/i,
-      /\bexpected\s*result/i,
-      /\bexpected\s*outcome/i,
-      /\bexpected\s*behavio/i
+    // AC heading patterns — must be followed by actual content (at least 20 chars of text)
+    const acHeadingPatterns = [
+      /acceptance\s*criteria\s*[:;\-\n]?\s*([\s\S]{20,})/i,
+      /\bAC\b\s*[:;\-\n]\s*([\s\S]{20,})/,
+      /\bacc\s*criteria\s*[:;\-\n]?\s*([\s\S]{20,})/i,
+      /\bcriteria\s*de\s*aceita\s*[:;\-\n]?\s*([\s\S]{20,})/i,
+      /\bcritérios?\s*de\s*aceite\s*[:;\-\n]?\s*([\s\S]{20,})/i,
+    ];
+    // Standalone patterns that imply AC content by their structure
+    const acContentPatterns = [
+      /\bgiven\b.{5,}\bwhen\b.{5,}\bthen\b/is,
+      /\bexpected\s*result\s*[:;\-\n]?\s*.{10,}/i,
+      /\bexpected\s*outcome\s*[:;\-\n]?\s*.{10,}/i,
+      /\bexpected\s*behavio\w*\s*[:;\-\n]?\s*.{10,}/i
     ];
 
     const hasAcceptanceCriteria = (description) => {
       if (!description || typeof description !== 'string') return false;
-      // Handle Jira's ADF (Atlassian Document Format) JSON description
       let textContent = description;
       if (typeof description === 'object') {
         textContent = JSON.stringify(description);
       }
-      return acPatterns.some(pattern => pattern.test(textContent));
+      // Check heading patterns (AC/Acceptance Criteria + content after)
+      if (acHeadingPatterns.some(p => p.test(textContent))) return true;
+      // Check standalone content patterns (Given/When/Then, Expected Result, etc.)
+      if (acContentPatterns.some(p => p.test(textContent))) return true;
+      return false;
     };
 
     backlogIssues.forEach(issue => {

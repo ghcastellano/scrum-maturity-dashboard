@@ -421,6 +421,8 @@ class MetricsService {
       /\bacc\s*criteria\s*[:;\-\n]?\s*([\s\S]{20,})/i,
       /\bcriteria\s*de\s*aceita\s*[:;\-\n]?\s*([\s\S]{20,})/i,
       /\bcritérios?\s*de\s*aceite\s*[:;\-\n]?\s*([\s\S]{20,})/i,
+      /\bDoD\b\s*[:;\-\n]\s*([\s\S]{20,})/,
+      /\bdefinition\s*of\s*done\s*[:;\-\n]?\s*([\s\S]{20,})/i,
     ];
     // Standalone patterns that imply AC content by their structure
     const acContentPatterns = [

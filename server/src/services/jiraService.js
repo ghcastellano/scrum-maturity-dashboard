@@ -310,21 +310,19 @@ class JiraService {
       }
 
       if (sprintReportData) {
-        // Annotate each issue with the Sprint Report's completion flag
         for (const issue of issues) {
           issue._completedInSprintReport = sprintReportData.completedKeys.has(issue.key);
         }
-        // Store sprint report points data on the issues array (accessible by caller)
         issues._sprintReportData = {
           plannedPoints: sprintReportData.plannedPoints,
           committedPoints: sprintReportData.committedPoints,
           completedPoints: sprintReportData.completedPoints
         };
         console.log(`  ✓ Issues annotated from Sprint Report (${issues.length} issues, ${sprintReportData.completedKeys.size} completed)`);
-      } else {
-        // Fallback: enrich with changelog data from standard REST API
-        await this._enrichWithChangelogs(issues);
       }
+
+      // Always enrich with changelogs — needed for cycle time, rollover completion checks, etc.
+      await this._enrichWithChangelogs(issues);
 
       return issues;
     } catch (error) {

@@ -379,8 +379,7 @@ class MetricsService {
     // "Backlog", "Product Backlog", "Sprint Backlog", "Selected for Development", etc.
     const backlogIssues = parentIssues.filter(i => {
       const s = (i.fields?.status?.name || '').toLowerCase();
-      return s.includes('ready for dev') || s.includes('backlog') || s.includes('selected for dev')
-        || s === 'ready' || s === 'to do' || s === 'open';
+      return s.includes('ready for dev') || s === 'backlog' || s.includes('selected for dev');
     });
 
     let withAcceptanceCriteria = 0;

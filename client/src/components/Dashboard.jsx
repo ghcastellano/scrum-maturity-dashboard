@@ -1161,11 +1161,17 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         datasets: [{
                           label: t('avgLeadTimeDays'),
                           data: Object.values(metrics.flowQuality.leadTimeByType),
-                          backgroundColor: Object.keys(metrics.flowQuality.leadTimeByType).map((type) =>
-                            type === 'Bug' ? 'rgba(239, 68, 68, 0.7)' :
-                            type === 'Story' ? 'rgba(59, 130, 246, 0.7)' :
-                            'rgba(107, 114, 128, 0.7)'
-                          ),
+                          backgroundColor: Object.keys(metrics.flowQuality.leadTimeByType).map((type) => {
+                            const colors = {
+                              Bug: 'rgba(239, 68, 68, 0.7)',
+                              Story: 'rgba(59, 130, 246, 0.7)',
+                              Improvement: 'rgba(168, 85, 247, 0.7)',
+                              'New Feature': 'rgba(14, 165, 233, 0.7)',
+                              Request: 'rgba(245, 158, 11, 0.7)',
+                              Epic: 'rgba(16, 185, 129, 0.7)',
+                            };
+                            return colors[type] || 'rgba(107, 114, 128, 0.7)';
+                          }),
                           borderRadius: 6
                         }]
                       }}
@@ -1193,7 +1199,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                   {metrics.flowQuality.leadTimeByTypeBySprint.length > 1 && (() => {
                     const sprints = metrics.flowQuality.leadTimeByTypeBySprint;
                     const types = [...new Set(sprints.flatMap(s => Object.keys(s).filter(k => k !== 'sprint')))];
-                    const colors = { Story: 'rgb(59, 130, 246)', Bug: 'rgb(239, 68, 68)', Task: 'rgb(107, 114, 128)', 'Tech Debt': 'rgb(168, 85, 247)' };
+                    const colors = { Story: 'rgb(59, 130, 246)', Bug: 'rgb(239, 68, 68)', Improvement: 'rgb(168, 85, 247)', 'New Feature': 'rgb(14, 165, 233)', Request: 'rgb(245, 158, 11)', Epic: 'rgb(16, 185, 129)', 'Tech Debt': 'rgb(107, 114, 128)' };
                     return (
                       <div className="mt-4">
                         <p className="text-xs text-gray-500 mb-2 font-medium">{t('trendBySprint')}</p>

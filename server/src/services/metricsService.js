@@ -659,37 +659,45 @@ class MetricsService {
       }
     }
 
-    // 2. Lead time by work type (average days: created → resolutiondate)
-    const leadTimeByType = {};
-    const leadTimeItems = {};
+    // 2. Cycle time by work type (sprint commitment → done, excludes backlog wait time)
+    // Excludes "Task" type — not relevant for flow analysis
+    const excludeTypes = new Set(['Task']);
+    const cycleTimeByType = {};
+    const cycleTimeItems = {};
 
     for (const issue of allIssuesMap.values()) {
-      const lt = this.calculateLeadTime(issue);
-      if (lt === null) continue;
       const type = issue.fields.issuetype?.name || 'Other';
-      if (!leadTimeByType[type]) { leadTimeByType[type] = []; leadTimeItems[type] = []; }
-      leadTimeByType[type].push(lt);
-      leadTimeItems[type].push({ key: issue.key, days: lt });
+      if (excludeTypes.has(type)) continue;
+
+      const histories = issue.changelog?.histories || [];
+      const ct = histories.length > 0 ? this.calculateCycleTime(issue, histories) : null;
+      if (ct === null || ct <= 0) continue;
+      if (!cycleTimeByType[type]) { cycleTimeByType[type] = []; cycleTimeItems[type] = []; }
+      cycleTimeByType[type].push(ct);
+      cycleTimeItems[type].push({ key: issue.key, days: ct });
     }
 
     // Average per type
     const leadTimeAvgByType = {};
-    for (const [type, times] of Object.entries(leadTimeByType)) {
+    for (const [type, times] of Object.entries(cycleTimeByType)) {
       leadTimeAvgByType[type] = times.length > 0
         ? Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 10) / 10
         : 0;
     }
 
-    // 3. Lead time by sprint by type (trend)
+    // 3. Cycle time by sprint by type (trend) — excludes Task
     const leadTimeByTypeBySprint = recentSprints.map(sprint => {
       const issues = sprintIssuesBySprintId.get(sprint.id) || [];
       const byType = {};
       for (const issue of issues) {
-        const lt = this.calculateLeadTime(issue);
-        if (lt === null) continue;
         const type = issue.fields.issuetype?.name || 'Other';
+        if (excludeTypes.has(type)) continue;
+
+        const histories = issue.changelog?.histories || [];
+        const ct = histories.length > 0 ? this.calculateCycleTime(issue, histories) : null;
+        if (ct === null || ct <= 0) continue;
         if (!byType[type]) byType[type] = [];
-        byType[type].push(lt);
+        byType[type].push(ct);
       }
       const avgs = {};
       for (const [type, times] of Object.entries(byType)) {

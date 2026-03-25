@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: scrum-maturity-dashboard
+  description: Scrum Maturity Dashboard - Sprint metrics, delivery predictability, and team maturity analysis
+  annotations:
+    gitlab.com/project-slug: ae_gcastellano/scrum-maturity-dashboard
+  tags:
+    - javascript
+    - react
+    - nodejs
+    - scrum
+spec:
+  type: webapp
+  lifecycle: production
+  owner: ae_gcastellano

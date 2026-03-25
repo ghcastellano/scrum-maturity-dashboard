@@ -1147,8 +1147,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </h2>
           <p className="text-sm text-gray-500 mb-6">{t('pillar2Subtitle')}</p>
 
-          <div>
-            {/* Development Cycle Time by Work Type */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Col 1: Development Cycle Time by Work Type */}
             <div>
               <h3 className="font-semibold mb-2">{t('devCycleTimeByType')}</h3>
               <p className="text-xs text-gray-500 mb-4">{t('devCycleTimeDesc')}</p>
@@ -1236,6 +1236,92 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 </>
               ) : (
                 <p className="text-sm text-gray-400">{t('noResolvedIssues')}</p>
+              )}
+            </div>
+
+            {/* Col 2: QA Rework (Back to Dev) */}
+            <div>
+              <h3 className="font-semibold mb-2">{locale === 'pt-BR' ? 'Retrabalho QA (Retorno ao Dev)' : 'QA Rework (Back to Dev)'}</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {locale === 'pt-BR'
+                  ? 'Issues que voltaram de QA/Review para In Progress/Desenvolvimento.'
+                  : 'Issues sent back from QA/Review to In Progress/Development.'}
+              </p>
+              {metrics.flowQuality.reworkBySprint && metrics.flowQuality.reworkBySprint.length > 0 ? (
+                <>
+                  <div className="h-56">
+                    <Bar
+                      data={{
+                        labels: metrics.flowQuality.reworkBySprint.map(s => s.sprint),
+                        datasets: [
+                          {
+                            label: locale === 'pt-BR' ? 'Retrabalho' : 'Rework',
+                            data: metrics.flowQuality.reworkBySprint.map(s => s.reworkCount),
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                            borderColor: 'rgb(239, 68, 68)',
+                            borderWidth: 1,
+                            borderRadius: 4
+                          },
+                          {
+                            label: 'Total',
+                            data: metrics.flowQuality.reworkBySprint.map(s => s.totalIssues),
+                            backgroundColor: 'rgba(156, 163, 175, 0.3)',
+                            borderColor: 'rgb(156, 163, 175)',
+                            borderWidth: 1,
+                            borderRadius: 4
+                          }
+                        ]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 10 } } },
+                          tooltip: {
+                            callbacks: {
+                              afterBody: (items) => {
+                                const idx = items[0]?.dataIndex;
+                                if (idx !== undefined) {
+                                  const s = metrics.flowQuality.reworkBySprint[idx];
+                                  return `Rework Rate: ${s.reworkRate}%`;
+                                }
+                              }
+                            }
+                          },
+                          datalabels: {
+                            display: (ctx) => ctx.datasetIndex === 0 && ctx.dataset.data[ctx.dataIndex] > 0,
+                            color: '#991b1b',
+                            font: { size: 10, weight: 'bold' },
+                            anchor: 'end',
+                            align: 'top',
+                            offset: -2,
+                            formatter: (value, ctx) => {
+                              const s = metrics.flowQuality.reworkBySprint[ctx.dataIndex];
+                              return `${value} (${s.reworkRate}%)`;
+                            }
+                          }
+                        },
+                        scales: {
+                          y: { beginAtZero: true, ticks: { font: { size: 11 }, stepSize: 1 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                          x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
+                    <span className="text-xl">{metrics.flowQuality.healthySignals.minimalRework ? '✅' : '⚠️'}</span>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">
+                        {locale === 'pt-BR' ? 'Taxa Geral' : 'Overall Rate'}: {metrics.flowQuality.reworkRate}%
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {locale === 'pt-BR' ? 'Saudável: <15%' : 'Healthy: <15%'}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">{locale === 'pt-BR' ? 'Sem dados de retrabalho' : 'No rework data'}</p>
               )}
             </div>
 

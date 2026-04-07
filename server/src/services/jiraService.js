@@ -292,8 +292,15 @@ class JiraService {
         console.log(`    ⚠ Skipped ${skippedSubtasks.length} sub-tasks from points calculation`);
       }
 
+      // Build issue details for debugging
+      const issueDetails = [
+        ...completedIssues.map(i => ({ key: i.key, type: i.typeName, estimate: i.estimateStatistic?.statFieldValue?.value, currentEstimate: i.currentEstimateStatistic?.statFieldValue?.value, pts: getPoints(i), added: !!i.added, status: 'completed' })),
+        ...notCompleted.map(i => ({ key: i.key, type: i.typeName, estimate: i.estimateStatistic?.statFieldValue?.value, currentEstimate: i.currentEstimateStatistic?.statFieldValue?.value, pts: getPoints(i), added: !!i.added, status: 'not-completed' })),
+        ...puntedIssues.map(i => ({ key: i.key, type: i.typeName, estimate: i.estimateStatistic?.statFieldValue?.value, currentEstimate: i.currentEstimateStatistic?.statFieldValue?.value, pts: getPoints(i), added: !!i.added, status: 'punted' }))
+      ];
+
       console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);
-      return { completedKeys, plannedPoints, committedPoints, completedPoints };
+      return { completedKeys, plannedPoints, committedPoints, completedPoints, issueDetails };
     } catch (err) {
       console.warn(`  ⚠ Sprint Report API unavailable: ${err.message}`);
       return null;

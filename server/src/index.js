@@ -145,6 +145,19 @@ app.delete('/api/history/board/:boardId', async (req, res) => {
   }
 });
 
+// Diagnostic: raw sprint report data from Jira GreenHopper API
+app.post('/api/debug/sprint-report', async (req, res) => {
+  try {
+    const { jiraUrl, email, apiToken, boardId, sprintId } = req.body;
+    const JiraService = (await import('./services/jiraService.js')).default;
+    const jira = new JiraService(jiraUrl, email, apiToken);
+    const reportData = await jira.getSprintReportData(boardId, sprintId);
+    res.json({ success: true, data: reportData });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

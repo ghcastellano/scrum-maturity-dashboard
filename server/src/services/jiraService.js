@@ -245,56 +245,23 @@ class JiraService {
 
       const completedKeys = new Set(completedIssues.map(i => i.key));
 
-      // Use issueKeysAddedDuringSprint (reliable) instead of issue.added (unreliable)
-      const addedKeys = contents.issueKeysAddedDuringSprint || {};
+      // Use Jira's pre-calculated sums — these match the Velocity Report exactly
+      // InitialEstimate = points at sprint start (before re-estimates)
+      // Estimate = points at sprint end (after re-estimates)
+      const completedInitial = contents.completedIssuesInitialEstimateSum?.value ?? 0;
+      const completedEstimate = contents.completedIssuesEstimateSum?.value ?? 0;
+      const notCompletedInitial = contents.issuesNotCompletedInitialEstimateSum?.value ?? 0;
+      const notCompletedEstimate = contents.issuesNotCompletedEstimateSum?.value ?? 0;
 
-      // Skip sub-tasks to avoid double-counting points with parent issues
-      const isSubtask = (issue) => {
-        const typeName = (issue.typeName || '').toLowerCase();
-        return typeName === 'sub-task' || typeName === 'subtask' || typeName === 'sub-tarefa';
-      };
+      // Planned (Commitment) = initial estimates of completed + not-completed at sprint start
+      // This matches Jira Velocity Report "Commitment" column exactly
+      const plannedPoints = completedInitial + notCompletedInitial;
 
-      // Extract story points from sprint report (uses estimateStatistic)
-      // Use ?? (nullish coalescing) instead of || to correctly handle 0-point issues
-      const getPoints = (issue) => {
-        if (isSubtask(issue)) return 0;
-        return issue.estimateStatistic?.statFieldValue?.value ??
-               issue.currentEstimateStatistic?.statFieldValue?.value ?? 0;
-      };
+      // Committed = current estimates of all items that stayed in sprint
+      const committedPoints = completedEstimate + notCompletedEstimate;
 
-      const wasAdded = (issue) => !!addedKeys[issue.key];
-
-      // Planned = items NOT added mid-sprint (were in sprint at start)
-      // Committed = ALL items (including mid-sprint additions)
-      // Completed = completed items points
-      let plannedPoints = 0;
-      let committedPoints = 0;
-      let completedPoints = 0;
-
-      for (const issue of completedIssues) {
-        const pts = getPoints(issue);
-        completedPoints += pts;
-        committedPoints += pts;
-        if (!wasAdded(issue)) plannedPoints += pts;
-        if (pts > 0) console.log(`    [completed] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
-      }
-      for (const issue of notCompleted) {
-        const pts = getPoints(issue);
-        committedPoints += pts;
-        if (!wasAdded(issue)) plannedPoints += pts;
-        if (pts > 0) console.log(`    [not-completed] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
-      }
-      // Punted issues were removed mid-sprint — excluded from both planned and committed
-      // since they didn't stay in the sprint to be worked on
-      for (const issue of puntedIssues) {
-        const pts = getPoints(issue);
-        if (pts > 0) console.log(`    [punted] ${issue.key} (${issue.typeName}): ${pts}pts (excluded from totals)`);
-      }
-
-      const skippedSubtasks = [...completedIssues, ...notCompleted, ...puntedIssues].filter(i => isSubtask(i));
-      if (skippedSubtasks.length > 0) {
-        console.log(`    ⚠ Skipped ${skippedSubtasks.length} sub-tasks from points calculation`);
-      }
+      // Completed = current estimate of completed items (matches Velocity "Completed")
+      const completedPoints = completedEstimate;
 
       console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);
       return { completedKeys, plannedPoints, committedPoints, completedPoints };

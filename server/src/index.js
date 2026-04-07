@@ -158,6 +158,31 @@ app.post('/api/debug/sprint-report', async (req, res) => {
   }
 });
 
+// Prune all boards to keep only the latest report per board
+app.post('/api/admin/prune-all', async (req, res) => {
+  try {
+    const tenantId = req.body.tenant || null;
+    const boards = await database.getAllBoardsWithMetrics(tenantId);
+    let totalRemoved = 0;
+    for (const board of boards) {
+      const tenant = database._tenantWhere(tenantId, 2);
+      const rows = await database.sql.query(
+        `SELECT id FROM metrics_history WHERE board_id = $1${tenant.clause} ORDER BY calculated_at DESC`,
+        [board.board_id, ...tenant.params]
+      );
+      if (rows.length > 1) {
+        const idsToDelete = rows.slice(1).map(e => e.id);
+        await database.sql`DELETE FROM metrics_history WHERE id = ANY(${idsToDelete})`;
+        totalRemoved += idsToDelete.length;
+        console.log(`✓ Pruned ${idsToDelete.length} old reports for board ${board.board_name}`);
+      }
+    }
+    res.json({ success: true, message: `Pruned ${totalRemoved} old reports across ${boards.length} boards` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

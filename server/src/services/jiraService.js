@@ -284,12 +284,11 @@ class JiraService {
         if (!wasAdded(issue)) plannedPoints += pts;
         if (pts > 0) console.log(`    [not-completed] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
       }
-      // Punted issues were removed mid-sprint — they were planned but removed
-      // They count towards planned (were at start) but NOT towards committed (removed)
+      // Punted issues were removed mid-sprint — excluded from both planned and committed
+      // since they didn't stay in the sprint to be worked on
       for (const issue of puntedIssues) {
         const pts = getPoints(issue);
-        if (!wasAdded(issue)) plannedPoints += pts;
-        if (pts > 0) console.log(`    [punted] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
+        if (pts > 0) console.log(`    [punted] ${issue.key} (${issue.typeName}): ${pts}pts (excluded from totals)`);
       }
 
       const skippedSubtasks = [...completedIssues, ...notCompleted, ...puntedIssues].filter(i => isSubtask(i));

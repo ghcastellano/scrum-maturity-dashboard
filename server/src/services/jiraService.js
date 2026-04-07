@@ -245,6 +245,9 @@ class JiraService {
 
       const completedKeys = new Set(completedIssues.map(i => i.key));
 
+      // Use issueKeysAddedDuringSprint (reliable) instead of issue.added (unreliable)
+      const addedKeys = contents.issueKeysAddedDuringSprint || {};
+
       // Skip sub-tasks to avoid double-counting points with parent issues
       const isSubtask = (issue) => {
         const typeName = (issue.typeName || '').toLowerCase();
@@ -259,7 +262,9 @@ class JiraService {
                issue.currentEstimateStatistic?.statFieldValue?.value ?? 0;
       };
 
-      // Planned = items NOT marked as added (were in sprint at start)
+      const wasAdded = (issue) => !!addedKeys[issue.key];
+
+      // Planned = items NOT added mid-sprint (were in sprint at start)
       // Committed = ALL items (including mid-sprint additions)
       // Completed = completed items points
       let plannedPoints = 0;
@@ -270,21 +275,21 @@ class JiraService {
         const pts = getPoints(issue);
         completedPoints += pts;
         committedPoints += pts;
-        if (!issue.added) plannedPoints += pts;
-        if (pts > 0) console.log(`    [completed] ${issue.key} (${issue.typeName}): ${pts}pts${issue.added ? ' [added mid-sprint]' : ''}`);
+        if (!wasAdded(issue)) plannedPoints += pts;
+        if (pts > 0) console.log(`    [completed] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
       }
       for (const issue of notCompleted) {
         const pts = getPoints(issue);
         committedPoints += pts;
-        if (!issue.added) plannedPoints += pts;
-        if (pts > 0) console.log(`    [not-completed] ${issue.key} (${issue.typeName}): ${pts}pts${issue.added ? ' [added mid-sprint]' : ''}`);
+        if (!wasAdded(issue)) plannedPoints += pts;
+        if (pts > 0) console.log(`    [not-completed] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
       }
       // Punted issues were removed mid-sprint — they were planned but removed
       // They count towards planned (were at start) but NOT towards committed (removed)
       for (const issue of puntedIssues) {
         const pts = getPoints(issue);
-        if (!issue.added) plannedPoints += pts;
-        if (pts > 0) console.log(`    [punted] ${issue.key} (${issue.typeName}): ${pts}pts${issue.added ? ' [added mid-sprint]' : ''}`);
+        if (!wasAdded(issue)) plannedPoints += pts;
+        if (pts > 0) console.log(`    [punted] ${issue.key} (${issue.typeName}): ${pts}pts${wasAdded(issue) ? ' [added mid-sprint]' : ''}`);
       }
 
       const skippedSubtasks = [...completedIssues, ...notCompleted, ...puntedIssues].filter(i => isSubtask(i));
@@ -292,15 +297,8 @@ class JiraService {
         console.log(`    ⚠ Skipped ${skippedSubtasks.length} sub-tasks from points calculation`);
       }
 
-      // Build issue details for debugging
-      const issueDetails = [
-        ...completedIssues.map(i => ({ key: i.key, type: i.typeName, estimate: i.estimateStatistic?.statFieldValue?.value, currentEstimate: i.currentEstimateStatistic?.statFieldValue?.value, pts: getPoints(i), added: !!i.added, status: 'completed' })),
-        ...notCompleted.map(i => ({ key: i.key, type: i.typeName, estimate: i.estimateStatistic?.statFieldValue?.value, currentEstimate: i.currentEstimateStatistic?.statFieldValue?.value, pts: getPoints(i), added: !!i.added, status: 'not-completed' })),
-        ...puntedIssues.map(i => ({ key: i.key, type: i.typeName, estimate: i.estimateStatistic?.statFieldValue?.value, currentEstimate: i.currentEstimateStatistic?.statFieldValue?.value, pts: getPoints(i), added: !!i.added, status: 'punted' }))
-      ];
-
       console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);
-      return { completedKeys, plannedPoints, committedPoints, completedPoints, issueDetails };
+      return { completedKeys, plannedPoints, committedPoints, completedPoints };
     } catch (err) {
       console.warn(`  ⚠ Sprint Report API unavailable: ${err.message}`);
       return null;

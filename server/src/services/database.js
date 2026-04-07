@@ -16,11 +16,9 @@ class DatabaseService {
     this.sql = neon(databaseUrl);
     // In-memory locks to prevent concurrent read-modify-write on the same board
     this._updateLocks = new Map();
-    console.log('✓ Neon database initialized');
+    console.log('✓ Database initialized');
   }
 
-  // Build tenant WHERE clause + params
-  // Returns { clause: string, params: any[] } with param indices starting at startIdx
   _tenantWhere(tenantId, startIdx = 1) {
     if (!tenantId) return { clause: '', params: [] };
     const originalTenant = 'indeed.atlassian.net';
@@ -36,7 +34,6 @@ class DatabaseService {
     };
   }
 
-  // Acquire a per-board lock to serialize JSONB merges
   async _withLock(boardId, fn) {
     const key = String(boardId);
     while (this._updateLocks.get(key)) {
@@ -50,7 +47,6 @@ class DatabaseService {
     }
   }
 
-  // Save calculated metrics (tenant-scoped)
   async saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel, tenantId = null) {
     if (!this.sql) return null;
 
@@ -70,7 +66,6 @@ class DatabaseService {
     }
   }
 
-  // Keep only the latest N entries per board (tenant-scoped)
   async _pruneOldEntries(boardId, keepCount, tenantId = null) {
     try {
       const tenant = this._tenantWhere(tenantId, 2);
@@ -88,7 +83,6 @@ class DatabaseService {
     }
   }
 
-  // Get latest metrics for a board (tenant-scoped)
   async getLatestMetrics(boardId, tenantId = null) {
     if (!this.sql) return null;
 
@@ -105,7 +99,6 @@ class DatabaseService {
     }
   }
 
-  // Get metrics history for a board (tenant-scoped)
   async getMetricsHistory(boardId, limit = 30, tenantId = null) {
     if (!this.sql) return [];
 
@@ -124,7 +117,6 @@ class DatabaseService {
     }
   }
 
-  // Get specific metrics by ID (tenant-scoped for safety)
   async getMetricsById(id, tenantId = null) {
     if (!this.sql) return null;
 
@@ -141,7 +133,6 @@ class DatabaseService {
     }
   }
 
-  // Get all boards that have metrics (tenant-scoped)
   async getAllBoardsWithMetrics(tenantId = null) {
     if (!this.sql) return [];
 
@@ -170,7 +161,6 @@ class DatabaseService {
     }
   }
 
-  // Get all boards with their latest metrics data included (tenant-scoped)
   async getAllBoardsWithLatestMetrics(tenantId = null) {
     if (!this.sql) return [];
 
@@ -194,19 +184,16 @@ class DatabaseService {
     }
   }
 
-  // Save boards list (cache) - tenant-scoped
   async saveBoards(boards, tenantId = null) {
     if (!this.sql) return;
 
     try {
-      // Delete old cache entries for this tenant only
       if (tenantId) {
         await this.sql`DELETE FROM boards_cache WHERE tenant_id = ${tenantId}`;
       } else {
         await this.sql`DELETE FROM boards_cache WHERE tenant_id IS NULL`;
       }
 
-      // Insert new cache
       await this.sql`
         INSERT INTO boards_cache (boards_data, tenant_id)
         VALUES (${JSON.stringify(boards)}, ${tenantId})
@@ -217,7 +204,6 @@ class DatabaseService {
     }
   }
 
-  // Get cached boards list (tenant-scoped)
   async getCachedBoards(maxAgeMs = 3600 * 1000, tenantId = null) {
     if (!this.sql) return null;
 
@@ -245,7 +231,6 @@ class DatabaseService {
     }
   }
 
-  // Generic locked merge: read latest record, add/overwrite a JSONB key, write back
   async _mergeIntoLatest(boardId, dataKey, data, retries = 3, tenantId = null) {
     if (!this.sql) return false;
 
@@ -295,7 +280,6 @@ class DatabaseService {
     return this._mergeIntoLatest(boardId, 'capacityData', capacityData, 3, tenantId);
   }
 
-  // Delete all metrics for a board (tenant-scoped)
   async deleteBoardMetrics(boardId, tenantId = null) {
     if (!this.sql) return 0;
 

@@ -1,4 +1,4 @@
--- Neon PostgreSQL Schema
+-- PostgreSQL Schema (compatible with Aurora, RDS, Neon, or any standard PostgreSQL)
 -- Run this once to create all tables for Scrum Maturity + Product Management dashboards
 
 -- 1. Metrics History (scrum metrics per board)

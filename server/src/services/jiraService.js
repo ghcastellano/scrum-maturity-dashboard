@@ -245,10 +245,18 @@ class JiraService {
 
       const completedKeys = new Set(completedIssues.map(i => i.key));
 
+      // Skip sub-tasks to avoid double-counting points with parent issues
+      const isSubtask = (issue) => {
+        const typeName = (issue.typeName || '').toLowerCase();
+        return typeName === 'sub-task' || typeName === 'subtask' || typeName === 'sub-tarefa';
+      };
+
       // Extract story points from sprint report (uses estimateStatistic)
+      // Use ?? (nullish coalescing) instead of || to correctly handle 0-point issues
       const getPoints = (issue) => {
-        return issue.estimateStatistic?.statFieldValue?.value ||
-               issue.currentEstimateStatistic?.statFieldValue?.value || 0;
+        if (isSubtask(issue)) return 0;
+        return issue.estimateStatistic?.statFieldValue?.value ??
+               issue.currentEstimateStatistic?.statFieldValue?.value ?? 0;
       };
 
       // Planned = items NOT marked as added (were in sprint at start)
@@ -263,17 +271,25 @@ class JiraService {
         completedPoints += pts;
         committedPoints += pts;
         if (!issue.added) plannedPoints += pts;
+        if (pts > 0) console.log(`    [completed] ${issue.key} (${issue.typeName}): ${pts}pts${issue.added ? ' [added mid-sprint]' : ''}`);
       }
       for (const issue of notCompleted) {
         const pts = getPoints(issue);
         committedPoints += pts;
         if (!issue.added) plannedPoints += pts;
+        if (pts > 0) console.log(`    [not-completed] ${issue.key} (${issue.typeName}): ${pts}pts${issue.added ? ' [added mid-sprint]' : ''}`);
       }
       // Punted issues were removed mid-sprint — they were planned but removed
       // They count towards planned (were at start) but NOT towards committed (removed)
       for (const issue of puntedIssues) {
         const pts = getPoints(issue);
         if (!issue.added) plannedPoints += pts;
+        if (pts > 0) console.log(`    [punted] ${issue.key} (${issue.typeName}): ${pts}pts${issue.added ? ' [added mid-sprint]' : ''}`);
+      }
+
+      const skippedSubtasks = [...completedIssues, ...notCompleted, ...puntedIssues].filter(i => isSubtask(i));
+      if (skippedSubtasks.length > 0) {
+        console.log(`    ⚠ Skipped ${skippedSubtasks.length} sub-tasks from points calculation`);
       }
 
       console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);

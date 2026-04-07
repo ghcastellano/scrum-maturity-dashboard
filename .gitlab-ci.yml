@@ -1,0 +1,51 @@
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DOCKER_IMAGE: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+  DOCKER_IMAGE_LATEST: ${CI_REGISTRY_IMAGE}:latest
+
+# Build Docker image
+build:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $DOCKER_IMAGE -t $DOCKER_IMAGE_LATEST .
+    - docker push $DOCKER_IMAGE
+    - docker push $DOCKER_IMAGE_LATEST
+  only:
+    - main
+    - merge_requests
+
+# Run server-side tests (if any)
+test:
+  stage: test
+  image: node:18-alpine
+  script:
+    - cd server && npm install
+    - cd ../client && npm install && npm run build
+  only:
+    - main
+    - merge_requests
+
+# Deploy to production (placeholder - adjust for your infra)
+deploy:
+  stage: deploy
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker pull $DOCKER_IMAGE
+    - echo "Deploy image $DOCKER_IMAGE to production"
+    # TODO: Add actual deployment commands (ECS, EKS, or docker-compose on EC2)
+  only:
+    - main
+  when: manual
+  environment:
+    name: production

@@ -4,7 +4,7 @@ metadata:
   name: scrum-maturity-dashboard
   description: Scrum Maturity Dashboard - Sprint metrics, delivery predictability, and team maturity analysis
   annotations:
-    gitlab.com/project-slug: ae_gcastellano/scrum-maturity-dashboard
+    gitlab.com/project-slug: scrum-maturity-reports/scrum-maturity-dashboard
   tags:
     - javascript
     - react

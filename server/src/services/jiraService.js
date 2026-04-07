@@ -245,23 +245,32 @@ class JiraService {
 
       const completedKeys = new Set(completedIssues.map(i => i.key));
 
-      // Use Jira's pre-calculated sums — these match the Velocity Report exactly
-      // InitialEstimate = points at sprint start (before re-estimates)
-      // Estimate = points at sprint end (after re-estimates)
-      const completedInitial = contents.completedIssuesInitialEstimateSum?.value ?? 0;
-      const completedEstimate = contents.completedIssuesEstimateSum?.value ?? 0;
-      const notCompletedInitial = contents.issuesNotCompletedInitialEstimateSum?.value ?? 0;
-      const notCompletedEstimate = contents.issuesNotCompletedEstimateSum?.value ?? 0;
+      // Use issueKeysAddedDuringSprint to identify mid-sprint additions
+      const addedKeys = contents.issueKeysAddedDuringSprint || {};
 
-      // Planned (Commitment) = initial estimates of completed + not-completed at sprint start
+      const getEstimate = (issue) =>
+        issue.estimateStatistic?.statFieldValue?.value ?? 0;
+      const getCurrentEstimate = (issue) =>
+        issue.currentEstimateStatistic?.statFieldValue?.value ?? 0;
+
+      // Planned (Commitment) = initial estimates of items in sprint at start
+      // Includes completed + notCompleted + punted, EXCLUDES mid-sprint additions
       // This matches Jira Velocity Report "Commitment" column exactly
-      const plannedPoints = completedInitial + notCompletedInitial;
+      let plannedPoints = 0;
+      for (const issue of [...completedIssues, ...notCompleted, ...puntedIssues]) {
+        if (!addedKeys[issue.key]) {
+          plannedPoints += getEstimate(issue);
+        }
+      }
 
-      // Committed = current estimates of all items that stayed in sprint
-      const committedPoints = completedEstimate + notCompletedEstimate;
+      // Committed = current estimates of all items that stayed in sprint (excl. punted)
+      let committedPoints = 0;
+      for (const issue of [...completedIssues, ...notCompleted]) {
+        committedPoints += getCurrentEstimate(issue);
+      }
 
-      // Completed = current estimate of completed items (matches Velocity "Completed")
-      const completedPoints = completedEstimate;
+      // Completed = Jira's completedIssuesEstimateSum (matches Velocity "Completed")
+      const completedPoints = contents.completedIssuesEstimateSum?.value ?? 0;
 
       console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);
       return { completedKeys, plannedPoints, committedPoints, completedPoints };

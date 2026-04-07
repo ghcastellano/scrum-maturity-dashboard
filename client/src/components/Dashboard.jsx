@@ -945,8 +945,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               <h3 className="font-semibold mb-2">{t('sprintHitRate')}</h3>
               <p className="text-xs text-gray-500 mb-4">
                 {locale === 'pt-BR'
-                  ? 'Committed = total de pontos alocados na sprint (incluindo adições/remoções). Completed = pontos concluidos.'
-                  : 'Committed = total points allocated to sprint (including mid-sprint changes). Completed = points done.'}
+                  ? 'Accepted = total de pontos alocados na sprint (incluindo adições mid-sprint, excluindo issues removidas). Completed = pontos concluidos.'
+                  : 'Accepted = total points allocated to sprint (including mid-sprint changes, excluding issues removed from sprint). Completed = points done.'}
               </p>
               <div className="h-80">
                 <Bar
@@ -954,7 +954,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     labels: sprintLabels,
                     datasets: [
                       {
-                        label: locale === 'pt-BR' ? 'Committed (pts)' : 'Committed (pts)',
+                        label: locale === 'pt-BR' ? 'Accepted (pts)' : 'Accepted (pts)',
                         data: sortedSprintMetrics.map(s => s.committedPoints || 0),
                         backgroundColor: 'rgba(99, 102, 241, 0.6)',
                         borderColor: 'rgb(99, 102, 241)',
@@ -1086,8 +1086,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               <h3 className="font-semibold mb-2">{t('plannedVsCompleted')}</h3>
               <p className="text-xs text-gray-500 mb-4">
                 {locale === 'pt-BR'
-                  ? 'Planned = pontos no inicio da sprint (sem adições/remoções). Completed = pontos concluidos.'
-                  : 'Planned = points at sprint start (before mid-sprint changes). Completed = points done.'}
+                  ? 'Committed = todos os issues planejados no inicio da sprint, incluindo issues removidos (exceto injeções mid-sprint). Completed = pontos concluidos.'
+                  : 'Committed = all planned issues at the start of a sprint, including issues removed from sprint (except for mid-sprint injections). Completed = points done.'}
               </p>
               <div className="h-80">
                 <Bar
@@ -1095,7 +1095,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     labels: sprintLabels,
                     datasets: [
                       {
-                        label: locale === 'pt-BR' ? 'Planejado (pts)' : 'Planned (pts)',
+                        label: locale === 'pt-BR' ? 'Committed (pts)' : 'Committed (pts)',
                         data: sortedSprintMetrics.map(s => s.plannedPoints || s.committedPoints || 0),
                         backgroundColor: 'rgba(59, 130, 246, 0.5)',
                         borderColor: 'rgb(59, 130, 246)',

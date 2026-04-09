@@ -110,11 +110,9 @@ class JiraService {
       // Common story points field names across different Jira instances
       const storyPointsPatterns = [
         /^story\s*points?$/i,
-        /^pontos?\s*de\s*hist[oó]ria$/i,  // Portuguese
         /^story\s*point\s*estimate$/i,
         /^sp$/i,
         /^estimation$/i,
-        /^estimativa$/i  // Portuguese
       ];
 
       for (const field of fields) {

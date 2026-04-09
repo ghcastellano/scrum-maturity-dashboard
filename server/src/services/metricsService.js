@@ -317,7 +317,7 @@ class MetricsService {
 
     // 2. Fallback: find "In Progress" transition if no sprint field change found
     if (!startTime) {
-      const inProgressNames = ['in progress', 'em progresso', 'em andamento', 'development', 'desenvolvimento', 'doing'];
+      const inProgressNames = ['in progress', 'development', 'doing'];
       for (const change of changelog) {
         for (const item of change.items) {
           if (item.field === 'status') {
@@ -333,7 +333,7 @@ class MetricsService {
     }
 
     // 3. Find when issue moved to done
-    const doneNames = ['closed', 'done', 'resolved', 'concluido', 'concluído', 'finalizado', 'complete', 'completed'];
+    const doneNames = ['closed', 'done', 'resolved', 'complete', 'completed'];
     if (startTime) {
       for (const change of changelog) {
         const changeDate = parseISO(change.created);
@@ -380,7 +380,7 @@ class MetricsService {
     const backlogIssues = parentIssues.filter(i => {
       const s = (i.fields?.status?.name || '').toLowerCase();
       return s.includes('ready for dev') || s === 'backlog' || s.includes('selected for dev')
-        || s === 'to do' || s === 'to-do' || s === 'todo' || s === 'a fazer';
+        || s === 'to do' || s === 'to-do' || s === 'todo';
     });
 
     let withAcceptanceCriteria = 0;
@@ -419,8 +419,6 @@ class MetricsService {
       /acceptance\s*criteria\s*[:;\-\n]?\s*([\s\S]{20,})/i,
       /\bAC\b\s*[:;\-\n]\s*([\s\S]{20,})/,
       /\bacc\s*criteria\s*[:;\-\n]?\s*([\s\S]{20,})/i,
-      /\bcriteria\s*de\s*aceita\s*[:;\-\n]?\s*([\s\S]{20,})/i,
-      /\bcritérios?\s*de\s*aceite\s*[:;\-\n]?\s*([\s\S]{20,})/i,
       /\bDoD\b\s*[:;\-\n]\s*([\s\S]{20,})/,
       /\bdefinition\s*of\s*done\s*[:;\-\n]?\s*([\s\S]{20,})/i,
     ];
@@ -756,8 +754,8 @@ class MetricsService {
 
     // 6. QA rework — detect issues that went backwards in workflow (QA/Review → Dev/In Progress)
     // This catches actual rework more accurately than label-based detection.
-    const qaStatuses = ['qa', 'testing', 'in qa', 'code review', 'review', 'in review', 'ready for qa', 'verificação', 'verificacao', 'teste'];
-    const devStatuses = ['in progress', 'em progresso', 'em andamento', 'development', 'desenvolvimento', 'doing', 'to do', 'open', 'reopened'];
+    const qaStatuses = ['qa', 'testing', 'in qa', 'code review', 'review', 'in review', 'ready for qa'];
+    const devStatuses = ['in progress', 'development', 'doing', 'to do', 'open', 'reopened'];
 
     let totalReworkIssues = 0;
     let totalIssueCount = 0;

@@ -278,17 +278,48 @@ class DashboardController {
             ]);
             const upcomingSprints = [...activeSprints, ...futureSprints];
             let totalItems = 0;
+            let totalPoints = 0;
             const sprintDetails = [];
+            const storyPointsField = jiraService.storyPointsField || 'customfield_10061';
             for (const sprint of upcomingSprints.slice(0, 5)) { // Limit to 5
               try {
                 const issues = await jiraService.getSprintIssues(sprint.id, boardId);
                 const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
+                const sprintPoints = parentIssues.reduce((sum, i) => sum + (i.fields?.[storyPointsField] || 0), 0);
                 totalItems += parentIssues.length;
-                sprintDetails.push({ name: sprint.name, itemCount: parentIssues.length, state: sprint.state });
+                totalPoints += sprintPoints;
+                const issueList = parentIssues.map(i => ({
+                  key: i.key,
+                  summary: i.fields?.summary || '',
+                  type: i.fields?.issuetype?.name || 'Unknown',
+                  status: i.fields?.status?.name || 'Unknown',
+                  points: i.fields?.[storyPointsField] || 0,
+                  assignee: i.fields?.assignee?.displayName || 'Unassigned'
+                }));
+                sprintDetails.push({
+                  name: sprint.name,
+                  itemCount: parentIssues.length,
+                  storyPoints: sprintPoints,
+                  state: sprint.state,
+                  issues: issueList
+                });
               } catch (e) { /* skip */ }
             }
-            futureSprintItems = { count: totalItems, sprints: sprintDetails };
-            console.log(`  Future/active sprints: ${upcomingSprints.length} sprints, ${totalItems} items`);
+            // Fetch average velocity from Jira Velocity Chart API
+            let avgVelocity = null;
+            try {
+              const velResp = await jiraService.api.get(
+                `${jiraService.baseUrl}/rest/greenhopper/1.0/rapid/charts/velocity`,
+                { params: { rapidViewId: boardId }, headers: { 'Authorization': `Basic ${jiraService.auth}`, 'Accept': 'application/json' } }
+              );
+              const velEntries = Object.values(velResp.data?.velocityStatEntries || {});
+              if (velEntries.length > 0) {
+                const completedVals = velEntries.map(e => e.completed?.value || 0);
+                avgVelocity = Math.round((completedVals.reduce((a, b) => a + b, 0) / completedVals.length) * 10) / 10;
+              }
+            } catch (e) { console.warn('  ⚠ Could not fetch velocity:', e.message); }
+            futureSprintItems = { count: totalItems, totalPoints, sprints: sprintDetails, avgVelocity };
+            console.log(`  Future/active sprints: ${upcomingSprints.length} sprints, ${totalItems} items, ${totalPoints}pts, avgVelocity=${avgVelocity}`);
           } catch (err) {
             console.warn('  ⚠ Could not fetch future sprints:', err.message);
           }

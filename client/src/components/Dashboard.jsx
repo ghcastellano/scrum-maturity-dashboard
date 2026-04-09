@@ -45,6 +45,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
   const [availableSprints, setAvailableSprints] = useState([]);
   const [selectedSprintIds, setSelectedSprintIds] = useState([]);
   const [showSprintSelector, setShowSprintSelector] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({});
   const [loadingSprints, setLoadingSprints] = useState(false);
 
   // Use prop credentials or locally fetched ones
@@ -1469,20 +1470,60 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                           <div className="text-xs text-gray-500">{t('futureSprintItemsDesc')}</div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-purple-600">{futureData.count}</div>
-                        <div className="text-xs text-gray-400">{t('itemsAssigned')}</div>
+                      <div className="text-right flex items-center gap-6">
+                        {futureData.avgVelocity && (
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-indigo-600">{futureData.avgVelocity}</div>
+                            <div className="text-xs text-gray-400">avg velocity</div>
+                          </div>
+                        )}
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-blue-600">{futureData.totalPoints || 0}<span className="text-xs font-normal text-gray-400"> pts</span></div>
+                          <div className="text-xs text-gray-400">story points</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-purple-600">{futureData.count}</div>
+                          <div className="text-xs text-gray-400">{t('itemsAssigned')}</div>
+                        </div>
                       </div>
                     </div>
                     {futureData.sprints && futureData.sprints.length > 0 && (
                       <div className="space-y-1.5 mt-3">
                         {futureData.sprints.map((s, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-sm px-3 py-2 bg-white rounded-lg border border-purple-100">
-                            <span className="text-gray-700">{s.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.state === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{s.state}</span>
-                              <span className="font-semibold text-purple-700">{s.itemCount} {t('issues')}</span>
+                          <div key={idx}>
+                            <div
+                              className="flex items-center justify-between text-sm px-3 py-2 bg-white rounded-lg border border-purple-100 cursor-pointer hover:bg-purple-50 transition-colors"
+                              onClick={() => setExpandedSections(prev => ({ ...prev, [`future-${idx}`]: !prev[`future-${idx}`] }))}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-400 text-xs">{expandedSections[`future-${idx}`] ? '▼' : '▶'}</span>
+                                <span className="text-gray-700">{s.name}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm text-blue-600 font-medium">{s.storyPoints || 0} pts</span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.state === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{s.state}</span>
+                                <span className="font-semibold text-purple-700">{s.itemCount} {t('issues')}</span>
+                              </div>
                             </div>
+                            {expandedSections[`future-${idx}`] && s.issues && s.issues.length > 0 && (
+                              <div className="ml-6 mt-1 mb-2 space-y-1">
+                                {s.issues.map((issue, iIdx) => (
+                                  <div key={iIdx} className="flex items-center justify-between text-xs px-3 py-1.5 bg-white rounded border border-gray-100">
+                                    <div className="flex items-center gap-2">
+                                      <a href={`${connectionInfo?.jiraUrl}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">{issue.key}</a>
+                                      <span className="text-gray-400">|</span>
+                                      <span className="text-gray-500 truncate max-w-xs">{issue.summary}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <span className="text-gray-400">{issue.type}</span>
+                                      <span className="text-gray-400">|</span>
+                                      <span className="text-gray-500">{issue.assignee}</span>
+                                      {issue.points > 0 && <span className="text-blue-600 font-medium">{issue.points} pts</span>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

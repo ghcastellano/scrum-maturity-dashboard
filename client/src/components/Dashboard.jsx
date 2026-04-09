@@ -1478,10 +1478,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                           </div>
                         )}
                         <div className="text-right">
-                          <div className="text-lg font-bold text-blue-600">{futureData.totalPoints || 0}<span className="text-xs font-normal text-gray-400"> pts</span></div>
-                          <div className="text-xs text-gray-400">story points</div>
-                        </div>
-                        <div className="text-right">
                           <div className="text-2xl font-bold text-purple-600">{futureData.count}</div>
                           <div className="text-xs text-gray-400">{t('itemsAssigned')}</div>
                         </div>

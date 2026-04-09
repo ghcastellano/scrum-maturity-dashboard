@@ -1510,7 +1510,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                                 {s.issues.map((issue, iIdx) => (
                                   <div key={iIdx} className="flex items-center justify-between text-xs px-3 py-1.5 bg-white rounded border border-gray-100">
                                     <div className="flex items-center gap-2">
-                                      <a href={`${connectionInfo?.jiraUrl}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">{issue.key}</a>
+                                      <a href={`${credentials?.jiraUrl?.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">{issue.key}</a>
                                       <span className="text-gray-400">|</span>
                                       <span className="text-gray-500 truncate max-w-xs">{issue.summary}</span>
                                     </div>

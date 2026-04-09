@@ -754,7 +754,7 @@ class MetricsService {
 
     // 6. QA rework — detect issues that went backwards in workflow (QA/Review → Dev/In Progress)
     // This catches actual rework more accurately than label-based detection.
-    const qaStatuses = ['qa', 'testing', 'in qa', 'code review', 'review', 'in review', 'ready for qa'];
+    const qaStatuses = ['qa', 'testing', 'in qa', 'code review', 'review', 'in review', 'ready for qa', 'pending review', 'pending verification', 'pending merge', 'pending closure'];
     const devStatuses = ['in progress', 'development', 'doing', 'to do', 'open', 'reopened'];
 
     let totalReworkIssues = 0;

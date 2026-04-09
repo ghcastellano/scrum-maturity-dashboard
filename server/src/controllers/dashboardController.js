@@ -1,3 +1,4 @@
+import axios from 'axios';
 import JiraService from '../services/jiraService.js';
 import MetricsService from '../services/metricsService.js';
 import cacheService from '../services/cacheService.js';
@@ -281,10 +282,14 @@ class DashboardController {
             let totalPoints = 0;
             const sprintDetails = [];
             const storyPointsField = jiraService.storyPointsField || 'customfield_10061';
-            for (const sprint of upcomingSprints.slice(0, 5)) { // Limit to 5
+            for (const sprint of upcomingSprints.slice(0, 5)) {
               try {
-                const issues = await jiraService.getSprintIssues(sprint.id, boardId);
-                const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
+                // Use agile API directly (not getSprintIssues which calls Sprint Report API)
+                const resp = await jiraService.agileApi.get(`/board/${boardId}/sprint/${sprint.id}/issue`, {
+                  params: { maxResults: 1000, fields: `summary,issuetype,status,assignee,${storyPointsField}` }
+                });
+                const allIssues = resp.data.issues || [];
+                const parentIssues = allIssues.filter(i => !i.fields?.issuetype?.subtask);
                 const sprintPoints = parentIssues.reduce((sum, i) => sum + (i.fields?.[storyPointsField] || 0), 0);
                 totalItems += parentIssues.length;
                 totalPoints += sprintPoints;
@@ -303,12 +308,14 @@ class DashboardController {
                   state: sprint.state,
                   issues: issueList
                 });
-              } catch (e) { /* skip */ }
+              } catch (e) {
+                console.warn(`  ⚠ Could not fetch sprint ${sprint.name}:`, e.message);
+              }
             }
             // Fetch average velocity from Jira Velocity Chart API
             let avgVelocity = null;
             try {
-              const velResp = await jiraService.api.get(
+              const velResp = await axios.get(
                 `${jiraService.baseUrl}/rest/greenhopper/1.0/rapid/charts/velocity`,
                 { params: { rapidViewId: boardId }, headers: { 'Authorization': `Basic ${jiraService.auth}`, 'Accept': 'application/json' } }
               );

@@ -278,6 +278,34 @@ class JiraService {
     }
   }
 
+  // Fetch velocity chart data for a board — returns map of sprintId → { committed, completed }
+  async getVelocityData(boardId) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/rest/greenhopper/1.0/rapid/charts/velocity`,
+        {
+          params: { rapidViewId: boardId },
+          headers: {
+            'Authorization': `Basic ${this.auth}`,
+            'Accept': 'application/json'
+          }
+        }
+      );
+      const entries = response.data?.velocityStatEntries || {};
+      const result = {};
+      for (const [sid, vals] of Object.entries(entries)) {
+        result[sid] = {
+          committed: vals.estimated?.value ?? 0,
+          completed: vals.completed?.value ?? 0
+        };
+      }
+      return result;
+    } catch (err) {
+      console.warn(`  ⚠ Velocity Chart API unavailable: ${err.message}`);
+      return null;
+    }
+  }
+
   // Get issues for a sprint
   // When boardId is provided, uses the board-scoped endpoint which respects the board's
   // JQL filter — this matches what the Jira Sprint Report shows.

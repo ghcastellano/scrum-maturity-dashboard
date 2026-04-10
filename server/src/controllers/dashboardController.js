@@ -255,10 +255,11 @@ class DashboardController {
       });
 
       // Pre-fetch ALL sprint issues + backlog + future sprints in parallel
-      console.log(`  ⚡ Fetching all sprint issues + backlog + future sprints in parallel...`);
+      console.log(`  ⚡ Fetching all sprint issues + backlog + future sprints + velocity in parallel...`);
       const sprintIssuesMap = new Map();
       let backlogIssuesResult = [];
       let futureSprintItems = { count: 0, sprints: [] };
+      let velocityData = null;
 
       const fetchPromises = recentSprints.map(async (sprint) => {
         const issues = await jiraService.getSprintIssues(sprint.id, boardId);
@@ -268,6 +269,12 @@ class DashboardController {
         jiraService.getBacklogIssues(boardId)
           .then(issues => { backlogIssuesResult = issues; })
           .catch(err => { console.warn('  ⚠ Could not fetch backlog:', err.message); })
+      );
+      // Fetch velocity chart data (for accurate Committed vs Completed matching Jira)
+      fetchPromises.push(
+        jiraService.getVelocityData(boardId)
+          .then(data => { velocityData = data; })
+          .catch(err => { console.warn('  ⚠ Could not fetch velocity:', err.message); })
       );
       // Fetch future + active sprints to count pre-assigned items
       fetchPromises.push(
@@ -374,11 +381,13 @@ class DashboardController {
         const midSprintAdditions = this.metricsService.calculateMidSprintAdditions(issues, sprint.startDate);
         const defectDistribution = this.metricsService.calculateDefectDistribution(issues);
 
-        // Use Sprint Report data for accurate planned/committed/completed points
+        // Use Velocity Chart API for plannedPoints (Committed) — exact match with Jira Velocity Report
+        // Fall back to Sprint Report data if velocity not available
         const reportData = issues._sprintReportData;
-        const plannedPoints = reportData?.plannedPoints ?? sprintGoalResult.committedPoints;
+        const velSprint = velocityData?.[String(sprint.id)];
+        const plannedPoints = velSprint?.committed ?? reportData?.plannedPoints ?? sprintGoalResult.committedPoints;
         const committedPoints = reportData?.committedPoints ?? sprintGoalResult.committedPoints;
-        const completedPoints = reportData?.completedPoints ?? sprintGoalResult.completedPoints;
+        const completedPoints = velSprint?.completed ?? reportData?.completedPoints ?? sprintGoalResult.completedPoints;
 
         // Sprint Hit Rate = committed vs completed (story-points based)
         const sprintHitRatePoints = committedPoints > 0 ? (completedPoints / committedPoints) * 100 : 0;

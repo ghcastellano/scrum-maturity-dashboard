@@ -374,23 +374,18 @@ class MetricsService {
     // Filter out sub-tasks
     const parentIssues = issues.filter(i => !i.fields?.issuetype?.subtask);
 
-    // Only evaluate items that should already be refined (have AC, estimates, fix versions).
-    // Matches variations: "Ready for Development", "Ready for Dev", "Ready For Dev",
-    // "Backlog", "Product Backlog", "Sprint Backlog", "Selected for Development", etc.
+    // Only evaluate items in "To Do" status (and variations)
     const backlogIssues = parentIssues.filter(i => {
       const s = (i.fields?.status?.name || '').toLowerCase();
-      return s.includes('ready for dev') || s === 'backlog' || s.includes('selected for dev')
-        || s === 'to do' || s === 'to-do' || s === 'todo';
+      return s === 'to do' || s === 'to-do' || s === 'todo' || s === 'to do' ;
     });
 
     let withAcceptanceCriteria = 0;
     let withEstimates = 0;
-    let linkedToGoals = 0;
     const storyPointsField = this.storyPointsField;
 
     const missingAC = [];
     const missingEstimates = [];
-    const missingFixVersions = [];
 
     console.log(`\n📋 Backlog Health Analysis:`);
     console.log(`  Total backlog issues: ${backlogIssues.length} (from ${parentIssues.length} parent issues, ${parentIssues.length - backlogIssues.length} in-progress/done excluded)`);
@@ -402,7 +397,6 @@ class MetricsService {
         console.log(`  ${idx + 1}. ${issue.key} [${issue.fields?.status?.name}]`);
         console.log(`     Description length: ${issue.fields.description?.length || 0} chars`);
         console.log(`     Story Points (${storyPointsField}): ${issue.fields[storyPointsField] || 'null'}`);
-        console.log(`     Fix Versions: ${issue.fields.fixVersions?.length || 0}`);
       });
     }
 
@@ -460,12 +454,6 @@ class MetricsService {
         missingEstimates.push(makeDetail(issue));
       }
 
-      // Check for links to goals/fix versions
-      if (issue.fields.fixVersions && issue.fields.fixVersions.length > 0) {
-        linkedToGoals++;
-      } else {
-        missingFixVersions.push(makeDetail(issue));
-      }
     });
 
     const total = backlogIssues.length;
@@ -473,18 +461,15 @@ class MetricsService {
     console.log(`\n  Results:`);
     console.log(`    With Acceptance Criteria (keyword match): ${withAcceptanceCriteria}/${total}`);
     console.log(`    With Estimates: ${withEstimates}/${total}`);
-    console.log(`    Linked to Goals: ${linkedToGoals}/${total}`);
 
     if (total === 0) {
-      console.log(`  ⚠️  No backlog issues in pending/backlog status found!`);
+      console.log(`  ⚠️  No backlog issues in To Do status found!`);
       return {
         withAcceptanceCriteria: 0,
         withEstimates: 0,
-        linkedToGoals: 0,
         overallScore: 0,
         missingAC: [],
         missingEstimates: [],
-        missingFixVersions: [],
         totalItems: 0
       };
     }
@@ -492,11 +477,9 @@ class MetricsService {
     return {
       withAcceptanceCriteria: (withAcceptanceCriteria / total) * 100,
       withEstimates: (withEstimates / total) * 100,
-      linkedToGoals: (linkedToGoals / total) * 100,
-      overallScore: ((withAcceptanceCriteria + withEstimates + linkedToGoals) / (total * 3)) * 100,
+      overallScore: ((withAcceptanceCriteria + withEstimates) / (total * 2)) * 100,
       missingAC,
       missingEstimates,
-      missingFixVersions,
       totalItems: total
     };
   }

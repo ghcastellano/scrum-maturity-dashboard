@@ -1384,14 +1384,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                 missing: metrics.backlogHealth?.missingEstimates || [],
                 missingLabel: t('missingEstimates'),
                 color: { bar: 'bg-green-500', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', hoverBg: 'hover:bg-green-100', lightBar: 'bg-green-100', badge: 'bg-green-100 text-green-800', link: 'text-green-700' }
-              },
-              {
-                label: t('fixVersionsGoals'),
-                description: t('fixVersionsGoalsDesc'),
-                value: metrics.backlogHealth?.linkedToGoals ?? 0,
-                missing: metrics.backlogHealth?.missingFixVersions || [],
-                missingLabel: t('missingFixVersions'),
-                color: { bar: 'bg-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', hoverBg: 'hover:bg-orange-100', lightBar: 'bg-orange-100', badge: 'bg-orange-100 text-orange-800', link: 'text-orange-700' }
               }
             ].map(metric => {
               const total = metrics.backlogHealth?.totalItems || 0;

@@ -1250,7 +1250,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               </p>
               {metrics.flowQuality.reworkBySprint && metrics.flowQuality.reworkBySprint.length > 0 ? (
                 <>
-                  <div className="h-56">
+                  <div className="h-72">
                     <Bar
                       data={{
                         labels: metrics.flowQuality.reworkBySprint.map(s => s.sprint),
@@ -1268,6 +1268,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
+                        layout: { padding: { top: 25 } },
                         plugins: {
                           legend: { display: false },
                           tooltip: {
@@ -1284,7 +1285,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             font: { size: 10, weight: 'bold' },
                             anchor: 'end',
                             align: 'top',
-                            offset: -2,
+                            offset: 2,
                             formatter: (value, ctx) => {
                               const s = metrics.flowQuality.reworkBySprint[ctx.dataIndex];
                               return `${value} (${s.reworkRate}%)`;

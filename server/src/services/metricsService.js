@@ -418,10 +418,10 @@ class MetricsService {
     ];
     // Standalone patterns that imply AC content by their structure
     const acContentPatterns = [
-      /\bgiven\b.{5,}\bwhen\b.{5,}\bthen\b/is,
-      /\bexpected\s*result\s*[:;\-\n]?\s*.{10,}/i,
-      /\bexpected\s*outcome\s*[:;\-\n]?\s*.{10,}/i,
-      /\bexpected\s*behavio\w*\s*[:;\-\n]?\s*.{10,}/i
+      /\bgiven\b[\s\S]{5,}\bwhen\b[\s\S]{5,}\bthen\b/i,
+      /\bexpected\s*result[\s\S]{10,}/i,
+      /\bexpected\s*outcome[\s\S]{10,}/i,
+      /\bexpected\s*behavio\w*[\s\S]{10,}/i
     ];
 
     const hasAcceptanceCriteria = (description) => {

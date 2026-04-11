@@ -288,15 +288,17 @@ class DashboardController {
             let totalItems = 0;
             let totalPoints = 0;
             const sprintDetails = [];
+            const allRawIssues = []; // Full issue objects for backlog health merge
             const storyPointsField = jiraService.storyPointsField || 'customfield_10061';
             for (const sprint of upcomingSprints.slice(0, 5)) {
               try {
                 // Use agile API directly (not getSprintIssues which calls Sprint Report API)
                 const resp = await jiraService.agileApi.get(`/board/${boardId}/sprint/${sprint.id}/issue`, {
-                  params: { maxResults: 1000, fields: `summary,issuetype,status,assignee,${storyPointsField}` }
+                  params: { maxResults: 1000, fields: `summary,issuetype,status,assignee,description,${storyPointsField}` }
                 });
                 const allIssues = resp.data.issues || [];
                 const parentIssues = allIssues.filter(i => !i.fields?.issuetype?.subtask);
+                allRawIssues.push(...parentIssues);
                 const sprintPoints = parentIssues.reduce((sum, i) => sum + (i.fields?.[storyPointsField] || 0), 0);
                 totalItems += parentIssues.length;
                 totalPoints += sprintPoints;
@@ -332,7 +334,7 @@ class DashboardController {
                 avgVelocity = Math.round((completedVals.reduce((a, b) => a + b, 0) / completedVals.length) * 10) / 10;
               }
             } catch (e) { console.warn('  ⚠ Could not fetch velocity:', e.message); }
-            futureSprintItems = { count: totalItems, totalPoints, sprints: sprintDetails, avgVelocity };
+            futureSprintItems = { count: totalItems, totalPoints, sprints: sprintDetails, avgVelocity, _rawIssues: allRawIssues };
             console.log(`  Future/active sprints: ${upcomingSprints.length} sprints, ${totalItems} items, ${totalPoints}pts, avgVelocity=${avgVelocity}`);
           } catch (err) {
             console.warn('  ⚠ Could not fetch future sprints:', err.message);
@@ -418,10 +420,19 @@ class DashboardController {
       let backlogHealth = { score: 0, details: {} };
 
       try {
-        console.log(`  Found ${backlogIssuesResult.length} backlog issues`);
-        backlogHealth = this.metricsService.calculateBacklogHealth(backlogIssuesResult);
-        // Attach future sprint item data to backlog health
-        backlogHealth.futureSprintItems = futureSprintItems;
+        // Merge backlog issues + "To Do" items from active/future sprints (avoid duplicates)
+        const backlogKeys = new Set(backlogIssuesResult.map(i => i.key));
+        const sprintToDoIssues = (futureSprintItems._rawIssues || [])
+          .filter(i => {
+            const status = (i.fields?.status?.name || '').toLowerCase();
+            return (status === 'to do' || status === 'to-do' || status === 'todo') && !backlogKeys.has(i.key);
+          });
+        const allBacklogIssues = [...backlogIssuesResult, ...sprintToDoIssues];
+        console.log(`  Found ${backlogIssuesResult.length} backlog + ${sprintToDoIssues.length} sprint To Do = ${allBacklogIssues.length} total`);
+        backlogHealth = this.metricsService.calculateBacklogHealth(allBacklogIssues);
+        // Attach future sprint item data to backlog health (exclude _rawIssues from response)
+        const { _rawIssues, ...futureSprintItemsClean } = futureSprintItems;
+        backlogHealth.futureSprintItems = futureSprintItemsClean;
       } catch (err) {
         console.warn('  ❌ Could not calculate backlog health:', err.message);
       }

@@ -1038,16 +1038,35 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         }
                       },
                       datalabels: {
-                        display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
                         color: '#374151',
                         font: { size: 10, weight: 'bold' },
-                        anchor: 'center',
-                        align: 'center',
-                        formatter: (value, ctx) => {
-                          if (ctx.dataset.label === 'Added mid-sprint (pts)' && value > 0) {
-                            return `+${value}`;
+                        labels: {
+                          segment: {
+                            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
+                            anchor: 'center',
+                            align: 'center',
+                            formatter: (value, ctx) => {
+                              if (ctx.dataset.label === 'Added mid-sprint (pts)' && value > 0) {
+                                return `+${value}`;
+                              }
+                              return value > 0 ? value : '';
+                            }
+                          },
+                          total: {
+                            display: (ctx) => ctx.dataset.label === 'Added mid-sprint (pts)',
+                            anchor: 'end',
+                            align: 'top',
+                            offset: 2,
+                            font: { size: 11, weight: 'bold' },
+                            color: '#1f2937',
+                            formatter: (_value, ctx) => {
+                              const s = sortedSprintMetrics[ctx.dataIndex];
+                              const committed = s.plannedPoints || s.committedPoints || 0;
+                              const accepted = s.committedPoints || 0;
+                              const total = Math.max(committed, accepted);
+                              return total > 0 ? total : '';
+                            }
                           }
-                          return value > 0 ? value : '';
                         }
                       }
                     },

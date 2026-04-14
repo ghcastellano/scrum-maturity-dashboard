@@ -270,8 +270,9 @@ class JiraService {
       // Completed = Jira's completedIssuesEstimateSum (matches Velocity "Completed")
       const completedPoints = contents.completedIssuesEstimateSum?.value ?? 0;
 
-      console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts`);
-      return { completedKeys, plannedPoints, committedPoints, completedPoints };
+      const addedKeysList = Object.keys(addedKeys);
+      console.log(`  ✓ Sprint Report: ${completedKeys.size} completed, planned=${plannedPoints}pts, committed=${committedPoints}pts, completed=${completedPoints}pts, midSprintAdds=${addedKeysList.length}`);
+      return { completedKeys, plannedPoints, committedPoints, completedPoints, addedKeys: addedKeysList };
     } catch (err) {
       console.warn(`  ⚠ Sprint Report API unavailable: ${err.message}`);
       return null;
@@ -338,8 +339,14 @@ class JiraService {
         issues._sprintReportData = {
           plannedPoints: sprintReportData.plannedPoints,
           committedPoints: sprintReportData.committedPoints,
-          completedPoints: sprintReportData.completedPoints
+          completedPoints: sprintReportData.completedPoints,
+          addedKeys: sprintReportData.addedKeys || []
         };
+        // Annotate each issue with mid-sprint injection flag (authoritative from Jira Sprint Report)
+        const addedSet = new Set(sprintReportData.addedKeys || []);
+        for (const issue of issues) {
+          issue._addedMidSprint = addedSet.has(issue.key);
+        }
         console.log(`  ✓ Issues annotated from Sprint Report (${issues.length} issues, ${sprintReportData.completedKeys.size} completed)`);
       }
 

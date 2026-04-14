@@ -216,12 +216,24 @@ class MetricsService {
         reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
       }
 
+      // Flag if the issue was injected mid-sprint (added AFTER sprint start).
+      // Prefer the authoritative flag from the Jira Sprint Report (issueKeysAddedDuringSprint);
+      // fall back to created-date comparison when the Sprint Report API was unavailable.
+      let addedMidSprint = originalIssue._addedMidSprint === true;
+      if (!addedMidSprint && sprint?.startDate) {
+        const createdStr = originalIssue.fields?.created;
+        if (createdStr) {
+          addedMidSprint = new Date(createdStr) > new Date(sprint.startDate);
+        }
+      }
+
       issueDetails.push({
         key: issue.key,
         summary: issue.fields?.summary || '',
         status: issue.fields?.status?.name || 'unknown',
         type: issue.fields?.issuetype?.name || 'unknown',
-        reasons: rolloverReasons
+        reasons: rolloverReasons,
+        addedMidSprint
       });
     }
 

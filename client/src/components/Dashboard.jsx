@@ -940,14 +940,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
           </h2>
           <p className="text-sm text-gray-500 mb-6">{t('pillar1Subtitle')}</p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Sprint Hit Rate — Committed vs Completed (story points) */}
+          <div className="grid grid-cols-1 gap-6">
+            {/* Sprint Hit Rate — Committed + Accepted + Completed (story points) */}
             <div>
               <h3 className="font-semibold mb-2">{t('sprintHitRate')}</h3>
               <p className="text-xs text-gray-500 mb-4">
                 {locale === 'pt-BR'
-                  ? 'Accepted = total de pontos alocados na sprint (incluindo adições mid-sprint, excluindo issues removidas). Completed = pontos concluidos.'
-                  : 'Accepted = total points allocated to sprint (including mid-sprint changes, excluding issues removed from sprint). Completed = points done.'}
+                  ? 'Committed = pontos planejados no inicio da sprint (exclui injecoes mid-sprint). Accepted = total de pontos na sprint apos mudancas (inclui mid-sprint, exclui removidos). Completed = pontos concluidos.'
+                  : 'Committed = points planned at sprint start (excludes mid-sprint injections). Accepted = total points in sprint after changes (includes mid-sprint, excludes removed). Completed = points done.'}
               </p>
               <div className="h-80">
                 <Bar
@@ -955,7 +955,15 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     labels: sprintLabels,
                     datasets: [
                       {
-                        label: locale === 'pt-BR' ? 'Accepted (pts)' : 'Accepted (pts)',
+                        label: 'Committed (pts)',
+                        data: sortedSprintMetrics.map(s => s.plannedPoints || s.committedPoints || 0),
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                      },
+                      {
+                        label: 'Accepted (pts)',
                         data: sortedSprintMetrics.map(s => s.committedPoints || 0),
                         backgroundColor: 'rgba(99, 102, 241, 0.6)',
                         borderColor: 'rgb(99, 102, 241)',
@@ -963,7 +971,7 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         borderRadius: 4
                       },
                       {
-                        label: locale === 'pt-BR' ? 'Completed (pts)' : 'Completed (pts)',
+                        label: 'Completed (pts)',
                         data: sortedSprintMetrics.map(s => s.completedPoints || 0),
                         backgroundColor: sortedSprintMetrics.map(s =>
                           (s.sprintHitRatePoints || 0) >= 70 ? 'rgba(34, 197, 94, 0.6)' :
@@ -991,7 +999,14 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             const idx = items[0]?.dataIndex;
                             if (idx !== undefined) {
                               const s = sortedSprintMetrics[idx];
-                              return `Hit Rate: ${formatNumber(s.sprintHitRatePoints)}%`;
+                              const committed = s.plannedPoints || s.committedPoints || 0;
+                              const accepted = s.committedPoints || 0;
+                              const delta = accepted - committed;
+                              const lines = [`Hit Rate: ${formatNumber(s.sprintHitRatePoints)}%`];
+                              if (delta !== 0) {
+                                lines.push(`Mid-sprint delta: ${delta > 0 ? '+' : ''}${formatNumber(delta)} pts`);
+                              }
+                              return lines;
                             }
                           }
                         }
@@ -1055,12 +1070,29 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                             ))}
                           </div>
                         )}
+                        {issues.some(i => i.addedMidSprint) && (
+                          <div className="text-[10px] text-gray-500 italic pt-1 pb-1">
+                            {locale === 'pt-BR'
+                              ? '* added to the sprint — item foi rollover mas foi adicionado apos o inicio da sprint (mid-sprint injection)'
+                              : '* added to the sprint — item rolled over but was added after sprint start (mid-sprint injection)'}
+                          </div>
+                        )}
                         <div className="space-y-0">
                           {issues.map(issue => (
                             <div key={issue.key} className="flex items-center gap-2 text-xs text-gray-700 py-1.5 border-t border-red-100">
-                              <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-red-700 shrink-0 hover:underline">{issue.key}</a>
+                              <a href={`${credentials.jiraUrl.replace(/\/$/, '')}/browse/${issue.key}`} target="_blank" rel="noopener noreferrer" className="font-mono font-semibold text-red-700 shrink-0 hover:underline">
+                                {issue.key}
+                                {issue.addedMidSprint && (
+                                  <span className="text-amber-600 ml-0.5" title={locale === 'pt-BR' ? 'added to the sprint (mid-sprint injection)' : 'added to the sprint (mid-sprint injection)'}>*</span>
+                                )}
+                              </a>
                               <span className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 shrink-0">{issue.type}</span>
                               <span className="flex-1 truncate" title={issue.summary}>{issue.summary}</span>
+                              {issue.addedMidSprint && (
+                                <span className="px-1.5 py-0.5 rounded text-xs shrink-0 bg-amber-100 text-amber-800" title="mid-sprint injection">
+                                  added to the sprint
+                                </span>
+                              )}
                               {(issue.reasons || []).map(r => (
                                 <span key={r} className={`px-1.5 py-0.5 rounded text-xs shrink-0 ${
                                   r === 'external-blockers' ? 'bg-purple-100 text-purple-700' :
@@ -1079,62 +1111,6 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     </details>
                   );
                 })}
-              </div>
-            </div>
-
-            {/* Planned vs Completed Story Points */}
-            <div>
-              <h3 className="font-semibold mb-2">{t('plannedVsCompleted')}</h3>
-              <p className="text-xs text-gray-500 mb-4">
-                {locale === 'pt-BR'
-                  ? 'Committed = todos os issues planejados no inicio da sprint, incluindo issues removidos (exceto injeções mid-sprint). Completed = pontos concluidos.'
-                  : 'Committed = all planned issues at the start of a sprint, including issues removed from sprint (except for mid-sprint injections). Completed = points done.'}
-              </p>
-              <div className="h-80">
-                <Bar
-                  data={{
-                    labels: sprintLabels,
-                    datasets: [
-                      {
-                        label: locale === 'pt-BR' ? 'Committed (pts)' : 'Committed (pts)',
-                        data: sortedSprintMetrics.map(s => s.plannedPoints || s.committedPoints || 0),
-                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                        borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 1,
-                        borderRadius: 4
-                      },
-                      {
-                        label: locale === 'pt-BR' ? 'Concluido (pts)' : 'Completed (pts)',
-                        data: sortedSprintMetrics.map(s => s.completedPoints || 0),
-                        backgroundColor: 'rgba(34, 197, 94, 0.5)',
-                        borderColor: 'rgb(34, 197, 94)',
-                        borderWidth: 1,
-                        borderRadius: 4
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: true, position: 'top' },
-                      tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw} pts` } },
-                      datalabels: {
-                        display: true,
-                        color: '#374151',
-                        font: { size: 10, weight: 'bold' },
-                        anchor: 'end',
-                        align: 'top',
-                        offset: -2,
-                        formatter: (value) => value > 0 ? value : ''
-                      }
-                    },
-                    scales: {
-                      y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
-                      x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
-                    }
-                  }}
-                />
               </div>
             </div>
           </div>

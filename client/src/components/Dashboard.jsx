@@ -946,8 +946,8 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
               <h3 className="font-semibold mb-2">{t('sprintHitRate')}</h3>
               <p className="text-xs text-gray-500 mb-4">
                 {locale === 'pt-BR'
-                  ? 'Committed = pontos planejados no inicio da sprint (exclui injecoes mid-sprint). Accepted = total de pontos na sprint apos mudancas (inclui mid-sprint, exclui removidos). Completed = pontos concluidos.'
-                  : 'Committed = points planned at sprint start (excludes mid-sprint injections). Accepted = total points in sprint after changes (includes mid-sprint, excludes removed). Completed = points done.'}
+                  ? 'Barra Accepted = Committed (azul, pontos planejados no inicio) + Added mid-sprint (ambar, injecoes apos o inicio). Completed = pontos concluidos.'
+                  : 'Accepted bar = Committed (blue, points planned at sprint start) + Added mid-sprint (amber, injections after start). Completed = points done.'}
               </p>
               <div className="h-80">
                 <Bar
@@ -956,22 +956,33 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                     datasets: [
                       {
                         label: 'Committed (pts)',
-                        data: sortedSprintMetrics.map(s => s.plannedPoints || s.committedPoints || 0),
+                        stack: 'scope',
+                        data: sortedSprintMetrics.map(s => {
+                          const c = s.plannedPoints || s.committedPoints || 0;
+                          const a = s.committedPoints || 0;
+                          return Math.min(c, a);
+                        }),
                         backgroundColor: 'rgba(59, 130, 246, 0.6)',
                         borderColor: 'rgb(59, 130, 246)',
                         borderWidth: 1,
-                        borderRadius: 4
+                        borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 }
                       },
                       {
-                        label: 'Accepted (pts)',
-                        data: sortedSprintMetrics.map(s => s.committedPoints || 0),
-                        backgroundColor: 'rgba(99, 102, 241, 0.6)',
-                        borderColor: 'rgb(99, 102, 241)',
+                        label: 'Added mid-sprint (pts)',
+                        stack: 'scope',
+                        data: sortedSprintMetrics.map(s => {
+                          const c = s.plannedPoints || s.committedPoints || 0;
+                          const a = s.committedPoints || 0;
+                          return Math.max(0, a - c);
+                        }),
+                        backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                        borderColor: 'rgb(245, 158, 11)',
                         borderWidth: 1,
-                        borderRadius: 4
+                        borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 }
                       },
                       {
                         label: 'Completed (pts)',
+                        stack: 'done',
                         data: sortedSprintMetrics.map(s => s.completedPoints || 0),
                         backgroundColor: sortedSprintMetrics.map(s =>
                           (s.sprintHitRatePoints || 0) >= 70 ? 'rgba(34, 197, 94, 0.6)' :
@@ -995,16 +1006,31 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                       legend: { display: true, position: 'top' },
                       tooltip: {
                         callbacks: {
+                          label: (item) => {
+                            const s = sortedSprintMetrics[item.dataIndex];
+                            const committed = s.plannedPoints || s.committedPoints || 0;
+                            const accepted = s.committedPoints || 0;
+                            if (item.dataset.label === 'Committed (pts)') {
+                              return `Committed: ${formatNumber(committed)} pts`;
+                            }
+                            if (item.dataset.label === 'Added mid-sprint (pts)') {
+                              const delta = accepted - committed;
+                              return `Added mid-sprint: ${delta > 0 ? '+' : ''}${formatNumber(delta)} pts`;
+                            }
+                            return `${item.dataset.label}: ${formatNumber(item.raw)} pts`;
+                          },
                           afterBody: (items) => {
                             const idx = items[0]?.dataIndex;
                             if (idx !== undefined) {
                               const s = sortedSprintMetrics[idx];
                               const committed = s.plannedPoints || s.committedPoints || 0;
                               const accepted = s.committedPoints || 0;
-                              const delta = accepted - committed;
-                              const lines = [`Hit Rate: ${formatNumber(s.sprintHitRatePoints)}%`];
-                              if (delta !== 0) {
-                                lines.push(`Mid-sprint delta: ${delta > 0 ? '+' : ''}${formatNumber(delta)} pts`);
+                              const lines = [
+                                `Accepted (total): ${formatNumber(accepted)} pts`,
+                                `Hit Rate: ${formatNumber(s.sprintHitRatePoints)}%`
+                              ];
+                              if (accepted < committed) {
+                                lines.push(`Removed mid-sprint: -${formatNumber(committed - accepted)} pts`);
                               }
                               return lines;
                             }
@@ -1012,18 +1038,22 @@ export default function Dashboard({ credentials: credentialsProp, selectedBoards
                         }
                       },
                       datalabels: {
-                        display: true,
+                        display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
                         color: '#374151',
                         font: { size: 10, weight: 'bold' },
-                        anchor: 'end',
-                        align: 'top',
-                        offset: -2,
-                        formatter: (value) => value > 0 ? value : ''
+                        anchor: 'center',
+                        align: 'center',
+                        formatter: (value, ctx) => {
+                          if (ctx.dataset.label === 'Added mid-sprint (pts)' && value > 0) {
+                            return `+${value}`;
+                          }
+                          return value > 0 ? value : '';
+                        }
                       }
                     },
                     scales: {
-                      y: { beginAtZero: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
-                      x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
+                      y: { beginAtZero: true, stacked: true, ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                      x: { stacked: true, ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } }
                     }
                   }}
                 />

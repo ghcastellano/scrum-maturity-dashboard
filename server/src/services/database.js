@@ -1,4 +1,4 @@
-import { neon } from '@neondatabase/serverless';
+import pg from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -9,16 +9,48 @@ class DatabaseService {
 
     if (!databaseUrl) {
       console.warn('⚠ DATABASE_URL not configured. Database will not work.');
+      this.pool = null;
       this.sql = null;
       return;
     }
 
-    this.sql = neon(databaseUrl);
+    this.pool = new pg.Pool({
+      connectionString: databaseUrl,
+      ssl: databaseUrl.includes('sslmode=require')
+        ? { rejectUnauthorized: false }
+        : undefined,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000
+    });
+
+    // Tagged template interface: sql`SELECT * FROM t WHERE id = ${val}`
+    // Mimics Neon's API so all existing queries work unchanged
+    const self = this;
+    this.sql = function sql(strings, ...values) {
+      const parts = [strings[0]];
+      for (let i = 0; i < values.length; i++) {
+        parts.push('$' + (i + 1));
+        parts.push(strings[i + 1]);
+      }
+      return self._query(parts.join(''), values);
+    };
+    // Also expose .query() for parameterized string queries
+    this.sql.query = (text, params) => self._query(text, params);
+
     // In-memory locks to prevent concurrent read-modify-write on the same board
     this._updateLocks = new Map();
-    console.log('✓ Database initialized');
+    console.log('✓ PostgreSQL database initialized');
   }
 
+  // Execute a parameterized query, returning rows array (pg-compatible)
+  async _query(text, params = []) {
+    const result = await this.pool.query(text, params);
+    return result.rows;
+  }
+
+  // Build tenant WHERE clause + params
+  // Returns { clause: string, params: any[] } with param indices starting at startIdx
   _tenantWhere(tenantId, startIdx = 1) {
     if (!tenantId) return { clause: '', params: [] };
     const originalTenant = 'indeed.atlassian.net';
@@ -34,6 +66,7 @@ class DatabaseService {
     };
   }
 
+  // Acquire a per-board lock to serialize JSONB merges
   async _withLock(boardId, fn) {
     const key = String(boardId);
     while (this._updateLocks.get(key)) {
@@ -47,6 +80,7 @@ class DatabaseService {
     }
   }
 
+  // Save calculated metrics (tenant-scoped)
   async saveMetrics(boardId, boardName, sprintCount, metricsData, maturityLevel, tenantId = null) {
     if (!this.sql) return null;
 
@@ -66,6 +100,7 @@ class DatabaseService {
     }
   }
 
+  // Keep only the latest N entries per board (tenant-scoped)
   async _pruneOldEntries(boardId, keepCount, tenantId = null) {
     try {
       const tenant = this._tenantWhere(tenantId, 2);
@@ -83,6 +118,7 @@ class DatabaseService {
     }
   }
 
+  // Get latest metrics for a board (tenant-scoped)
   async getLatestMetrics(boardId, tenantId = null) {
     if (!this.sql) return null;
 
@@ -99,6 +135,7 @@ class DatabaseService {
     }
   }
 
+  // Get metrics history for a board (tenant-scoped)
   async getMetricsHistory(boardId, limit = 30, tenantId = null) {
     if (!this.sql) return [];
 
@@ -117,6 +154,7 @@ class DatabaseService {
     }
   }
 
+  // Get specific metrics by ID (tenant-scoped for safety)
   async getMetricsById(id, tenantId = null) {
     if (!this.sql) return null;
 
@@ -133,6 +171,7 @@ class DatabaseService {
     }
   }
 
+  // Get all boards that have metrics (tenant-scoped)
   async getAllBoardsWithMetrics(tenantId = null) {
     if (!this.sql) return [];
 
@@ -161,6 +200,7 @@ class DatabaseService {
     }
   }
 
+  // Get all boards with their latest metrics data included (tenant-scoped)
   async getAllBoardsWithLatestMetrics(tenantId = null) {
     if (!this.sql) return [];
 
@@ -184,16 +224,19 @@ class DatabaseService {
     }
   }
 
+  // Save boards list (cache) - tenant-scoped
   async saveBoards(boards, tenantId = null) {
     if (!this.sql) return;
 
     try {
+      // Delete old cache entries for this tenant only
       if (tenantId) {
         await this.sql`DELETE FROM boards_cache WHERE tenant_id = ${tenantId}`;
       } else {
         await this.sql`DELETE FROM boards_cache WHERE tenant_id IS NULL`;
       }
 
+      // Insert new cache
       await this.sql`
         INSERT INTO boards_cache (boards_data, tenant_id)
         VALUES (${JSON.stringify(boards)}, ${tenantId})
@@ -204,6 +247,7 @@ class DatabaseService {
     }
   }
 
+  // Get cached boards list (tenant-scoped)
   async getCachedBoards(maxAgeMs = 3600 * 1000, tenantId = null) {
     if (!this.sql) return null;
 
@@ -231,6 +275,7 @@ class DatabaseService {
     }
   }
 
+  // Generic locked merge: read latest record, add/overwrite a JSONB key, write back
   async _mergeIntoLatest(boardId, dataKey, data, retries = 3, tenantId = null) {
     if (!this.sql) return false;
 
@@ -280,6 +325,7 @@ class DatabaseService {
     return this._mergeIntoLatest(boardId, 'capacityData', capacityData, 3, tenantId);
   }
 
+  // Delete all metrics for a board (tenant-scoped)
   async deleteBoardMetrics(boardId, tenantId = null) {
     if (!this.sql) return 0;
 
@@ -399,6 +445,14 @@ class DatabaseService {
     } catch (err) {
       console.warn('Failed to clean old metrics:', err.message);
       return 0;
+    }
+  }
+
+  // Graceful shutdown
+  async close() {
+    if (this.pool) {
+      await this.pool.end();
+      console.log('✓ PostgreSQL pool closed');
     }
   }
 }

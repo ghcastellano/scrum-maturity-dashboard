@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import DashboardController from './controllers/dashboardController.js';
 import database from './services/database.js';
@@ -10,6 +11,27 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Apply schema.sql on boot in non-serverless environments (Aurora container, local dev).
+// Idempotent via CREATE TABLE IF NOT EXISTS — safe to run on every startup.
+// Skipped on Vercel: serverless cold starts would re-run per invocation and the
+// Neon-backed Vercel deployment already has the schema applied.
+async function applySchema() {
+  if (process.env.VERCEL) return;
+  if (!database.sql) {
+    console.warn('⚠ DATABASE_URL not set — skipping schema init');
+    return;
+  }
+  try {
+    const schemaPath = path.join(__dirname, '../sql/schema.sql');
+    const sql = fs.readFileSync(schemaPath, 'utf8');
+    await database.sql.query(sql);
+    console.log('✓ Schema applied (idempotent)');
+  } catch (err) {
+    console.error('❌ Schema init failed:', err.message);
+    throw err;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -207,15 +229,22 @@ app.use((err, req, res, next) => {
 
 // Only listen when running locally (not on Vercel serverless)
 if (!process.env.VERCEL) {
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
-    console.log(`📊 Scrum Maturity Dashboard API ready`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
+  applySchema()
+    .catch(err => {
+      console.error('Fatal: schema init failed, exiting', err);
+      process.exit(1);
+    })
+    .then(() => {
+      const server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
+        console.log(`📊 Scrum Maturity Dashboard API ready`);
+        console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      });
 
-  // Allow up to 2 minutes for heavy cross-board queries
-  server.timeout = 120000;
-  server.keepAliveTimeout = 120000;
+      // Allow up to 2 minutes for heavy cross-board queries
+      server.timeout = 120000;
+      server.keepAliveTimeout = 120000;
+    });
 }
 
 export default app;
